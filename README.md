@@ -1,10 +1,14 @@
-# Trueline — camera push-up and plank tracker
+# Trueline — camera push-up, plank and side plank tracker
 
 Working name. An Expo app that watches you through the phone camera and
-checks your position for two exercises:
+checks your position for three exercises:
 
 - **Push-ups**: counts and grades every rep.
 - **Plank**: times the hold, and only counts time in good form.
+- **Side plank**: times each side on its own, and compares left and right.
+
+Exercises are defined in one registry (`src/engine/exercises.ts`), so adding
+one starts there.
 
 All tracking runs on the phone; no video is stored or sent anywhere.
 
@@ -17,8 +21,10 @@ it runs, from a camera frame to a counted rep, file by file.
    before each set, full spoken instructions, checklists, tips after the set)
    or **Quick** (one tap to start, short cues, compact screens). Changeable in
    Settings.
-1. **Pick the exercise** on Home: **Push-ups** or **Plank**. Each has its own
-   icon, targets (reps, or 0:30 to 2:00 of plank) and history.
+1. **Pick the exercise** on Home. Home shows today's totals, one card per
+   exercise and recent sets (filterable by exercise). Each card opens the
+   exercise's own screen: this week, personal best, setup, level, target
+   (reps, or 0:30 to 2:00; per side for the side plank), Start and its history.
 2. **Place the phone.** Pick **Landscape** (1.5–2 m away) or **Portrait**
    (2.5–3 m away). Stand it on the floor that way, side-on. A spirit-level
    vial (gravity sensor) waits until it is level and still. No sensor or
@@ -52,7 +58,25 @@ Standing up, losing tracking, the phone being knocked or the app going to the
 background pauses the set and keeps the count or time; get back into position
 to carry on.
 
-## Difficulty
+## Side plank
+
+You lie on one side **facing the phone** (same phone placement as the other
+exercises), on your forearm or a straight arm, feet stacked.
+
+- The side on the floor is the one whose shoulder is lower in the picture.
+- The start check wants the shoulders stacked (one above the other), the
+  elbow or hand under the shoulder, hips up in one line, legs straight
+  (Easy accepts a side plank on the knees).
+- The clock stops for hips dropping or rising, **rolling** forward or back
+  (shoulders no longer stacked), the elbow drifting from under the shoulder,
+  a bending support arm, soft knees, or the feet leaving view (Medium/Hard).
+- **Each side is timed on its own.** With a target, it is per side: at the
+  target you hear "Time. Switch sides", the set waits for the other side and
+  finishes when both are done. Turning onto the other side mid-hold starts that
+  side's clock.
+- The summary shows each side and whether they are balanced (within 5%, as in
+  McGill's side-bridge test).
+
 
 Picked on Home or in Settings; presets live in `src/engine/difficulty.ts`
 (push-ups) with plank-only changes on top (`PLANK_PRESETS`). Hard is the
@@ -148,8 +172,8 @@ src/app/                   routes: home, guide, session, summary/[id], settings
 fixtures/recordings/       real recorded sets used as regression tests
 ```
 
-Key engine files: `session.ts` (both exercises), `repCounter.ts` (push-ups),
-`holdTimer.ts` (plank), `gates.ts` (phone, framing, start position),
+Key engine files: `exercises.ts` (the exercise registry), `session.ts` (all exercises), `repCounter.ts` (push-ups),
+`holdTimer.ts` (plank and side plank), `gates.ts` (phone, framing, start position),
 `reality.ts` (real-person check).
 
 ## Running
@@ -163,8 +187,8 @@ npm run typecheck && npm run lint
 
 Expo Go cannot run this app (custom native code). On a simulator, use
 **Home → Preview a demo set** (dev builds only) to see the live screen driven
-by a synthetic body through the real engine; it plays push-ups or a plank
-depending on the exercise picked on Home.
+by a synthetic body through the real engine (from an exercise's screen). Every
+edge case has a scenario: `trueline:///session?demo=<basic|nofeet|standup|lost|swap|knocked|shake|tv|faults>&ex=<pushup|plank|sidePlank>&level=<easy|medium|hard>`.
 
 After editing `modules/pose-landmarker/src/PoseLandmarker.nitro.ts`, run
 `npm run codegen` and rebuild.
@@ -202,8 +226,8 @@ After editing `modules/pose-landmarker/src/PoseLandmarker.nitro.ts`, run
 
 **How it is tested**
 
-- Every scenario runs at all three difficulties, in portrait and landscape frames, facing either way (`matrix.test.ts`, `plank.test.ts`, `plankEdge.test.ts`, `realPerson.test.ts`).
-- Randomised sets: `stress.test.ts` (push-ups) and `plankStress.test.ts` (plank, with real breaks, near misses, short blips and soft knees). 40 per level by default; `STRESS_TRIALS=400 npx jest stress plankStress` for more. Random noise, misread joints, speeds, body size, frame shape, facing and phone roll, with exact count / break checks.
+- Every scenario runs at all three difficulties, in portrait and landscape frames, facing either way (`matrix.test.ts`, `plank.test.ts`, `plankEdge.test.ts`, `sidePlank.test.ts`, `realPerson.test.ts`).
+- Randomised sets: `stress.test.ts` (push-ups) and `plankStress.test.ts` (plank and side plank, with real breaks, near misses, short blips and soft knees). 40 per level by default; `STRESS_TRIALS=400 npx jest stress plankStress` for more. Random noise, misread joints, speeds, body size, frame shape, facing and phone roll, with exact count / break checks.
 - The depth sampler is tested against fake depth maps in every buffer rotation, mirrored, and in 16-bit and disparity formats (`src/camera/__tests__/depthProbe.test.ts`).
 
 ## Tuning with real sets (Phase 4)
@@ -226,7 +250,7 @@ local network. Release builds never send anything.
 
 ## Known gaps / to verify on device
 
-- Plank and the real-person check have only been tested with synthetic bodies and fake depth maps. Still to check on a real phone: plank limits with real body noise, forearm-plank detection, and whether the iPhone's depth reaches 1.5–3 m clearly enough (watch `real=…(standout …m torso …m)` in the diagnostics line). Adding the depth output may also change the video format the pose model gets.
+- Plank, side plank and the real-person check have only been tested with synthetic bodies and fake depth maps. Still to check on a real phone: plank limits with real body noise, forearm-plank detection, and whether the iPhone's depth reaches 1.5–3 m clearly enough (watch `real=…(standout …m torso …m)` in the diagnostics line). Adding the depth output may also change the video format the pose model gets.
 - The app has not been run on an Android phone with the plank or real-person check yet; the logic is shared and tested, the native camera path is not.
 - iOS: MediaPipe returns landmarks in the un-rotated sensor buffer's coordinates; the native module rotates them upright per `frame.orientation` (fixed after a portrait device test where push-ups read as standing). The rotation direction is confirmed when the diagnostics line shows `sh` (shoulder above wrist) positive in a plank.
 - Frames follow the locked screen (`orientationSource="interface"`) and mirroring is explicit (`mirrorMode` on for the front camera); confirm the skeleton sits on the body on real hardware.
