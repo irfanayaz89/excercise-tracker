@@ -60,6 +60,52 @@ export interface EngineConfig {
     checkHips: boolean;
     /** Check hands sit under the shoulders before starting. */
     checkHands: boolean;
+    /** Forearm plank (plank exercise only): elbow angle range with the forearm flat on the floor. */
+    forearmMinElbowDeg: number;
+    forearmMaxElbowDeg: number;
+    /** Wrist this close to elbow height (torso lengths) means the forearm rests on the floor. */
+    forearmMaxRise: number;
+    /** Elbow at most this far from under the shoulder (torso lengths). */
+    maxElbowStack: number;
+  };
+
+  /** Plank hold timing and form (plank exercise only). */
+  hold: {
+    /** Shoulder–hip–ankle angle below this is a fault. */
+    minBodyLineDeg: number;
+    /** Hip below the shoulder–ankle line by more than this (torso lengths) is a sag fault. */
+    sagFault: number;
+    /** Hip above the line by more than this (torso lengths) is a pike fault. */
+    pikeFault: number;
+    /** Moving this far from your own start position also counts, once past `warnRatio` of a limit. */
+    driftFault: number;
+    /** Share of a limit at which an early warning is given. */
+    warnRatio: number;
+    /**
+     * Same for raised hips. Coaches cue "hips up an inch" (about 0.05 torso
+     * lengths), so a slight raise gets more room than a sag before any warning.
+     */
+    pikeWarnRatio: number;
+    /** A problem must last this long before it is warned about (misread joints last a frame or two). */
+    warnMs: number;
+    /** Hips sinking faster than this (torso lengths per second) is warned about before it becomes a fault. */
+    sagTrendPerSec: number;
+    /** A fault shorter than this does not stop the clock. */
+    graceMs: number;
+    /** Good form must last this long before the clock runs again after a break. */
+    restoreMs: number;
+    /** High plank: elbow bent this far below `plank.minElbowDeg` is a fault. */
+    armBendDeg: number;
+    /** Knees bent this far below `plank.minKneeDeg` mid-hold is a fault (unless kneeling is allowed). */
+    kneeBendDeg: number;
+    /** High plank: warn (never stop the clock) when the hands drift from under the shoulders. */
+    checkHands: boolean;
+    /** Neck angle below this is a hint (head dropping). */
+    minNeckDeg: number;
+    /** Test mode: the hold ends at the first real form break. */
+    endOnBreak: boolean;
+    /** Spoken time call every this many seconds of good form. */
+    milestoneSec: number;
   };
 
   rep: {
@@ -114,6 +160,40 @@ export interface EngineConfig {
 
   /** Accept knee push-ups as a valid plank. */
   allowKneeling: boolean;
+
+  /**
+   * Real-person check: a video of someone exercising, shown on a screen, must
+   * not count. Two independent signals, each needing sustained evidence.
+   */
+  reality: {
+    enabled: boolean;
+    /** Depth (iPhone): a real body stands out from the space above its back by at least this much (m). */
+    minStandOutM: number;
+    /** Stand-out this large is clear evidence of a real body (m). */
+    realStandOutM: number;
+    /** A real torso (shoulder to hip) measures between these (m); a person on a phone screen measures a few cm. */
+    minTorsoM: number;
+    maxTorsoM: number;
+    /** Evidence window, and how many depth readings it needs before any verdict. */
+    windowMs: number;
+    minVotes: number;
+    /** Share of readings in the window that must look fake. */
+    fakeShare: number;
+    /**
+     * Handheld screen: with the phone still, hands and feet moving together at
+     * this typical speed (frame widths per second). Measured: camera noise on a
+     * real person stays under 0.042; a screen shaken by about 5 mm reads 0.05+.
+     */
+    shakeSpeed: number;
+    /** ...and moving together: their midpoint moves at least this many times more than the gap between them changes. */
+    shakeRigidity: number;
+    /** ...for this long, mostly back and forth rather than one move. */
+    shakeMs: number;
+    /** The phone counts as still below this rotation speed (deg/s). */
+    stillPhoneDegPerSec: number;
+    /** After a flag, no suspicious sign for this long before the set can resume. */
+    clearMs: number;
+  };
 }
 
 export const DEFAULT_CONFIG: EngineConfig = {
@@ -154,6 +234,30 @@ export const DEFAULT_CONFIG: EngineConfig = {
     maxWobble: 0.12,
     checkHips: true,
     checkHands: true,
+    forearmMinElbowDeg: 50,
+    forearmMaxElbowDeg: 135,
+    forearmMaxRise: 0.2,
+    maxElbowStack: 0.35,
+  },
+  // Plank limits: a straight line is 180°; the one published camera threshold
+  // (PoseDetector, side view, MediaPipe) accepts 165–195°.
+  hold: {
+    minBodyLineDeg: 165,
+    sagFault: 0.1,
+    pikeFault: 0.12,
+    driftFault: 0.1,
+    warnRatio: 0.6,
+    pikeWarnRatio: 0.75,
+    warnMs: 400,
+    sagTrendPerSec: 0.015,
+    graceMs: 1000,
+    restoreMs: 500,
+    armBendDeg: 15,
+    kneeBendDeg: 10,
+    checkHands: true,
+    minNeckDeg: 140,
+    endOnBreak: false,
+    milestoneSec: 15,
   },
   rep: {
     downElbowDeg: 95,
@@ -183,6 +287,21 @@ export const DEFAULT_CONFIG: EngineConfig = {
     identityScale: 0.35,
   },
   allowKneeling: false,
+  reality: {
+    enabled: true,
+    minStandOutM: 0.12,
+    realStandOutM: 0.25,
+    minTorsoM: 0.2,
+    maxTorsoM: 1.5,
+    windowMs: 3000,
+    minVotes: 6,
+    fakeShare: 0.75,
+    shakeSpeed: 0.045,
+    shakeRigidity: 2,
+    shakeMs: 3000,
+    stillPhoneDegPerSec: 3,
+    clearMs: 2000,
+  },
 };
 
 export function mergeConfig(overrides?: DeepPartial<EngineConfig>): EngineConfig {

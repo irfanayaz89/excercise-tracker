@@ -115,6 +115,10 @@ export interface BodyMetrics {
   shoulderHeight: number | null;
   /** Horizontal wrist offset from the shoulder, in torso lengths. */
   wristOffset: number | null;
+  /** Horizontal elbow offset from the shoulder, in torso lengths (forearm plank: elbows under shoulders). */
+  elbowStack: number | null;
+  /** Height difference between wrist and elbow, in torso lengths (≈ 0 when the forearm lies on the floor). */
+  forearmRise: number | null;
   /** Shoulder-to-hip distance in pixels. */
   torsoPx: number;
   /** Hip centre in normalized coordinates, for identity tracking. */
@@ -123,3 +127,9 @@ export interface BodyMetrics {
 
 /** How the phone stands during a set; picked by the user. */
 export type PhoneOrientation = 'landscape' | 'portrait';
+
+/** What the set is: push-ups are counted, a plank is timed. */
+export type Exercise = 'pushup' | 'plank';
+
+/** High plank on straight arms, or forearm plank with the forearms on the floor. */
+export type PlankVariant = 'high' | 'forearm';

@@ -1,7 +1,17 @@
 import type { BodyMetrics } from './types';
 
 /** Fields judged by the start check; single-frame spikes in these are common. */
-const FIELDS = ['elbowDeg', 'bodyLineDeg', 'hipOffset', 'kneeDeg', 'neckDeg', 'trunkTiltDeg', 'wristOffset'] as const;
+const FIELDS = [
+  'elbowDeg',
+  'bodyLineDeg',
+  'hipOffset',
+  'kneeDeg',
+  'neckDeg',
+  'trunkTiltDeg',
+  'wristOffset',
+  'elbowStack',
+  'forearmRise',
+] as const;
 
 /**
  * Median of the last few frames for each body measurement. On a real phone

@@ -4,7 +4,7 @@ import type { PlankIssue } from '@/engine/gates';
 import type { SessionSnapshot } from '@/engine/session';
 import type { PhoneOrientation } from '@/engine/types';
 import type { EngineConfig } from '@/engine/config';
-import { PLACEMENT, PLANK_COPY, SOFT_HINT_COPY, framingCopy, noRoomTip, phoneCopy } from '@/session/copy';
+import { PLACEMENT, REALITY_COPY, SOFT_HINT_COPY, framingCopy, noRoomTip, phoneCopy, plankIssueCopy } from '@/session/copy';
 import { SetupDiagram } from '@/ui/Diagrams';
 import { LevelVial } from '@/ui/LevelVial';
 import { Body, Button, Display, Label, Mono } from '@/ui/primitives';
@@ -52,7 +52,7 @@ export function PhonePanel({
           {copy.detail}
         </Body>
       )}
-      {showDiagram && <SetupDiagram width={260} orientation={orientation} />}
+      {showDiagram && <SetupDiagram width={260} orientation={orientation} exercise={snap.exercise} />}
       {!noSensor && <LevelVial rollDeg={p.rollDeg} pitchDeg={p.pitchDeg} toleranceDeg={toleranceDeg} steady={p.steadyProgress} />}
       {noSensor && <Button label="Phone is set" onPress={onManual} style={{ alignSelf: 'flex-start' }} />}
       {!noSensor && allowSkip && (
@@ -70,6 +70,14 @@ const CHECKS: { key: string; label: string; issues: PlankIssue[] }[] = [
   { key: 'hands', label: 'Hands under shoulders', issues: ['hands-under-shoulders'] },
 ];
 
+/** Plank: arms straight or forearms down both work; hand position is not checked. */
+const PLANK_CHECKS: { key: string; label: string; issues: PlankIssue[] }[] = [
+  { key: 'down', label: 'In a plank', issues: ['get-down'] },
+  { key: 'arms', label: 'Straight arms or forearms down', issues: ['straighten-arms', 'elbows-under-shoulders'] },
+  { key: 'line', label: 'Body in one line', issues: ['hips-sagging', 'hips-high'] },
+  { key: 'legs', label: 'Legs straight', issues: ['straighten-legs'] },
+];
+
 /** Step 2: whole body visible, then a valid plank held for a moment. */
 export function BodyPanel({
   snap,
@@ -83,7 +91,8 @@ export function BodyPanel({
   /** Only the checks this difficulty actually applies are listed. */
   config: EngineConfig;
 }) {
-  const checks = CHECKS.filter(
+  const plank = snap.exercise === 'plank';
+  const checks = (plank ? PLANK_CHECKS : CHECKS).filter(
     (c) =>
       (c.key !== 'line' || config.plank.checkHips) &&
       (c.key !== 'hands' || config.plank.checkHands) &&
@@ -95,18 +104,24 @@ export function BodyPanel({
   const noRoom = useStuck(config.framing.requireFeet && (f.issue === 'show-feet' || f.issue === 'move-back'), 6000);
   const framed = f.ok;
   const first = snap.plankIssues[0];
-  const headline =
-    !framed && f.issue
+  const headline = snap.reality
+    ? REALITY_COPY[snap.reality]
+    : !framed && f.issue
       ? framingCopy(f.issue, orientation)
       : first
-        ? PLANK_COPY[first]
+        ? plankIssueCopy(first, snap.exercise)
         : { short: 'Hold it…', detail: 'Starting as soon as you are steady.' };
   return (
     <View style={styles.panel}>
       <StepTag n={2} of={3} label={framed ? 'Get into position' : 'Get in frame'} />
-      <Display size={type.liveCue} tone={framed && !first ? 'vial' : 'chalk'}>
+      <Display size={type.liveCue} tone={snap.reality ? 'fault' : framed && !first ? 'vial' : 'chalk'}>
         {headline.short}
       </Display>
+      {snap.reality && !guided && (
+        <Body tone="muted" style={styles.detail}>
+          {headline.detail}
+        </Body>
+      )}
       {guided && (
         <>
           <Body tone="muted" style={styles.detail}>

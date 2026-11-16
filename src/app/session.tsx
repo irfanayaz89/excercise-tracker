@@ -2,15 +2,15 @@ import { useKeepAwake } from 'expo-keep-awake';
 import { router, useFocusEffect, useLocalSearchParams, usePreventRemove } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AppState, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { AppState, Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera, useCameraDevice, useCameraPermission, type CameraDevice } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraDevices, useCameraPermission, type CameraDevice } from 'react-native-vision-camera';
 import { usePoseStream, type PoseStats } from '@/camera/usePoseStream';
-import type { SessionSummary } from '@/engine/session';
+import type { SessionSnapshot, SessionSummary } from '@/engine/session';
 import type { PhoneOrientation } from '@/engine/types';
 import { Gate, openSettings } from '@/features/session/Gate';
 import { useDemoFeed } from '@/features/session/useDemoFeed';
-import { CountColumn, CueBanner, DepthColumn, PausedPanel, TrackingDebug } from '@/features/session/LiveHud';
+import { CountColumn, CueBanner, DepthColumn, LineColumn, PausedPanel, TimerColumn, TrackingDebug } from '@/features/session/LiveHud';
 import { AlignmentGuide } from '@/features/session/AlignmentGuide';
 import { BodyPanel, PhonePanel } from '@/features/session/SetupPanels';
 import { usePhoneAttitude } from '@/sensors/usePhoneAttitude';
@@ -23,6 +23,11 @@ import { PlankGhost } from '@/ui/Diagrams';
 import { Button, Label } from '@/ui/primitives';
 import { SkeletonOverlay } from '@/ui/SkeletonOverlay';
 import { color, radius, space } from '@/ui/theme';
+
+/** Something worth saving: a counted rep, or a second of plank in good form. */
+function hasWork(s: SessionSnapshot): boolean {
+  return s.exercise === 'plank' ? (s.hold?.goodMs ?? 0) >= 1000 : s.reps > 0;
+}
 
 /** Back if there is somewhere to go back to (not after a cold-start deep link), else home. */
 function goBack() {
@@ -40,7 +45,14 @@ export default function SessionScreen() {
   const permission = useCameraPermission();
   const preferred = useCameraDevice(settings.camera);
   const other = useCameraDevice(settings.camera === 'front' ? 'back' : 'front');
-  const device = preferred ?? other;
+  // Real-person check: on iPhone, prefer the same-side camera that can also see
+  // depth (the front TrueDepth camera, or the back dual camera).
+  const devices = useCameraDevices();
+  const depthDevice =
+    settings.realPersonCheck && Platform.OS === 'ios'
+      ? devices.find((d) => d.position === settings.camera && d.mediaTypes.includes('depth'))
+      : undefined;
+  const device = depthDevice ?? preferred ?? other;
   useKeepAwake();
 
   // Lock the screen to the picked orientation only while this screen is in
@@ -58,7 +70,17 @@ export default function SessionScreen() {
     }, [orientation]),
   );
 
-  if (demo) return <LiveSession settings={settings} device={device ?? null} usingFallbackCamera={false} demo demoNoFeet={demoParam === 'nofeet'} />;
+  if (demo)
+    return (
+      <LiveSession
+        settings={settings}
+        device={device ?? null}
+        usingFallbackCamera={false}
+        withDepth={false}
+        demo
+        demoNoFeet={demoParam === 'nofeet'}
+      />
+    );
   if (!permission.hasPermission) {
     return permission.canRequestPermission ? (
       <Gate
@@ -88,19 +110,29 @@ export default function SessionScreen() {
       />
     );
   }
-  return <LiveSession settings={settings} device={device} usingFallbackCamera={!preferred} />;
+  return (
+    <LiveSession
+      settings={settings}
+      device={device}
+      usingFallbackCamera={!preferred && !depthDevice}
+      withDepth={depthDevice !== undefined && device === depthDevice}
+    />
+  );
 }
 
 function LiveSession({
   settings,
   device,
   usingFallbackCamera,
+  withDepth,
   demo = false,
   demoNoFeet = false,
 }: {
   settings: Settings;
   device: CameraDevice | null;
   usingFallbackCamera: boolean;
+  /** The camera can deliver depth for the real-person check. */
+  withDepth: boolean;
   demo?: boolean;
   demoNoFeet?: boolean;
 }) {
@@ -122,8 +154,8 @@ function LiveSession({
   // flow as the Finish button. With no reps, it just leaves.
   const [guarded, setGuarded] = useState(true);
   const allowLeave = usePreventRemove(guarded, ({ repeat }) => {
-    const reps = ctrlRef.current?.store.get().reps ?? 0;
-    if (endedRef.current || reps === 0) {
+    const snap = ctrlRef.current?.store.get();
+    if (endedRef.current || !snap || !hasWork(snap)) {
       endedRef.current = true;
       allowLeaveRef.current?.();
       repeat();
@@ -145,23 +177,26 @@ function LiveSession({
     };
   });
 
-  const onEnded = useCallback((summary: SessionSummary) => {
-    const c = ctrlRef.current;
-    if (endedRef.current || !c) return;
-    endedRef.current = true;
-    const wallStart = c.wallStart();
-    // A demo set is synthetic: show its summary but keep it out of your history.
-    const id = demo ? null : saveSession(summary, wallStart);
-    setLastSummary({ summary, wallStart, savedId: id, demo });
-    void c.saveTuningRecording(modelRef.current);
-    allowLeaveRef.current?.();
-    router.replace({ pathname: '/summary/[id]', params: { id: id ?? 'last' } });
-  }, [demo]);
+  const onEnded = useCallback(
+    (summary: SessionSummary) => {
+      const c = ctrlRef.current;
+      if (endedRef.current || !c) return;
+      endedRef.current = true;
+      const wallStart = c.wallStart();
+      // A demo set is synthetic: show its summary but keep it out of your history.
+      const id = demo ? null : saveSession(summary, wallStart);
+      setLastSummary({ summary, wallStart, savedId: id, demo });
+      void c.saveTuningRecording(modelRef.current);
+      allowLeaveRef.current?.();
+      router.replace({ pathname: '/summary/[id]', params: { id: id ?? 'last' } });
+    },
+    [demo],
+  );
 
   const ctrl = useSessionController(settings, onEnded);
-  const pose = usePoseStream({ modelPreference: settings.model, onPose: ctrl.onPose });
+  const pose = usePoseStream({ modelPreference: settings.model, onPose: ctrl.onPose, depth: withDepth, onDepth: ctrl.onDepth });
   const motion = usePhoneAttitude(!demo, settings.orientation, ctrl.onAttitude);
-  useDemoFeed(demo, settings.orientation === 'portrait', ctrl.onPose, ctrl.onAttitude, demoNoFeet);
+  useDemoFeed(demo, settings.orientation === 'portrait', ctrl.onPose, ctrl.onAttitude, demoNoFeet, settings.exercise);
   useLayoutEffect(() => {
     ctrlRef.current = ctrl;
     modelRef.current = pose.model;
@@ -172,7 +207,6 @@ function LiveSession({
     return () => sub.remove();
   }, []);
 
-  const outputs = useMemo(() => [pose.frameOutput], [pose.frameOutput]);
   const constraints = useMemo(() => [{ fps: 30 }], []);
   const onCameraError = useCallback(
     (e: Error) => {
@@ -244,7 +278,8 @@ function LiveSession({
             style={StyleSheet.absoluteFill}
             device={device}
             isActive={appActive}
-            outputs={outputs}
+            outputs={pose.outputs}
+            onStarted={pose.onCameraStarted}
             constraints={constraints}
             resizeMode={fit}
             // Frames follow the locked screen, not the phone's physical angle,
@@ -309,7 +344,12 @@ function StageDecor({
       />
       {showGhost && (
         <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
-          <PlankGhost width={width * 0.78} height={width * 0.78 * 0.56} facing={snap.side === 'right' ? 'right' : 'left'} />
+          <PlankGhost
+            width={width * 0.78}
+            height={width * 0.78 * 0.56}
+            facing={snap.side === 'right' ? 'right' : 'left'}
+            variant={snap.exercise === 'plank' ? 'forearm' : 'high'}
+          />
         </View>
       )}
       <AlignmentGuide
@@ -359,6 +399,8 @@ function Hud({
   const snap = useSnapshot(ctrl.store);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const counting = snap.phase === 'counting';
+  const plank = snap.exercise === 'plank';
+  const worked = hasWork(snap);
 
   useEffect(() => {
     if (!confirmEnd) return;
@@ -367,8 +409,8 @@ function Hud({
   }, [confirmEnd]);
 
   const requestEnd = () => {
-    // No reps yet: leave straight away (same as the back button). Otherwise ask for a second tap.
-    if (snap.reps === 0) {
+    // Nothing to save yet: leave straight away (same as the back button). Otherwise ask for a second tap.
+    if (!worked) {
       onLeave();
       return;
     }
@@ -405,7 +447,7 @@ function Hud({
         pointerEvents="box-none"
       >
         <View style={[styles.main, landscape && { flexDirection: 'row' }]} pointerEvents="box-none">
-          {counting && landscape && <DepthColumn snap={snap} />}
+          {counting && landscape && (plank ? <LineColumn snap={snap} warnAt={ctrl.config.hold.warnRatio} /> : <DepthColumn snap={snap} />)}
           <View style={styles.mainBody} pointerEvents="box-none">
             {demo && <Label tone="vial">Demo set · synthetic body, no camera</Label>}
             {loading && <Label tone="vial">Starting body tracker…</Label>}
@@ -429,10 +471,15 @@ function Hud({
         </View>
 
         <View style={[styles.side, landscape ? styles.sideLandscape : styles.sidePortrait]} pointerEvents="box-none">
-          {(counting || snap.reps > 0) && <CountColumn snap={snap} repMarks={ctrl.repMarks} compact={!landscape} />}
+          {(counting || worked) &&
+            (plank ? (
+              <TimerColumn snap={snap} compact={!landscape} />
+            ) : (
+              <CountColumn snap={snap} repMarks={ctrl.repMarks} compact={!landscape} />
+            ))}
           <View style={{ flex: 1 }} />
           <Button
-            label={confirmEnd ? 'Tap again to finish' : snap.reps > 0 ? 'Finish set' : 'Close'}
+            label={confirmEnd ? 'Tap again to finish' : worked ? (plank ? 'Finish' : 'Finish set') : 'Close'}
             variant={confirmEnd ? 'danger' : 'quiet'}
             size="sm"
             onPress={requestEnd}

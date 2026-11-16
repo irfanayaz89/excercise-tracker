@@ -1,6 +1,6 @@
 import type { EngineConfig } from './config';
 import { sideScore, type TrackedPose } from './tracker';
-import { LM, type BodyMetrics, type PhoneAttitude, type SideChain } from './types';
+import { LM, type BodyMetrics, type Exercise, type PhoneAttitude, type PlankVariant, type SideChain } from './types';
 
 // ─── Gate 1: phone placement ────────────────────────────────────────────────
 
@@ -184,25 +184,63 @@ export class FramingGate {
 // ─── Gate 3: valid starting plank ───────────────────────────────────────────
 
 export type PlankIssue =
-  'get-down' | 'straighten-arms' | 'straighten-legs' | 'hips-sagging' | 'hips-high' | 'hands-under-shoulders' | 'hold-still';
+  | 'get-down'
+  | 'straighten-arms'
+  | 'straighten-legs'
+  | 'hips-sagging'
+  | 'hips-high'
+  | 'hands-under-shoulders'
+  | 'elbows-under-shoulders'
+  | 'hold-still';
 
 export interface PlankCheck {
   ok: boolean;
   /** Most important issue first. */
   issues: PlankIssue[];
+  /** High plank, or forearm plank (only ever 'forearm' for the plank exercise). */
+  variant: PlankVariant;
 }
 
-export function checkPlank(m: BodyMetrics, cfg: EngineConfig): PlankCheck {
+/**
+ * Forearm plank: forearm flat on the floor (wrist level with the elbow) and the
+ * elbow bent to roughly a right angle. A push-up's bottom position also has a
+ * bent elbow, but its forearm stands upright, so it never reads as this.
+ */
+export function isForearmPlank(m: BodyMetrics, cfg: EngineConfig): boolean {
+  const p = cfg.plank;
+  return (
+    m.elbowDeg !== null &&
+    m.forearmRise !== null &&
+    m.forearmRise <= p.forearmMaxRise &&
+    m.elbowDeg >= p.forearmMinElbowDeg &&
+    m.elbowDeg <= p.forearmMaxElbowDeg
+  );
+}
+
+/**
+ * Is this a valid starting position? Push-ups always start from a high plank.
+ * The plank exercise also accepts a forearm plank, and checks the hips against
+ * the hold limits so a timed hold never starts already broken.
+ */
+export function checkPlank(m: BodyMetrics, cfg: EngineConfig, exercise: Exercise = 'pushup'): PlankCheck {
   const p = cfg.plank;
   const issues: PlankIssue[] = [];
+  const variant: PlankVariant = exercise === 'plank' && isForearmPlank(m, cfg) ? 'forearm' : 'high';
   if (m.trunkTiltDeg === null || m.trunkTiltDeg > p.maxTrunkTiltDeg) issues.push('get-down');
   if (m.kneeDeg !== null && m.kneeDeg < p.minKneeDeg && !cfg.allowKneeling) issues.push('straighten-legs');
   if (p.checkHips && m.bodyLineDeg !== null && m.bodyLineDeg < p.minBodyLineDeg && m.hipOffset !== null) {
     issues.push(m.hipOffset > 0 ? 'hips-sagging' : 'hips-high');
+  } else if (exercise === 'plank' && m.hipOffset !== null) {
+    if (m.hipOffset > cfg.hold.sagFault) issues.push('hips-sagging');
+    else if (m.hipOffset < -cfg.hold.pikeFault) issues.push('hips-high');
   }
-  if (m.elbowDeg === null || m.elbowDeg < p.minElbowDeg) issues.push('straighten-arms');
-  if (p.checkHands && m.wristOffset !== null && m.wristOffset > p.maxWristOffset) issues.push('hands-under-shoulders');
-  return { ok: issues.length === 0, issues };
+  if (variant === 'forearm') {
+    if (m.elbowStack !== null && m.elbowStack > p.maxElbowStack) issues.push('elbows-under-shoulders');
+  } else {
+    if (m.elbowDeg === null || m.elbowDeg < p.minElbowDeg) issues.push('straighten-arms');
+    if (p.checkHands && m.wristOffset !== null && m.wristOffset > p.maxWristOffset) issues.push('hands-under-shoulders');
+  }
+  return { ok: issues.length === 0, issues, variant };
 }
 
 /**
@@ -215,6 +253,8 @@ export class PlankHold {
   private heights: number[] = [];
   private torsos: number[] = [];
   private elbows: number[] = [];
+  private lines: number[] = [];
+  private hips: number[] = [];
   private lastT: number | null = null;
   /** Start of a run of failing frames inside an otherwise good hold. */
   private badSince: number | null = null;
@@ -234,6 +274,8 @@ export class PlankHold {
     this.heights = [];
     this.torsos = [];
     this.elbows = [];
+    this.lines = [];
+    this.hips = [];
   }
 
   /** @returns progress 0..1, and calibration once complete. */
@@ -271,12 +313,16 @@ export class PlankHold {
       this.heights = [];
       this.torsos = [];
       this.elbows = [];
+      this.lines = [];
+      this.hips = [];
       this.lastProgress = 0;
       return { progress: 0, wobbly: true, calibration: null, riding: false };
     }
     if (m.shoulderHeight !== null) this.heights.push(m.shoulderHeight);
     this.torsos.push(m.torsoPx);
     if (m.elbowDeg !== null) this.elbows.push(m.elbowDeg);
+    if (m.bodyLineDeg !== null) this.lines.push(m.bodyLineDeg);
+    if (m.hipOffset !== null) this.hips.push(m.hipOffset);
     const progress = Math.min(1, (m.t - this.since) / holdMs);
     this.lastProgress = progress;
     if (progress < 1) return { progress, wobbly: false, calibration: null, riding: false };
@@ -284,6 +330,8 @@ export class PlankHold {
       topShoulderHeight: this.heights.length ? avg(this.heights) : null,
       torsoPx: avg(this.torsos),
       topElbowDeg: this.elbows.length ? avg(this.elbows) : null,
+      bodyLineDeg: this.lines.length ? avg(this.lines) : null,
+      hipOffset: this.hips.length ? avg(this.hips) : null,
       side: m.side,
     };
     return { progress: 1, wobbly: false, calibration: cal, riding: false };
@@ -296,6 +344,9 @@ export interface Calibration {
   torsoPx: number;
   /** The user's own "straight arm" elbow angle while holding the start plank. */
   topElbowDeg: number | null;
+  /** Body line and hip offset held during the start plank: the plank's own baseline. */
+  bodyLineDeg?: number | null;
+  hipOffset?: number | null;
   side: BodyMetrics['side'];
 }
 

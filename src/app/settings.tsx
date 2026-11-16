@@ -47,7 +47,7 @@ export default function SettingsScreen() {
         />
         <ChoiceRow
           label="Difficulty"
-          hint="Easy just counts push-ups with a relaxed setup. Medium adds main form checks. Hard is the strict standard."
+          hint="Easy counts push-ups and times planks with a relaxed setup. Medium adds main form checks. Hard is the strict standard."
           value={s.difficulty}
           options={[
             ['easy', 'Easy'],
@@ -79,6 +79,12 @@ export default function SettingsScreen() {
           ]}
           onChange={(v) => update({ camera: v as Settings['camera'] })}
         />
+        <ToggleRow
+          label="Real-person check"
+          hint="Pauses the set when the camera seems to be watching a video on a screen instead of you, and does not count those seconds. Uses depth on iPhones that have it; on other phones it catches a screen held up to the camera."
+          value={s.realPersonCheck}
+          onChange={(v) => update({ realPersonCheck: v })}
+        />
         <ChoiceRow
           label="Tracking model"
           hint="Auto uses the accurate model and switches to the light one if your phone is too slow."
@@ -107,10 +113,19 @@ export default function SettingsScreen() {
           onChange={(v) => update({ countAloud: v })}
         />
         <ToggleRow
-          label="Allow knee push-ups"
-          hint="Count reps done from the knees instead of asking you to straighten your legs."
+          label="Allow knees down"
+          hint="Count knee push-ups and knee planks instead of asking you to straighten your legs. Easy always allows them."
           value={s.allowKneeling}
           onChange={(v) => update({ allowKneeling: v })}
+        />
+      </Section>
+
+      <Section title="Plank">
+        <ToggleRow
+          label="Test mode"
+          hint="For a max-hold test: the plank ends at the first real form break. Off, the clock just pauses until you fix your form."
+          value={s.plankTestMode}
+          onChange={(v) => update({ plankTestMode: v })}
         />
       </Section>
 

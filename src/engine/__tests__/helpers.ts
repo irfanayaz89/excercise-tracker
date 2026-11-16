@@ -2,7 +2,7 @@
 import { mergeConfig, type DeepPartial, type EngineConfig } from '../config';
 import { PushupSession, type SessionEvent } from '../session';
 import { emptySample, hold, levelPhone, timeline, type BodyParams, type Segment, type TimelineOptions } from '../testing/synth';
-import type { PoseSample } from '../types';
+import type { Exercise, PoseSample } from '../types';
 
 export interface Harness {
   session: PushupSession;
@@ -20,8 +20,21 @@ export interface Harness {
   cues(kind: string): SessionEvent[];
 }
 
-export function harness(opts: { config?: DeepPartial<EngineConfig>; targetReps?: number; base?: Partial<BodyParams> } = {}): Harness {
-  const session = new PushupSession({ config: mergeConfig(opts.config), targetReps: opts.targetReps });
+export interface HarnessOptions {
+  config?: DeepPartial<EngineConfig>;
+  targetReps?: number;
+  base?: Partial<BodyParams>;
+  exercise?: Exercise;
+  targetHoldMs?: number;
+}
+
+export function harness(opts: HarnessOptions = {}): Harness {
+  const session = new PushupSession({
+    config: mergeConfig(opts.config),
+    targetReps: opts.targetReps,
+    exercise: opts.exercise,
+    targetHoldMs: opts.targetHoldMs,
+  });
   const events: SessionEvent[] = [];
   session.subscribe((e) => events.push(e));
   const h: Harness = {

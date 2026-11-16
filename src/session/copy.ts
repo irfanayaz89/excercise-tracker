@@ -1,8 +1,10 @@
 import type { FramingIssue, PhoneIssue, PlankIssue } from '@/engine/gates';
 import type { MissReason, RepFault } from '@/engine/repCounter';
+import type { HoldFault } from '@/engine/holdTimer';
+import type { RealityIssue } from '@/engine/reality';
 import type { Cue, PauseReason } from '@/engine/session';
 import type { Difficulty } from '@/engine/difficulty';
-import type { PhoneOrientation } from '@/engine/types';
+import type { Exercise, PhoneOrientation } from '@/engine/types';
 
 /**
  * Every user-facing coaching message. `short` is shown in huge type on the
@@ -17,7 +19,7 @@ export interface Copy {
 export const PHONE_COPY: Record<PhoneIssue, Copy> = {
   'stand-up': {
     short: 'Stand it up',
-    detail: 'Stand the phone upright on its long edge, screen facing your push-up spot.',
+    detail: 'Stand the phone upright on its long edge, screen facing your workout spot.',
     say: 'Stand the phone up',
   },
   // Placeholder; the real text depends on the picked orientation (see phoneCopy).
@@ -64,7 +66,7 @@ export function phoneCopy(issue: PhoneIssue, o: PhoneOrientation): Copy {
   if (issue === 'no-sensor') {
     return {
       short: 'Place your phone',
-      detail: `${PLACEMENT[o].how} About ${PLACEMENT[o].distance} to the side of your push-up spot, then tap "Phone is set".`,
+      detail: `${PLACEMENT[o].how} About ${PLACEMENT[o].distance} to the side of your workout spot, then tap "Phone is set".`,
     };
   }
   return PHONE_COPY[issue];
@@ -77,7 +79,8 @@ export function framingCopy(issue: FramingIssue, o: PhoneOrientation): Copy {
   if (issue === 'show-feet' && o === 'portrait') {
     return {
       ...FRAMING_COPY[issue],
-      detail: 'Your feet are out of frame. Move the phone further away, or turn it to landscape, which fits your whole body at 1.5 to 2 metres.',
+      detail:
+        'Your feet are out of frame. Move the phone further away, or turn it to landscape, which fits your whole body at 1.5 to 2 metres.',
     };
   }
   return FRAMING_COPY[issue];
@@ -100,6 +103,34 @@ export const DIFFICULTY_COPY: Record<Difficulty, { label: string; short: string;
     detail: 'Full depth, locked arms, a straight body line and hands under shoulders.',
   },
 };
+
+export const EXERCISE_COPY: Record<Exercise, { label: string; unit: string }> = {
+  pushup: { label: 'Push-ups', unit: 'push-ups' },
+  plank: { label: 'Plank', unit: 'plank' },
+};
+
+/** Plank levels: the same three settings, described for a timed hold. */
+export const PLANK_DIFFICULTY_COPY: Record<Difficulty, { label: string; short: string; detail: string }> = {
+  easy: {
+    label: 'Easy',
+    short: 'Relaxed hold',
+    detail: 'Upper body in view is enough. Knee planks are fine; only a big sag or piked hips stop the clock.',
+  },
+  medium: {
+    label: 'Medium',
+    short: 'Hold with form checks',
+    detail: 'Whole body in view. The clock pauses if your hips sag or rise, with some slack.',
+  },
+  hard: {
+    label: 'Hard',
+    short: 'Strict hold',
+    detail: 'One straight line from shoulders to heels. The clock stops at a small sag.',
+  },
+};
+
+export function difficultyCopy(d: Difficulty, exercise: Exercise) {
+  return exercise === 'plank' ? PLANK_DIFFICULTY_COPY[d] : DIFFICULTY_COPY[d];
+}
 
 /** Gentle, non-blocking tips shown while setting up. */
 export const SOFT_HINT_COPY: Partial<Record<FramingIssue, string>> = {
@@ -153,8 +184,36 @@ export const PLANK_COPY: Record<PlankIssue, Copy> = {
   },
   'hips-high': { short: 'Lower your hips', detail: 'Bring your hips down into one straight line.', say: 'Lower your hips' },
   'hands-under-shoulders': { short: 'Hands under shoulders', detail: 'Move your hands so they sit under your shoulders.' },
+  'elbows-under-shoulders': {
+    short: 'Elbows under shoulders',
+    detail: 'Set your elbows directly under your shoulders, forearms flat on the floor.',
+    say: 'Elbows under your shoulders',
+  },
   'hold-still': { short: 'Hold still', detail: 'Hold the plank steady for a second.' },
 };
+
+/** The start-check messages, worded for the exercise being set up. */
+export function plankIssueCopy(issue: PlankIssue, exercise: Exercise): Copy {
+  if (exercise === 'pushup') return PLANK_COPY[issue];
+  switch (issue) {
+    case 'get-down':
+      return {
+        short: 'Get into a plank',
+        detail: 'Get down on the floor, side-on to the phone, on your hands or forearms with your body flat.',
+        say: 'Get into a plank',
+      };
+    case 'straighten-arms':
+      return {
+        short: 'Arms straight or forearms down',
+        detail: 'Hold a plank on straight arms, or rest on your forearms with your elbows under your shoulders.',
+        say: 'Straight arms, or down on your forearms',
+      };
+    case 'straighten-legs':
+      return { short: 'Legs straight', detail: 'Come off your knees. Easy mode accepts knee planks.', say: 'Straighten your legs' };
+    default:
+      return PLANK_COPY[issue];
+  }
+}
 
 export const FAULT_COPY: Record<RepFault, Copy> = {
   'hips-sagging': { short: 'Hips sagging', detail: 'Brace your core and squeeze your glutes.', say: 'Hips up' },
@@ -179,12 +238,81 @@ export const PAUSE_COPY: Record<PauseReason, Copy> = {
   },
   interrupted: { short: 'Paused', detail: 'Welcome back. Get into a plank to continue.' },
   'other-person': { short: 'Someone else?', detail: 'Another person came into view. Make sure only you are in frame.' },
+  'not-real': {
+    short: 'Real person needed',
+    detail:
+      'This looks like a video on a screen. Trueline only counts a real person in front of the camera, so the last few seconds were not counted. Put the screen away and get into position to carry on.',
+    say: 'Only a real person counts',
+  },
 };
+
+/** Plank faults. First pass; the plank UI work refines these. */
+export const HOLD_COPY: Record<HoldFault, Copy> = {
+  'hips-sagging': { short: 'Lift your hips', detail: 'Brace your core and squeeze your glutes.', say: 'Hips up' },
+  'hips-piking': { short: 'Lower your hips', detail: 'Bring your hips down into one straight line.', say: 'Hips down' },
+  'knees-bent': {
+    short: 'Straighten your legs',
+    detail: 'Squeeze your thighs and glutes so your knees lock straight.',
+    say: 'Legs straight',
+  },
+  'arms-bent': { short: 'Straighten your arms', detail: 'Push the floor away and lock your arms.', say: 'Arms straight' },
+  'hands-under-shoulders': {
+    short: 'Hands under shoulders',
+    detail: 'Walk your hands back so they sit under your shoulders.',
+    say: 'Hands under your shoulders',
+  },
+  'elbows-under-shoulders': {
+    short: 'Elbows under shoulders',
+    detail: 'Stack your shoulders over your elbows.',
+    say: 'Elbows under shoulders',
+  },
+  'out-of-view': {
+    short: 'Show your feet',
+    detail: 'The clock waits until your whole body is back in view.',
+    say: 'I can’t see your feet',
+  },
+  dropped: { short: 'Back into your plank', detail: 'Get back into your plank to keep the clock running.', say: 'Back into your plank' },
+};
+
+/** Setup headline when the camera seems to be looking at a screen. */
+export const REALITY_COPY: Record<RealityIssue, Copy> = {
+  screen: {
+    short: 'Real person needed',
+    detail: 'This looks like a video on a screen. Trueline only counts a real person in front of the camera.',
+    say: 'Only a real person counts',
+  },
+  handheld: {
+    short: 'Real person needed',
+    detail: 'This looks like a screen held up to the camera. Trueline only counts a real person in front of the camera.',
+    say: 'Only a real person counts',
+  },
+};
+
+/** Pause messages, worded for the exercise (a plank keeps its time, push-ups their count). */
+export function pauseCopy(reason: PauseReason, exercise: Exercise): Copy {
+  const c = PAUSE_COPY[reason];
+  if (exercise === 'pushup') return c;
+  switch (reason) {
+    case 'left-position':
+      return { ...c, detail: 'Get back into your plank when you are ready. Your time is saved.' };
+    case 'lost-tracking':
+      return { ...c, detail: 'Get back into view and into your plank to carry on. Your time is saved.' };
+    case 'not-real':
+      return {
+        ...c,
+        detail:
+          'This looks like a video on a screen. Trueline only times a real person in front of the camera, so the last few seconds were not counted. Put the screen away and get into your plank to carry on.',
+      };
+    default:
+      return c;
+  }
+}
 
 const NUMBERS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 
 export interface SpeechOptions {
   countAloud: boolean;
+  exercise?: Exercise;
   /** Guided users hear the full instruction during setup; quick users hear a few words. */
   guided: boolean;
   orientation: PhoneOrientation;
@@ -201,15 +329,17 @@ function setupLine(c: Copy, guided: boolean): { text: string; priority: 'normal'
 
 export function cueSpeech(cue: Cue, o: SpeechOptions): { text: string; priority: SpeechPriority } | null {
   const { countAloud, guided, orientation } = o;
+  const exercise = o.exercise ?? 'pushup';
   switch (cue.kind) {
     case 'phone':
       return setupLine(phoneCopy(cue.issue, orientation), guided);
     case 'framing':
       return setupLine(framingCopy(cue.issue, orientation), guided);
     case 'plank':
-      return setupLine(PLANK_COPY[cue.issue], guided);
+      return setupLine(plankIssueCopy(cue.issue, exercise), guided);
     case 'start':
       // Mid-set cues stay short for everyone: nobody can listen to a sentence mid-rep.
+      if (exercise === 'plank') return { text: guided ? 'Go. The clock runs while your body stays in one line.' : 'Go', priority: 'high' };
       return { text: guided ? 'Go. Reps count when your arms lock out at the top.' : 'Go', priority: 'high' };
     case 'resume':
       return { text: 'Carry on', priority: 'high' };
@@ -219,28 +349,63 @@ export function cueSpeech(cue: Cue, o: SpeechOptions): { text: string; priority:
       return FAULT_COPY[cue.fault].say ? { text: FAULT_COPY[cue.fault].say!, priority: 'normal' } : null;
     case 'miss':
       return MISS_COPY[cue.reason].say ? { text: MISS_COPY[cue.reason].say!, priority: 'normal' } : null;
-    case 'paused':
-      return PAUSE_COPY[cue.reason].say ? { text: PAUSE_COPY[cue.reason].say!, priority: 'normal' } : null;
+    case 'paused': {
+      const c = pauseCopy(cue.reason, exercise);
+      return c.say ? { text: c.say, priority: 'normal' } : null;
+    }
     case 'target-reached':
       // Queued after the final count, so the last number is not cut off.
-      return { text: 'Target reached. Nice set.', priority: 'queued' };
+      return { text: exercise === 'plank' ? 'Time. Nice hold.' : 'Target reached. Nice set.', priority: 'queued' };
+    case 'hold': {
+      const say = HOLD_COPY[cue.fault].say;
+      if (!say) return null;
+      // A break interrupts whatever is playing: the clock has just stopped.
+      return cue.state === 'break' ? { text: `Clock stopped. ${say}`, priority: 'high' } : { text: say, priority: 'normal' };
+    }
+    case 'hold-restored':
+      return { text: 'Good. Clock running', priority: 'normal' };
+    case 'hold-time':
+      return { text: spokenSeconds(cue.seconds), priority: 'high' };
+    case 'hold-countdown':
+      return { text: String(cue.seconds), priority: 'high' };
+    case 'not-real':
+      return { text: REALITY_COPY[cue.issue].say!, priority: 'high' };
   }
 }
 
 /** Short banner shown after a rep or miss, or null. */
-export function cueBanner(cue: Cue): (Copy & { tone: 'good' | 'cue' | 'fault' }) | null {
+export function cueBanner(cue: Cue, exercise: Exercise = 'pushup'): (Copy & { tone: 'good' | 'cue' | 'fault' }) | null {
   switch (cue.kind) {
+    case 'hold':
+      return cue.state === 'break'
+        ? { short: HOLD_COPY[cue.fault].short, detail: `Clock paused. ${HOLD_COPY[cue.fault].detail}`, tone: 'fault' }
+        : { ...HOLD_COPY[cue.fault], tone: 'cue' };
+    case 'hold-restored':
+      return { short: 'Good', detail: 'Clock running again.', tone: 'good' };
+    case 'not-real':
+      return { ...REALITY_COPY[cue.issue], tone: 'fault' };
     case 'fault':
       return { ...FAULT_COPY[cue.fault], tone: cue.fault === 'head-dropping' ? 'cue' : 'fault' };
     case 'miss':
       return { ...MISS_COPY[cue.reason], tone: 'cue' };
     case 'start':
-      return { short: 'Go', detail: 'Counting. Push-ups count when you lock out at the top.', tone: 'good' };
+      return exercise === 'plank'
+        ? { short: 'Go', detail: 'Timing. The clock runs while your body stays in one line.', tone: 'good' }
+        : { short: 'Go', detail: 'Counting. Push-ups count when you lock out at the top.', tone: 'good' };
     case 'resume':
-      return { short: 'Carry on', detail: 'Counting again.', tone: 'good' };
+      return { short: 'Carry on', detail: exercise === 'plank' ? 'Timing again.' : 'Counting again.', tone: 'good' };
     default:
       return null;
   }
+}
+
+/** 15 → "15 seconds", 60 → "1 minute", 75 → "1 minute 15". */
+function spokenSeconds(s: number): string {
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m === 0) return `${r} seconds`;
+  const mins = m === 1 ? '1 minute' : `${m} minutes`;
+  return r === 0 ? mins : `${mins} ${r}`;
 }
 
 export function formatDuration(ms: number): string {

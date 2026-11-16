@@ -11,16 +11,21 @@ import {
   type PhoneIssue,
   type PlankIssue,
 } from './gates';
+import { median } from './geometry';
+import { HoldTimer, type HoldEvent, type HoldFault, type HoldSnapshot, type HoldSummary } from './holdTimer';
+import { RealityCheck, type DepthProbe, type RealityIssue } from './reality';
 import { MetricMedian } from './smoothing';
 import { RepCounter, type MissRecord, type RepFault, type RepPhase, type RepRecord } from './repCounter';
 import { buildChain, computeMetrics, PoseTracker, SideSelector, type TrackedPose } from './tracker';
-import { LM, type BodyMetrics, type PhoneAttitude, type PoseSample, type Side } from './types';
+import { LM, type BodyMetrics, type Exercise, type PhoneAttitude, type PlankVariant, type PoseSample, type Side } from './types';
 
 export type SessionPhase = 'phone-setup' | 'body-check' | 'counting' | 'paused' | 'ended';
 
-export type PauseReason = 'lost-tracking' | 'left-position' | 'phone-moved' | 'interrupted' | 'other-person';
+/** not-real: the real-person check found a video on a screen, not a person. */
+export type PauseReason = 'lost-tracking' | 'left-position' | 'phone-moved' | 'interrupted' | 'other-person' | 'not-real';
 
-export type EndReason = 'user' | 'target' | 'idle' | 'paused-too-long';
+/** form-break: plank test mode, the hold ended at the first real form break. */
+export type EndReason = 'user' | 'target' | 'idle' | 'paused-too-long' | 'form-break';
 
 /** Every message the app can show or speak. The UI maps these to copy. */
 export type Cue =
@@ -33,16 +38,29 @@ export type Cue =
   | { kind: 'fault'; fault: RepFault }
   | { kind: 'miss'; reason: MissRecord['reason'] }
   | { kind: 'paused'; reason: PauseReason }
-  | { kind: 'target-reached' };
+  | { kind: 'target-reached' }
+  /** Setup: what the camera sees looks like a video on a screen, so the set will not start. */
+  | { kind: 'not-real'; issue: RealityIssue }
+  /** Plank: form slipping (clock still running) or broken (clock stopped). */
+  | { kind: 'hold'; state: 'warning' | 'break'; fault: HoldFault }
+  /** Plank: form is back, the clock runs again. */
+  | { kind: 'hold-restored' }
+  /** Plank: time call, in seconds of good form. */
+  | { kind: 'hold-time'; seconds: number }
+  /** Plank: seconds left to the target, from 5 down to 1. */
+  | { kind: 'hold-countdown'; seconds: number };
 
 export type SessionEvent =
   | { type: 'phase'; phase: SessionPhase; t: number }
   | { type: 'rep'; rep: RepRecord }
   | { type: 'miss'; miss: MissRecord }
   | { type: 'cue'; cue: Cue; t: number }
-  | { type: 'ended'; summary: SessionSummary };
+  | { type: 'ended'; summary: SessionSummary }
+  /** Reps taken back because they came from a screen, not a person. */
+  | { type: 'revoke'; reps: number };
 
 export interface SessionSnapshot {
+  exercise: Exercise;
   phase: SessionPhase;
   phone: PhoneCheck;
   phoneConfirmedManually: boolean;
@@ -64,6 +82,12 @@ export interface SessionSnapshot {
   elapsedMs: number;
   /** Body position in the frame; null when nobody is detected. */
   placement: BodyPlacement | null;
+  /** Plank only: the hold timer; null before the hold starts. */
+  hold: HoldSnapshot | null;
+  /** Plank only: target time in good form. */
+  targetHoldMs: number | null;
+  /** A sustained sign the camera sees a screen, not a person. */
+  reality: RealityIssue | null;
 }
 
 /** Where the body sits in the camera frame, for on-screen alignment hints. */
@@ -99,6 +123,8 @@ export interface BodyPlacement {
 }
 
 export interface SessionSummary {
+  /** Missing in sets saved before planks existed, which were all push-ups. */
+  exercise?: Exercise;
   /** Difficulty the set ran at, when known. */
   difficulty?: string;
   startedAt: number;
@@ -115,6 +141,10 @@ export interface SessionSummary {
   avgScore: number | null;
   bestCleanStreak: number;
   pauses: number;
+  /** Plank only. */
+  hold?: HoldSummary;
+  /** Times the set paused because it looked like a video on a screen. */
+  realityFlags?: number;
 }
 
 export interface SessionOptions {
@@ -122,7 +152,17 @@ export interface SessionOptions {
   targetReps?: number | null;
   /** Label stored with the summary (e.g. 'easy'). */
   difficulty?: string;
+  /** Defaults to push-ups. */
+  exercise?: Exercise;
+  /** Plank: end the set once this much good-form time is reached. */
+  targetHoldMs?: number | null;
 }
+
+/** Accepted frames the identity reference is the median of. */
+const IDENTITY_FRAMES = 5;
+
+/** Sum of both identity changes (each as a share of its limit) that also means another person. */
+const IDENTITY_COMBINED = 1.4;
 
 /**
  * The whole push-up session as one deterministic state machine.
@@ -145,6 +185,15 @@ export class PushupSession {
   /** Same, for the form readings during reps (body line, hips, neck). */
   private formSmoother = new MetricMedian();
   private counter: RepCounter | null = null;
+  private holdTimer: HoldTimer | null = null;
+  readonly exercise: Exercise;
+  private targetHoldMs: number | null;
+  /** Plank type seen in the latest start check. */
+  private startVariant: PlankVariant = 'high';
+  private lastMilestone = 0;
+  private reality: RealityCheck;
+  private realityFlags = 0;
+  private lastCountdown: number | null = null;
   private listeners = new Set<(e: SessionEvent) => void>();
   private lastCueAt = new Map<string, number>();
 
@@ -166,7 +215,8 @@ export class PushupSession {
   private outOfPositionSince: number | null = null;
   /** Last moment of progress (counting began or a rep landed), for the idle timeout. */
   private idleSince: number | null = null;
-  private lastIdentity: { t: number; hip: { x: number; y: number }; torso: number } | null = null;
+  /** The last few accepted frames' hip position and torso length (unsmoothed), newest last. */
+  private identity: { t: number; hip: { x: number; y: number }; torso: number }[] = [];
   /** True while frames keep jumping away from the last accepted body. */
   private identityJumping = false;
   /** Last frame with a person detected, to ride out single dropped detections. */
@@ -185,12 +235,15 @@ export class PushupSession {
   constructor(opts: SessionOptions = {}) {
     this.cfg = opts.config ?? DEFAULT_CONFIG;
     this.difficulty = opts.difficulty;
-    this.targetReps = opts.targetReps && opts.targetReps > 0 ? Math.floor(opts.targetReps) : null;
+    this.exercise = opts.exercise ?? 'pushup';
+    this.targetReps = this.exercise === 'pushup' && opts.targetReps && opts.targetReps > 0 ? Math.floor(opts.targetReps) : null;
+    this.targetHoldMs = this.exercise === 'plank' && opts.targetHoldMs && opts.targetHoldMs > 0 ? opts.targetHoldMs : null;
     this.tracker = new PoseTracker(this.cfg);
     this.sides = new SideSelector(this.cfg);
     this.phoneGate = new PhoneGate(this.cfg);
     this.framingGate = new FramingGate(this.cfg);
     this.plankHold = new PlankHold(this.cfg);
+    this.reality = new RealityCheck(this.cfg);
   }
 
   subscribe(fn: (e: SessionEvent) => void): () => void {
@@ -209,6 +262,19 @@ export class PushupSession {
       if (this.phase === 'counting') this.pause('phone-moved');
       else this.setPhase('phone-setup');
     }
+  }
+
+  /** Depth readings at the body (iPhone): part of the real-person check. */
+  pushDepth(p: DepthProbe): void {
+    if (this.phase === 'ended') return;
+    this.reality.pushDepth(p);
+    this.advanceClock(p.t);
+    if (this.phase === 'counting' && this.reality.issue(this.now)) this.flagNotReal(this.now);
+  }
+
+  /** Latest depth reading, for diagnostics. */
+  get realityDebug(): { standOut: number | null; torsoM: number | null } {
+    return this.reality.lastDepth;
   }
 
   /** The user confirms the phone is placed when there is no motion sensor. */
@@ -238,6 +304,16 @@ export class PushupSession {
     }
     if (this.phase === 'paused') {
       if (this.pauseReason === 'interrupted') return;
+      if (this.pauseReason === 'not-real') {
+        // Stay paused until there has been no sign of a screen for a while.
+        const side = pose.detected ? this.sides.update(pose) : this.sides.current;
+        const chain = side && pose.detected ? buildChain(pose, side) : null;
+        if (chain) this.feedContacts(chain, pose);
+        if (this.reality.issue(this.now) || this.reality.clearFor(this.now) < this.cfg.reality.clearMs) {
+          this.cue({ kind: 'paused', reason: 'not-real' });
+          return;
+        }
+      }
       if (this.pauseReason === 'phone-moved') {
         // The phone was knocked: it must be level again before we trust angles.
         this.phoneCheck = this.phoneGate.check(this.now);
@@ -291,6 +367,7 @@ export class PushupSession {
     this.plankHold.reset();
     this.plankProgress = 0;
     this.tracker.reset();
+    this.reality.reset();
   }
 
   /** App is back; the user has to get back into a plank to continue. */
@@ -298,6 +375,7 @@ export class PushupSession {
     this.advanceClock(t);
     this.tracker.reset();
     this.sides.reset();
+    this.reality.reset();
     this.plankHold.reset();
     this.plankProgress = 0;
     this.lastDetectedT = null;
@@ -340,6 +418,11 @@ export class PushupSession {
   get bodyState(): 0 | 1 | 2 | 3 {
     const m = this.metrics;
     if (!m || (this.phase !== 'counting' && this.phase !== 'body-check')) return 3;
+    if (this.exercise === 'plank') {
+      if (this.phase === 'body-check') return this.plankIssues.length > 0 ? 1 : 0;
+      const st = this.holdTimer?.currentState;
+      return st === 'broken' ? 2 : st === 'warning' ? 1 : 0;
+    }
     // Count-only mode (Easy) never colours the body as a fault.
     if (!this.cfg.form.enabled) return this.phase === 'body-check' && this.plankIssues.length > 0 ? 1 : 0;
     if (m.hipOffset !== null && Math.abs(m.hipOffset) > this.cfg.form.hipOffsetFault) return 2;
@@ -351,6 +434,7 @@ export class PushupSession {
   snapshot(): SessionSnapshot {
     const last = this.reps[this.reps.length - 1] ?? null;
     return {
+      exercise: this.exercise,
       phase: this.phase,
       phone: this.phoneCheck,
       phoneConfirmedManually: this.phoneManual,
@@ -369,6 +453,9 @@ export class PushupSession {
       startedAt: this.startedAt,
       elapsedMs: this.activeMs + (this.lastActiveT !== null ? this.now - this.lastActiveT : 0),
       placement: this.placement(),
+      hold: this.holdTimer?.snapshot() ?? null,
+      targetHoldMs: this.targetHoldMs,
+      reality: this.reality.issue(this.now),
     };
   }
 
@@ -442,8 +529,9 @@ export class PushupSession {
     }
 
     this.framingBadSince = null;
-    const plank = checkPlank(this.checkSmoother.push(metrics), this.cfg);
+    const plank = checkPlank(this.checkSmoother.push(metrics), this.cfg, this.exercise);
     this.plankIssues = plank.issues;
+    if (plank.ok) this.startVariant = plank.variant;
     if (!act) return;
 
     const hold = this.plankHold.update(metrics, chain.shoulder.y, plank.ok, holdMs);
@@ -454,20 +542,33 @@ export class PushupSession {
       return;
     }
     if (hold.wobbly) this.cue({ kind: 'plank', issue: 'hold-still' });
-    if (hold.calibration) this.beginCounting(hold.calibration, pose.t);
+    if (hold.calibration) {
+      // A video of someone in a plank must not start the set.
+      const issue = this.reality.issue(pose.t);
+      if (issue) {
+        this.plankHold.reset();
+        this.plankProgress = 0;
+        this.cue({ kind: 'not-real', issue });
+        return;
+      }
+      this.beginCounting(hold.calibration, pose.t);
+    }
   }
 
   private beginCounting(cal: Calibration, t: number): void {
     this.calibration = cal;
     const resuming = this.phase === 'paused';
-    if (this.counter) this.counter.restart(cal);
+    if (this.exercise === 'plank') {
+      if (this.holdTimer) this.holdTimer.restart(cal);
+      else this.holdTimer = new HoldTimer(this.cfg, cal, this.startVariant);
+    } else if (this.counter) this.counter.restart(cal);
     else this.counter = new RepCounter(this.cfg, cal);
     if (this.startedAt === null) this.startedAt = t;
     this.lostSince = null;
     this.outOfPositionSince = null;
     this.pauseReason = null;
     this.pausedAt = null;
-    this.lastIdentity = null;
+    this.identity = [];
     this.identityJumping = false;
     this.plankHold.reset();
     this.plankProgress = 0;
@@ -487,8 +588,10 @@ export class PushupSession {
 
     // Identity: a sudden jump in body position or size means another person
     // (or a bad detection). Ignore the frame instead of counting from it.
-    if (metrics && this.isIdentityJump(metrics)) {
+    const id = metrics ? { hip: metrics.hipCenter, torso: metrics.torsoPx } : null;
+    if (metrics && id && this.isIdentityJump(id, t)) {
       this.identityJumping = true;
+      this.reality.distrustContacts();
       this.markLost(t, 'other-person');
       return;
     }
@@ -504,7 +607,18 @@ export class PushupSession {
     this.lostSince = null;
     this.metrics = metrics;
     this.identityJumping = false;
-    this.lastIdentity = { t, hip: metrics.hipCenter, torso: metrics.torsoPx };
+    this.acceptIdentity({ t, hip: metrics.hipCenter, torso: metrics.torsoPx });
+
+    if (chain) this.feedContacts(chain, pose);
+    if (this.reality.issue(t)) {
+      this.flagNotReal(t);
+      return;
+    }
+
+    if (this.exercise === 'plank') {
+      this.evaluateHold(metrics, t);
+      return;
+    }
 
     // Out of push-up position (stood up, sat back on knees) for a while → pause.
     const upright = metrics.trunkTiltDeg !== null && metrics.trunkTiltDeg > this.cfg.plank.maxTrunkTiltDeg + 20;
@@ -545,16 +659,131 @@ export class PushupSession {
     }
   }
 
-  private isIdentityJump(m: BodyMetrics): boolean {
-    const prev = this.lastIdentity;
-    if (!prev) return false;
+  /** Plank: time the hold, judged on median-smoothed readings (a plank is still, so smoothing costs nothing). */
+  private evaluateHold(metrics: BodyMetrics, t: number): void {
+    const timer = this.holdTimer!;
+    const smooth = this.formSmoother.push(metrics);
+    const ev = timer.update(smooth);
+    if (timer.currentState !== 'broken') this.idleSince = t;
+
+    // A form break first: in test mode it ends the hold, which must win over the
+    // pause below when both land on the same frame.
+    if (ev && this.handleHoldEvent(ev)) return;
+
+    // Out of a plank altogether (stood up, knees down) for a while → pause, as for push-ups.
+    const upright = smooth.trunkTiltDeg !== null && smooth.trunkTiltDeg > this.cfg.plank.maxTrunkTiltDeg + 20;
+    const kneeling = !this.cfg.allowKneeling && smooth.kneeDeg !== null && smooth.kneeDeg < 110;
+    if (upright || kneeling) {
+      if (this.outOfPositionSince === null) this.outOfPositionSince = t;
+      if (t - this.outOfPositionSince >= this.cfg.session.pauseAfterMs) {
+        this.pause('left-position');
+        return;
+      }
+    } else {
+      this.outOfPositionSince = null;
+    }
+
+    const good = timer.good;
+    if (this.targetHoldMs !== null) {
+      const left = this.targetHoldMs - good;
+      if (left <= 0) {
+        this.cue({ kind: 'target-reached' }, true);
+        this.end('target');
+        return;
+      }
+      const secs = Math.ceil(left / 1000);
+      if (secs <= 5 && secs !== this.lastCountdown) {
+        this.lastCountdown = secs;
+        this.cue({ kind: 'hold-countdown', seconds: secs }, true);
+        return;
+      }
+    }
+    const step = this.cfg.hold.milestoneSec * 1000;
+    const milestone = step > 0 ? Math.floor(good / step) : 0;
+    if (milestone > this.lastMilestone) {
+      this.lastMilestone = milestone;
+      // Close to the target the countdown takes over.
+      if (this.targetHoldMs === null || this.targetHoldMs - good > 6000) {
+        this.cue({ kind: 'hold-time', seconds: milestone * this.cfg.hold.milestoneSec }, true);
+      }
+    }
+  }
+
+  /** @returns true when the set ended. */
+  private handleHoldEvent(ev: HoldEvent): boolean {
+    if (ev.type === 'warning') {
+      this.cue({ kind: 'hold', state: 'warning', fault: ev.fault });
+    } else if (ev.type === 'break') {
+      this.cue({ kind: 'hold', state: 'break', fault: ev.fault }, true);
+      if (this.cfg.hold.endOnBreak) {
+        this.end('form-break');
+        return true;
+      }
+    } else {
+      this.cue({ kind: 'hold-restored' });
+    }
+    return false;
+  }
+
+  /** Hands and feet for the handheld-screen check, with whether the phone itself is still. */
+  private feedContacts(chain: ReturnType<typeof buildChain>, pose: TrackedPose): void {
+    const min = this.cfg.minVisibility;
+    const pts: { x: number; y: number }[] = [];
+    if (chain.vis.wrist >= min) pts.push({ x: chain.wrist.x / pose.width, y: chain.wrist.y / pose.height });
+    if (chain.vis.ankle >= min) pts.push({ x: chain.ankle.x / pose.width, y: chain.ankle.y / pose.height });
+    const a = this.phoneGate.attitude;
+    const fresh = a !== null && pose.t - a.t <= this.cfg.phone.staleMs;
+    this.reality.pushContacts(pose.t, pts, fresh ? a.motionDegPerSec < this.cfg.reality.stillPhoneDegPerSec : null);
+  }
+
+  /**
+   * The camera has been watching a screen: take back what was counted while
+   * the evidence built up, and pause until a real person is back.
+   */
+  private flagNotReal(t: number): void {
+    const since = this.reality.suspectSince(t) ?? t;
+    const kept = this.reps.filter((r) => r.endT < since);
+    const removed = this.reps.length - kept.length;
+    if (removed > 0) {
+      this.reps = kept;
+      if (this.counter) this.counter.count = kept.length;
+      this.emit({ type: 'revoke', reps: removed });
+    }
+    this.holdTimer?.rewind(since);
+    this.realityFlags += 1;
+    this.pause('not-real');
+  }
+
+  /** Remember an accepted frame; after a real gap, start over. */
+  private acceptIdentity(f: PushupSession['identity'][number]): void {
+    const last = this.identity[this.identity.length - 1];
+    if (last && f.t - last.t > 400) this.identity = [];
+    this.identity.push(f);
+    if (this.identity.length > IDENTITY_FRAMES) this.identity.shift();
+  }
+
+  private isIdentityJump(id: { hip: { x: number; y: number }; torso: number }, t: number): boolean {
+    const hist = this.identity;
+    const last = hist[hist.length - 1];
+    if (!last) return false;
     // After a real gap (no body at all) the user may come back anywhere. But
     // while frames keep showing a different body, keep comparing against the
-    // last accepted one so the jump persists until the pause fires.
-    if (!this.identityJumping && m.t - prev.t > 400) return false;
-    const jump = Math.hypot(m.hipCenter.x - prev.hip.x, m.hipCenter.y - prev.hip.y);
-    const scale = Math.abs(m.torsoPx - prev.torso) / prev.torso;
-    return jump > this.cfg.session.identityJump || scale > this.cfg.session.identityScale;
+    // last accepted ones so the jump persists until the pause fires.
+    if (!this.identityJumping && t - last.t > 400) return false;
+    // The median of the last few frames: one misread joint must not become the
+    // reference, and a swap the landmark filter spreads over a few frames still
+    // shows in full against it.
+    const prev = {
+      hip: { x: median(hist.map((f) => f.hip.x)), y: median(hist.map((f) => f.hip.y)) },
+      torso: median(hist.map((f) => f.torso)),
+    };
+    const jump = Math.hypot(id.hip.x - prev.hip.x, id.hip.y - prev.hip.y);
+    const scale = Math.abs(id.torso - prev.torso) / prev.torso;
+    const j = jump / this.cfg.session.identityJump;
+    const sc = scale / this.cfg.session.identityScale;
+    // Either change alone past its limit, or both clearly at once: a real
+    // person never moves across the frame and changes size together.
+    return j > 1 || sc > 1 || j + sc > IDENTITY_COMBINED;
   }
 
   private markLost(t: number, reason: PauseReason): void {
@@ -573,6 +802,7 @@ export class PushupSession {
     this.lostSince = null;
     this.outOfPositionSince = null;
     this.depth = null;
+    this.holdTimer?.pause();
     this.plankHold.reset();
     this.plankProgress = 0;
     this.setPhase('paused');
@@ -639,6 +869,7 @@ export class PushupSession {
     }
     const n = reps.length;
     return {
+      exercise: this.exercise,
       difficulty: this.difficulty,
       startedAt: this.startedAt ?? this.now,
       endedAt: this.now,
@@ -654,6 +885,8 @@ export class PushupSession {
       avgScore: n ? reps.reduce((s, r) => s + r.score, 0) / n : null,
       bestCleanStreak: best,
       pauses: this.pauses,
+      hold: this.holdTimer?.summary(),
+      realityFlags: this.realityFlags,
     };
   }
 }

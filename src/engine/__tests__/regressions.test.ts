@@ -18,6 +18,39 @@ describe('regressions', () => {
     expect(h.reps()).toBe(1);
   });
 
+  it('catches a smaller swap to another person that smoothing would spread out', () => {
+    const h = harness();
+    startCounting(h);
+    h.segments([rep(1600)]);
+    // About 80% of the position limit and 85% of the size limit at once.
+    h.segments([rep(1600), rep(1600)], { base: { wristX: 1280 * 0.42, torsoPx: 168 } });
+    const paused = h.events.some((e) => e.type === 'cue' && e.cue.kind === 'paused' && e.cue.reason === 'other-person');
+    expect(paused).toBe(true);
+    expect(h.reps()).toBe(1);
+  });
+
+  it('a single misread hip never makes the user look like someone else', () => {
+    const h = harness();
+    startCounting(h);
+    // One frame in seven the hip is read 30% of the way towards the shoulder
+    // (a shorter torso), as seen in a randomised set; the user keeps doing reps.
+    h.segments([rep(1600), rep(1600), rep(1600), rep(1600)], {
+      mapFrame: (s, t) => {
+        if (Math.round(t / 33.333) % 7 !== 0 || s.landmarks.length === 0) return s;
+        const lms = s.landmarks.map((l) => ({ ...l }));
+        for (const [hip, sh] of [
+          [23, 11],
+          [24, 12],
+        ]) {
+          lms[hip] = { ...lms[hip], x: lms[hip].x + (lms[sh].x - lms[hip].x) * 0.3, y: lms[hip].y + (lms[sh].y - lms[hip].y) * 0.3 };
+        }
+        return { ...s, landmarks: lms };
+      },
+    });
+    expect(h.events.some((e) => e.type === 'cue' && e.cue.kind === 'paused')).toBe(false);
+    expect(h.reps()).toBe(4);
+  });
+
   it('does not start counting from a plank hold interrupted by the app going to background', () => {
     const h = harness();
     h.segments([hold(1000 + 1000 * 0.35)]); // phone settles (1 s) + part of the plank hold

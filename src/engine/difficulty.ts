@@ -1,4 +1,5 @@
 import { mergeConfig, type DeepPartial, type EngineConfig } from './config';
+import type { Exercise } from './types';
 
 /**
  * How strict the session is.
@@ -37,12 +38,66 @@ const PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
   hard: {},
 };
 
-/** Engine config for a difficulty. Easy always accepts knee push-ups. */
-export function difficultyConfig(d: Difficulty, opts: { allowKneeling?: boolean } = {}): EngineConfig {
-  return mergeConfig({ ...PRESETS[d], allowKneeling: d === 'easy' ? true : (opts.allowKneeling ?? false) });
+/**
+ * Plank-only changes on top of the level above. A plank is judged on body line
+ * the whole time, so even Easy checks the hips, just with wide limits; the
+ * start check uses the same line limit so a hold never starts already broken.
+ */
+const PLANK_PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
+  easy: {
+    plank: { checkHips: true, minBodyLineDeg: 145, maxElbowStack: 0.6, forearmMaxRise: 0.25 },
+    hold: {
+      minBodyLineDeg: 145,
+      sagFault: 0.2,
+      pikeFault: 0.25,
+      driftFault: 0.18,
+      sagTrendPerSec: 0.03,
+      graceMs: 2000,
+      armBendDeg: 25,
+      checkHands: false,
+    },
+  },
+  medium: {
+    plank: { minBodyLineDeg: 155, maxElbowStack: 0.45 },
+    hold: {
+      minBodyLineDeg: 155,
+      sagFault: 0.14,
+      pikeFault: 0.18,
+      driftFault: 0.14,
+      sagTrendPerSec: 0.02,
+      graceMs: 1500,
+      armBendDeg: 20,
+      checkHands: false,
+    },
+  },
+  hard: {
+    plank: { minBodyLineDeg: 165 },
+  },
+};
+
+/** Section-by-section merge of two partial configs (the second wins). */
+function combine(a: DeepPartial<EngineConfig>, b: DeepPartial<EngineConfig>): DeepPartial<EngineConfig> {
+  const out: Record<string, unknown> = { ...a };
+  for (const [k, v] of Object.entries(b)) {
+    const prev = (a as Record<string, unknown>)[k];
+    out[k] = v && typeof v === 'object' && prev && typeof prev === 'object' ? { ...prev, ...v } : v;
+  }
+  return out as DeepPartial<EngineConfig>;
+}
+
+export interface DifficultyOptions {
+  allowKneeling?: boolean;
+  /** Defaults to push-ups. */
+  exercise?: Exercise;
+}
+
+/** Engine config for a difficulty. Easy always accepts knee push-ups (and knee planks). */
+export function difficultyConfig(d: Difficulty, opts: DifficultyOptions = {}): EngineConfig {
+  return mergeConfig(difficultyOverrides(d, opts));
 }
 
 /** The overrides only, for saving with a recording. */
-export function difficultyOverrides(d: Difficulty, opts: { allowKneeling?: boolean } = {}): DeepPartial<EngineConfig> {
-  return { ...PRESETS[d], allowKneeling: d === 'easy' ? true : (opts.allowKneeling ?? false) };
+export function difficultyOverrides(d: Difficulty, opts: DifficultyOptions = {}): DeepPartial<EngineConfig> {
+  const base = opts.exercise === 'plank' ? combine(PRESETS[d], PLANK_PRESETS[d]) : PRESETS[d];
+  return { ...base, allowKneeling: d === 'easy' ? true : (opts.allowKneeling ?? false) };
 }

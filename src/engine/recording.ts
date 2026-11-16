@@ -9,7 +9,7 @@
  */
 import { mergeConfig, type DeepPartial, type EngineConfig } from './config';
 import { PushupSession, type SessionSummary } from './session';
-import { LANDMARK_COUNT, LM, type Landmark, type PhoneAttitude, type PoseSample } from './types';
+import { LANDMARK_COUNT, LM, type Exercise, type Landmark, type PhoneAttitude, type PoseSample } from './types';
 
 /** Only the landmarks the engine reads are stored, to keep files small. */
 export const RECORDED_LANDMARKS: number[] = [
@@ -42,6 +42,8 @@ export interface Recording {
   manualPhoneAt?: number;
   /** [t, 0 = interrupted (app backgrounded, camera interrupted) | 1 = resumed] */
   events?: number[][];
+  /** Missing in recordings made before planks existed (push-ups). */
+  exercise?: Exercise;
   /** Filled in by hand after the set, for replay tests. */
   expected?: { reps: number; cleanReps?: number; tolerance?: number; notes?: string };
   /** Config overrides the session ran with (e.g. allowKneeling). */
@@ -95,7 +97,7 @@ export class Recorder {
     this.events.push([round(t, 1), 1]);
   }
 
-  finish(meta: { platform: string; model: string; config?: DeepPartial<EngineConfig> }): Recording {
+  finish(meta: { platform: string; model: string; config?: DeepPartial<EngineConfig>; exercise?: Exercise }): Recording {
     return {
       version: 1,
       createdAt: new Date().toISOString(),
@@ -106,6 +108,7 @@ export class Recorder {
       manualPhoneAt: this.manualPhoneAt,
       events: this.events.length ? this.events : undefined,
       config: meta.config,
+      exercise: meta.exercise,
     };
   }
 }
@@ -130,7 +133,7 @@ export function replay(rec: Recording, overrides?: DeepPartial<EngineConfig>): S
     const prev = merged[k];
     merged[k] = v && typeof v === 'object' && prev && typeof prev === 'object' ? { ...prev, ...v } : v;
   }
-  const session = new PushupSession({ config: mergeConfig(merged as DeepPartial<EngineConfig>) });
+  const session = new PushupSession({ config: mergeConfig(merged as DeepPartial<EngineConfig>), exercise: rec.exercise });
   const TICK = 250; // matches the live controller's timer
   const events = rec.events ?? [];
   let ai = 0;

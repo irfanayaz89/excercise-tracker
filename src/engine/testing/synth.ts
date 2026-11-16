@@ -36,6 +36,18 @@ export interface BodyParams {
   rand?: () => number;
   /** Shoulders spread apart, as when facing the camera (torso lengths). */
   shoulderWidth?: number;
+  /** Forearm plank: forearm flat on the floor, upper arm up to the shoulder. `elbowDeg` is ignored. */
+  forearm?: boolean;
+  /** Forearm plank: shoulders ahead of the elbows (towards the head) by this many torso lengths; negative = behind. */
+  elbowStack?: number;
+  /** Forearm plank: share of the forearm seen side-on (hands clasped in front point the forearm partly away). */
+  forearmScale?: number;
+  /**
+   * Camera not quite side-on: horizontal distances shrink by this factor
+   * (cos of the angle, e.g. 0.77 for 40° off side-on), as in a photo taken from
+   * the front-side.
+   */
+  viewScale?: number;
 }
 
 export function mulberry32(seed: number): () => number {
@@ -70,15 +82,26 @@ export function buildBody(params: BodyParams) {
   const F = 0.54 * T;
   const theta = rad(Math.max(10, Math.min(180, params.elbowDeg)));
 
-  const wrist = { x: wristX, y: floorY };
-  const d = Math.sqrt(U * U + F * F - 2 * U * F * Math.cos(theta));
-  const shoulder = { x: wristX, y: floorY - d };
+  let wrist: Vec2;
+  let shoulder: Vec2;
+  let elbow: Vec2;
+  if (params.forearm) {
+    // Elbow on the floor, forearm pointing towards the head, upper arm up to the shoulder.
+    const stack = (params.elbowStack ?? 0) * T;
+    elbow = { x: wristX, y: floorY };
+    wrist = { x: wristX - dir * F * (params.forearmScale ?? 1), y: floorY };
+    shoulder = { x: wristX - dir * stack, y: floorY - Math.sqrt(Math.max(1, U * U - stack * stack)) };
+  } else {
+    wrist = { x: wristX, y: floorY };
+    const d = Math.sqrt(U * U + F * F - 2 * U * F * Math.cos(theta));
+    shoulder = { x: wristX, y: floorY - d };
 
-  // Elbow: intersection of circle(shoulder, U) and circle(wrist, F), on the feet side.
-  const a = (U * U - F * F + d * d) / (2 * d);
-  const h = Math.sqrt(Math.max(0, U * U - a * a));
-  const mid = { x: shoulder.x + (a * (wrist.x - shoulder.x)) / d, y: shoulder.y + (a * (wrist.y - shoulder.y)) / d };
-  const elbow = { x: mid.x + dir * h, y: mid.y };
+    // Elbow: intersection of circle(shoulder, U) and circle(wrist, F), on the feet side.
+    const a = (U * U - F * F + d * d) / (2 * d);
+    const h = Math.sqrt(Math.max(0, U * U - a * a));
+    const mid = { x: shoulder.x + (a * (wrist.x - shoulder.x)) / d, y: shoulder.y + (a * (wrist.y - shoulder.y)) / d };
+    elbow = { x: mid.x + dir * h, y: mid.y };
+  }
 
   const lineLen = 2.8 * T;
   const ankleY = floorY - 0.06 * T;
@@ -121,6 +144,11 @@ export function buildBody(params: BodyParams) {
   if (tilt) {
     const pivot = ankle;
     pts = mapPts(pts, (p) => rotate(p, pivot, dir * tilt));
+  }
+  const view = params.viewScale ?? 1;
+  if (view !== 1) {
+    const cx = width / 2;
+    pts = mapPts(pts, (p) => ({ x: cx + (p.x - cx) * view, y: p.y }));
   }
   const roll = params.imageRollDeg ?? 0;
   if (roll) {
@@ -191,6 +219,24 @@ export const hold = (durationMs: number, extra: Partial<BodyParams> = {}): Segme
   durationMs,
   at: () => ({ elbowDeg: 172, ...extra }),
 });
+
+/**
+ * A timed plank. `extra` can change over the segment (k = 0..1), e.g. hips
+ * slowly sagging: plank(20000, (k) => ({ sag: 0.2 * k })).
+ */
+export const plank = (
+  durationMs: number,
+  extra: Partial<BodyParams> | ((k: number) => Partial<BodyParams>) = {},
+): Segment => ({
+  durationMs,
+  at: (k) => ({ elbowDeg: 172, ...(typeof extra === 'function' ? extra(k) : extra) }),
+});
+
+/** Forearm plank shorthand. */
+export const forearmPlank = (
+  durationMs: number,
+  extra: Partial<BodyParams> | ((k: number) => Partial<BodyParams>) = {},
+): Segment => plank(durationMs, (k) => ({ forearm: true, ...(typeof extra === 'function' ? extra(k) : extra) }));
 
 /** One rep from `topDeg` down to `bottomDeg` and back, with a cosine profile. */
 export const rep = (

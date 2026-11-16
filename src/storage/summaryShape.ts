@@ -1,9 +1,20 @@
+import type { HoldFault, HoldSummary } from '@/engine/holdTimer';
 import type { EndReason, SessionSummary } from '@/engine/session';
 import type { MissReason, RepFault, RepRecord } from '@/engine/repCounter';
 
 const FAULTS: RepFault[] = ['hips-sagging', 'hips-piking', 'rushed', 'head-dropping'];
 const MISSES: MissReason[] = ['not-deep-enough', 'no-lockout', 'too-slow'];
-const ENDS: EndReason[] = ['user', 'target', 'idle', 'paused-too-long'];
+const HOLD_FAULTS: HoldFault[] = [
+  'hips-sagging',
+  'hips-piking',
+  'knees-bent',
+  'arms-bent',
+  'elbows-under-shoulders',
+  'hands-under-shoulders',
+  'dropped',
+  'out-of-view',
+];
+const ENDS: EndReason[] = ['user', 'target', 'idle', 'paused-too-long', 'form-break'];
 
 const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 const numOrNull = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -26,7 +37,16 @@ function counts<K extends string>(v: unknown, keys: K[]): Partial<Record<K, numb
  */
 export function normalizeSummary(
   raw: unknown,
-  row: { startedAt: number; endedAt: number; totalReps: number; cleanReps: number; activeMs: number; endReason: string },
+  row: {
+    startedAt: number;
+    endedAt: number;
+    totalReps: number;
+    cleanReps: number;
+    activeMs: number;
+    endReason: string;
+    exercise?: string;
+    holdMs?: number;
+  },
 ): SessionSummary {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const reps: RepRecord[] = Array.isArray(o.reps)
@@ -34,7 +54,9 @@ export function normalizeSummary(
         .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
         .map((r, i) => {
           const durationMs = num(r.durationMs, 0);
-          const faults = Array.isArray(r.faults) ? (r.faults as unknown[]).filter((f): f is RepFault => FAULTS.includes(f as RepFault)) : [];
+          const faults = Array.isArray(r.faults)
+            ? (r.faults as unknown[]).filter((f): f is RepFault => FAULTS.includes(f as RepFault))
+            : [];
           return {
             index: num(r.index, i + 1),
             startT: num(r.startT, 0),
@@ -58,7 +80,10 @@ export function normalizeSummary(
       ? (row.endReason as EndReason)
       : 'user';
   const totalReps = num(o.totalReps, row.totalReps);
+  const exercise = o.exercise === 'plank' || (o.exercise === undefined && row.exercise === 'plank') ? 'plank' : 'pushup';
   return {
+    exercise,
+    hold: exercise === 'plank' ? normalizeHold(o.hold, row.holdMs ?? 0) : undefined,
     difficulty: typeof o.difficulty === 'string' ? o.difficulty : undefined,
     startedAt: num(o.startedAt, row.startedAt),
     endedAt: num(o.endedAt, row.endedAt),
@@ -67,7 +92,8 @@ export function normalizeSummary(
     reps,
     misses: Array.isArray(o.misses)
       ? (o.misses as unknown[]).filter(
-          (m): m is SessionSummary['misses'][number] => !!m && typeof m === 'object' && MISSES.includes((m as { reason: MissReason }).reason),
+          (m): m is SessionSummary['misses'][number] =>
+            !!m && typeof m === 'object' && MISSES.includes((m as { reason: MissReason }).reason),
         )
       : [],
     totalReps,
@@ -78,5 +104,22 @@ export function normalizeSummary(
     avgScore: numOrNull(o.avgScore),
     bestCleanStreak: num(o.bestCleanStreak, 0),
     pauses: num(o.pauses, 0),
+  };
+}
+
+/** A plank's stored details; the row's hold time stands in when the JSON lost them. */
+function normalizeHold(raw: unknown, rowHoldMs: number): HoldSummary {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const goodMs = Math.max(0, num(o.goodMs, rowHoldMs));
+  const totalMs = Math.max(goodMs, num(o.totalMs, goodMs));
+  return {
+    variant: o.variant === 'forearm' ? 'forearm' : 'high',
+    goodMs,
+    totalMs,
+    longestMs: Math.min(goodMs, Math.max(0, num(o.longestMs, goodMs))),
+    breaks: Math.max(0, Math.round(num(o.breaks, 0))),
+    faultMs: counts(o.faultMs, HOLD_FAULTS),
+    headDownMs: Math.max(0, num(o.headDownMs, 0)),
+    formPct: totalMs > 0 ? goodMs / totalMs : 0,
   };
 }

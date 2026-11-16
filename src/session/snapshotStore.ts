@@ -31,6 +31,7 @@ function visibleKey(s: SessionSnapshot): string {
     r(s.metrics?.elbowDeg, 1),
     s.side,
     s.lastRep?.index,
+    s.hold ? [Math.floor(s.hold.goodMs / 1000), s.hold.state, s.hold.fault, r(s.hold.line, 0.1), s.hold.breaks].join(',') : '-',
     s.placement ? [r(s.placement.box.x0, 0.02), r(s.placement.box.x1, 0.02), r(s.placement.box.y0, 0.02), r(s.placement.box.y1, 0.02), s.placement.headSide].join(',') : '-',
   ].join('|');
 }

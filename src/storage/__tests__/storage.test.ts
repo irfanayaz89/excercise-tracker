@@ -23,8 +23,22 @@ describe('stored settings', () => {
   });
 
   it('keeps valid values', () => {
-    const s = normalizeSettings({ voice: false, targetReps: 30, camera: 'back', difficulty: 'hard', experience: 'quick', orientation: 'portrait' });
-    expect(s).toMatchObject({ voice: false, targetReps: 30, camera: 'back', difficulty: 'hard', experience: 'quick', orientation: 'portrait' });
+    const s = normalizeSettings({
+      voice: false,
+      targetReps: 30,
+      camera: 'back',
+      difficulty: 'hard',
+      experience: 'quick',
+      orientation: 'portrait',
+    });
+    expect(s).toMatchObject({
+      voice: false,
+      targetReps: 30,
+      camera: 'back',
+      difficulty: 'hard',
+      experience: 'quick',
+      orientation: 'portrait',
+    });
   });
 });
 
@@ -51,7 +65,10 @@ describe('stored summaries', () => {
         faultCounts: { 'hips-sagging': 1, 'elbows-flared': 3 },
         missCounts: { 'no-lockout': 2, 'wrong-exercise': 1 },
         reps: [{ durationMs: 900, faults: ['hips-sagging', 'elbows-flared'] }, null, { durationMs: 'slow' }],
-        misses: [{ t: 1, reason: 'no-lockout', minElbowDeg: 90 }, { t: 2, reason: 'wrong-exercise' }],
+        misses: [
+          { t: 1, reason: 'no-lockout', minElbowDeg: 90 },
+          { t: 2, reason: 'wrong-exercise' },
+        ],
         endReason: 'aliens',
       },
       row,

@@ -4,11 +4,13 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { MissReason, RepFault, RepRecord } from '@/engine/repCounter';
 import type { SessionSummary } from '@/engine/session';
-import { DIFFICULTY_COPY, FAULT_COPY, MISS_COPY, formatDuration } from '@/session/copy';
+import type { HoldFault, HoldSummary } from '@/engine/holdTimer';
+import { DIFFICULTY_COPY, FAULT_COPY, HOLD_COPY, MISS_COPY, formatDuration } from '@/session/copy';
 import { getLastSummary } from '@/session/lastSummary';
 import { getSession } from '@/storage/history';
 import { useSettings } from '@/storage/settings';
 import { Body, Button, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
+import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Tally } from '@/ui/Tally';
 import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
@@ -18,6 +20,7 @@ const END_NOTE: Record<SessionSummary['endReason'], string | null> = {
   target: 'Target reached.',
   idle: 'Ended on its own after a long stretch with no reps.',
   'paused-too-long': 'Ended on its own after a long pause.',
+  'form-break': 'Ended at the first form break (test mode).',
 };
 
 /** A stored set that cannot be shown must not take the app down. */
@@ -57,13 +60,43 @@ export default function SummaryScreen() {
   const note = END_NOTE[s.endReason];
   const level = s.difficulty === 'easy' || s.difficulty === 'medium' || s.difficulty === 'hard' ? s.difficulty : null;
   const levelLabel = level ? `${DIFFICULTY_COPY[level].label} mode` : null;
+  const header = `${new Date(wallStart).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${formatDuration(s.activeMs)}${levelLabel ? ` · ${levelLabel}` : ''}`;
+
+  if (s.exercise === 'plank') {
+    return (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: color.ground }}
+        contentContainerStyle={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.huge }]}
+      >
+        <View style={styles.headRow}>
+          <ExerciseGlyph exercise="plank" size={36} />
+          <Label style={{ flexShrink: 1 }}>{header}</Label>
+        </View>
+        <PlankResult
+          hold={s.hold}
+          note={s.endReason === 'idle' ? 'Ended on its own after a long stretch out of position.' : note}
+          saved={saved}
+          demo={demo}
+          guided={guided}
+          easy={level === 'easy'}
+        />
+        <View style={{ gap: space.md }}>
+          <Button label="Another plank" size="lg" onPress={guard(() => router.replace('/session'))} />
+          <Button label="Done" variant="ghost" onPress={() => router.dismissTo('/')} />
+        </View>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: color.ground }}
       contentContainerStyle={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.huge }]}
     >
-      <Label>{`${new Date(wallStart).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${formatDuration(s.activeMs)}${levelLabel ? ` · ${levelLabel}` : ''}`}</Label>
+      <View style={styles.headRow}>
+        <ExerciseGlyph exercise="pushup" size={36} />
+        <Label style={{ flexShrink: 1 }}>{header}</Label>
+      </View>
 
       {s.totalReps === 0 ? (
         <View style={{ gap: space.md }}>
@@ -172,6 +205,127 @@ export default function SummaryScreen() {
   );
 }
 
+/** Plank results: time in good form first, then where the rest of the time went. */
+function PlankResult({
+  hold,
+  note,
+  saved,
+  demo,
+  guided,
+  easy,
+}: {
+  hold: HoldSummary | undefined;
+  note: string | null;
+  saved: boolean;
+  demo: boolean;
+  guided: boolean;
+  easy: boolean;
+}) {
+  if (!hold || hold.goodMs < 1000) {
+    return (
+      <View style={{ gap: space.md }}>
+        <Display size={type.headline}>No plank timed</Display>
+        <Body tone="muted">
+          Hold a plank on straight arms or forearms, side-on to the phone, with your body in view. The clock starts once you are steady.
+        </Body>
+        {demo && <Mono tone="muted">Demo set · not added to your history.</Mono>}
+      </View>
+    );
+  }
+  const faults = (Object.entries(hold.faultMs) as [HoldFault, number][]).filter(([, ms]) => ms >= 500).sort((a, b) => b[1] - a[1]);
+  const pct = Math.round(hold.formPct * 100);
+  const top = faults.find(([f]) => f !== 'dropped');
+  const tip = top
+    ? `Most of the lost time was "${HOLD_COPY[top[0]].short.toLowerCase()}". ${HOLD_COPY[top[0]].detail}`
+    : hold.breaks === 0
+      ? easy
+        ? 'No breaks. When this feels easy, try Medium so the clock also checks your hips more closely.'
+        : 'No breaks. Next time, pick a longer target.'
+      : 'Rest a little longer between holds, then keep one straight line from shoulders to heels.';
+  return (
+    <>
+      <View style={{ gap: space.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.md }}>
+          <Display size={type.hero * 1.5} style={{ fontFamily: 'BigShouldersDisplay_900Black' }}>
+            {formatDuration(hold.goodMs)}
+          </Display>
+          <Body tone="muted" style={{ marginBottom: 16 }}>
+            in good form
+          </Body>
+        </View>
+        <View style={styles.formBar} accessible accessibilityLabel={`${pct} percent of the hold in good form`}>
+          <View style={{ width: `${pct}%`, height: '100%', backgroundColor: color.good }} />
+        </View>
+      </View>
+
+      {note && <Mono tone="vial">{note}</Mono>}
+      {demo ? (
+        <Mono tone="muted">Demo set · not added to your history.</Mono>
+      ) : (
+        !saved && <Mono tone="cue">This plank could not be saved to history.</Mono>
+      )}
+
+      <View style={styles.stats}>
+        <Stat label="Good form" value={`${pct}%`} tone={pct >= 90 ? 'good' : pct >= 70 ? 'chalk' : 'cue'} />
+        <Stat label="Longest hold" value={formatDuration(hold.longestMs)} />
+        <Stat label="Breaks" value={String(hold.breaks)} tone={hold.breaks ? 'cue' : 'chalk'} />
+        <Stat label="Plank" value={hold.variant === 'forearm' ? 'Forearm' : 'High'} />
+      </View>
+
+      {guided && (
+        <View style={styles.tip}>
+          <Label tone="vial">Next time</Label>
+          <Body>{tip}</Body>
+        </View>
+      )}
+
+      {(faults.length > 0 || hold.headDownMs >= 3000) && (
+        <View style={{ gap: space.md }}>
+          <Label>Time out of form</Label>
+          <View style={styles.list}>
+            {faults.map(([f, ms], i) => (
+              <View key={f}>
+                {i > 0 && <Rule />}
+                <View style={styles.item}>
+                  <Display size={32} tone="cue" style={{ minWidth: 64 }}>
+                    {formatDuration(ms)}
+                  </Display>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Strong>{HOLD_COPY[f].short}</Strong>
+                    {guided && (
+                      <Body tone="muted" size={14}>
+                        {HOLD_COPY[f].detail}
+                      </Body>
+                    )}
+                  </View>
+                </View>
+              </View>
+            ))}
+            {hold.headDownMs >= 3000 && (
+              <View>
+                {faults.length > 0 && <Rule />}
+                <View style={styles.item}>
+                  <Display size={32} tone="muted" style={{ minWidth: 64 }}>
+                    {formatDuration(hold.headDownMs)}
+                  </Display>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Strong>{FAULT_COPY['head-dropping'].short}</Strong>
+                    {guided && (
+                      <Body tone="muted" size={14}>
+                        {FAULT_COPY['head-dropping'].detail} This is a tip; it does not stop the clock.
+                      </Body>
+                    )}
+                  </View>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+    </>
+  );
+}
+
 /** Guided mode: one plain-language thing to focus on next set. */
 function NextTime({ faults, misses, cleanShare }: { faults: [RepFault, number][]; misses: [MissReason, number][]; cleanShare: number }) {
   const topFault = faults.find(([f]) => f !== 'head-dropping');
@@ -250,6 +404,8 @@ const styles = StyleSheet.create({
     borderLeftColor: color.vial,
   },
   chart: { flexDirection: 'row', alignItems: 'flex-end', height: 96, gap: 3 },
+  headRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  formBar: { height: 8, borderRadius: 4, backgroundColor: color.raised, overflow: 'hidden' },
   barSlot: { flex: 1, height: '100%', justifyContent: 'flex-end' },
   bar: { width: '100%', borderRadius: 2 },
 });

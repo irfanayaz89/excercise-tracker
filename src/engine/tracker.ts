@@ -234,11 +234,12 @@ export function computeMetrics(chain: SideChain, pose: TrackedPose, horizonRollD
   // Which way a crooked phone rotates the image depends on the camera (the front
   // camera's image is mirrored), so correct both ways and keep the smaller tilt.
   // The correction is only for a few degrees of crookedness; it never adds tilt.
-  const trunkTiltDeg =
-    rawTilt === null ? null : Math.min(Math.abs(rawTilt - horizonRollDeg), Math.abs(rawTilt + horizonRollDeg));
+  const trunkTiltDeg = rawTilt === null ? null : Math.min(Math.abs(rawTilt - horizonRollDeg), Math.abs(rawTilt + horizonRollDeg));
 
   const shoulderHeight = ok(v.wrist) ? (chain.wrist.y - chain.shoulder.y) / torsoPx : null;
   const wristOffset = ok(v.wrist) ? Math.abs(chain.wrist.x - chain.shoulder.x) / torsoPx : null;
+  const elbowStack = ok(v.elbow) ? Math.abs(chain.elbow.x - chain.shoulder.x) / torsoPx : null;
+  const forearmRise = ok(v.elbow) && ok(v.wrist) ? Math.abs(chain.wrist.y - chain.elbow.y) / torsoPx : null;
 
   const hip = { x: chain.hip.x / pose.width, y: chain.hip.y / pose.height };
 
@@ -253,6 +254,8 @@ export function computeMetrics(chain: SideChain, pose: TrackedPose, horizonRollD
     trunkTiltDeg,
     shoulderHeight,
     wristOffset,
+    elbowStack,
+    forearmRise,
     torsoPx,
     hipCenter: hip,
   };

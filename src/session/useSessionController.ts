@@ -3,9 +3,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { AppState, NativeModules, Platform } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import type { EngineConfig } from '@/engine/config';
-import { difficultyConfig, difficultyOverrides } from '@/engine/difficulty';
+import { sessionConfig, sessionOverrides } from './sessionConfig';
 import { Recorder } from '@/engine/recording';
 import { PushupSession, type Cue, type SessionSummary } from '@/engine/session';
+import type { DepthProbe } from '@/engine/reality';
 import { LM, type PhoneAttitude, type PoseSample } from '@/engine/types';
 import type { Settings } from '@/storage/settings';
 import { EMPTY_OVERLAY, type OverlayData } from '@/ui/SkeletonOverlay';
@@ -32,6 +33,8 @@ export interface Controller {
   overlay: ReturnType<typeof useSharedValue<OverlayData>>;
   onPose: (s: PoseSample) => void;
   onAttitude: (a: PhoneAttitude) => void;
+  /** Depth readings at the body (iPhone), for the real-person check. */
+  onDepth: (p: DepthProbe) => void;
   confirmPhone: () => void;
   end: () => SessionSummary;
   /** Wall-clock time when counting started, for saving history. */
@@ -51,8 +54,10 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
   const session = useMemo(
     () =>
       new PushupSession({
-        config: difficultyConfig(settings.difficulty, { allowKneeling: settings.allowKneeling }),
+        config: sessionConfig(settings),
+        exercise: settings.exercise,
         targetReps: settings.targetReps > 0 ? settings.targetReps : null,
+        targetHoldMs: settings.targetHoldSec > 0 ? settings.targetHoldSec * 1000 : null,
         difficulty: settings.difficulty,
       }),
     // A session is created once per screen; settings changes apply to the next set.
@@ -91,6 +96,8 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
         handleCue(e.cue);
       } else if (e.type === 'rep') {
         setRepMarks((m) => [...m, e.rep.clean]);
+      } else if (e.type === 'revoke') {
+        setRepMarks((m) => m.slice(0, Math.max(0, m.length - e.reps)));
       } else if (e.type === 'phase') {
         if (e.phase === 'body-check') tapSuccess();
         if (e.phase === 'counting' && countingStartedWall.current === null) countingStartedWall.current = Date.now();
@@ -102,9 +109,14 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
     });
     function handleCue(cue: Cue) {
       const st = settingsRef.current;
-      const speech = cueSpeech(cue, { countAloud: st.countAloud, guided: st.experience !== 'quick', orientation: st.orientation });
+      const speech = cueSpeech(cue, {
+        countAloud: st.countAloud,
+        guided: st.experience !== 'quick',
+        orientation: st.orientation,
+        exercise: session.exercise,
+      });
       if (speech) coach.say(speech.text, speech.priority);
-      const b = cueBanner(cue);
+      const b = cueBanner(cue, session.exercise);
       if (b) showBanner(b);
     }
     return () => {
@@ -187,6 +199,8 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
     [session],
   );
 
+  const onDepth = useCallback((p: DepthProbe) => session.pushDepth(p), [session]);
+
   const confirmPhone = useCallback(() => {
     tapLight();
     recorder.current?.manualPhone(performance.now());
@@ -201,9 +215,7 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
     if (!r) return;
     recorder.current = null;
     const st = settingsRef.current;
-    await saveRecording(
-      r.finish({ platform: Platform.OS, model, config: difficultyOverrides(st.difficulty, { allowKneeling: st.allowKneeling }) }),
-    );
+    await saveRecording(r.finish({ platform: Platform.OS, model, config: sessionOverrides(st), exercise: st.exercise }));
   }, []);
 
   return {
@@ -214,6 +226,7 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
     overlay,
     onPose,
     onAttitude,
+    onDepth,
     confirmPhone,
     end,
     wallStart: () => countingStartedWall.current ?? Date.now(),
@@ -260,9 +273,23 @@ function diagnosticLine(session: PushupSession): string {
     `sh=${m?.shoulderHeight == null ? '-' : m.shoulderHeight.toFixed(2)}`,
     `side=${s.side ?? '-'}`,
     `phone=${r(s.phone.rollDeg)}/${r(s.phone.pitchDeg)}${s.phoneConfirmedManually ? '(skipped)' : ''}`,
-    pl ? `frame=${pl.frameW}x${pl.frameH} box=${pl.box.x0.toFixed(2)},${pl.box.y0.toFixed(2)}-${pl.box.x1.toFixed(2)},${pl.box.y1.toFixed(2)} head=${pl.headSide}` : 'nobody',
-    `reps=${s.reps}`,
+    pl
+      ? `frame=${pl.frameW}x${pl.frameH} box=${pl.box.x0.toFixed(2)},${pl.box.y0.toFixed(2)}-${pl.box.x1.toFixed(2)},${pl.box.y1.toFixed(2)} head=${pl.headSide}`
+      : 'nobody',
+    s.hold
+      ? `hold=${(s.hold.goodMs / 1000).toFixed(1)}s/${s.hold.state}${s.hold.fault ? `(${s.hold.fault})` : ''} ${s.hold.variant} hip=${m?.hipOffset == null ? '-' : m.hipOffset.toFixed(2)} breaks=${s.hold.breaks}`
+      : `reps=${s.reps}`,
+    realityLine(session),
   ].join(' ');
+}
+
+/** Real-person check state for the diagnostics line: depth stand-out and torso size when measured. */
+function realityLine(session: PushupSession): string {
+  const d = session.realityDebug;
+  const issue = session.snapshot().reality;
+  const so = d.standOut === null ? '-' : d.standOut.toFixed(2);
+  const tm = d.torsoM === null ? '-' : d.torsoM.toFixed(2);
+  return `real=${issue ?? 'ok'}(standout ${so}m torso ${tm}m)`;
 }
 
 /**

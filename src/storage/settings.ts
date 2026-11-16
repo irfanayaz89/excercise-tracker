@@ -1,14 +1,22 @@
 import Storage from 'expo-sqlite/kv-store';
 import { useCallback, useEffect, useState } from 'react';
 import type { Difficulty } from '@/engine/difficulty';
-import type { PhoneOrientation } from '@/engine/types';
+import type { Exercise, PhoneOrientation } from '@/engine/types';
 
 /** guided = step-by-step help for newcomers; quick = minimal screens for experienced users. */
 export type Experience = 'guided' | 'quick';
 
 export interface Settings {
+  /** Push-ups (counted) or plank (timed). */
+  exercise: Exercise;
   /** 0 = open set with no target. */
   targetReps: number;
+  /** Plank target in seconds of good form; 0 = open. */
+  targetHoldSec: number;
+  /** Plank test: the hold ends at the first real form break instead of pausing the clock. */
+  plankTestMode: boolean;
+  /** Pause when the camera seems to be watching a video on a screen instead of a person. */
+  realPersonCheck: boolean;
   camera: 'front' | 'back';
   voice: boolean;
   /** Speak the rep number on every rep. */
@@ -26,7 +34,11 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  exercise: 'pushup',
   targetReps: 0,
+  targetHoldSec: 0,
+  plankTestMode: false,
+  realPersonCheck: true,
   camera: 'front',
   voice: true,
   countAloud: true,
@@ -55,6 +67,9 @@ export function loadSettings(): Settings {
 /** The target chips offered on Home. */
 export const TARGETS = [0, 10, 20, 30, 50];
 
+/** Plank target chips, in seconds. */
+export const HOLD_TARGETS = [0, 30, 45, 60, 90, 120];
+
 /**
  * Settings written by an older or newer build (or hand-edited) must not break
  * the app: every field is checked and falls back to its default.
@@ -65,7 +80,11 @@ export function normalizeSettings(raw: unknown): Settings {
   const oneOf = <T,>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
   const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
   return {
+    exercise: oneOf(o.exercise, ['pushup', 'plank'] as const, d.exercise),
     targetReps: oneOf(o.targetReps, TARGETS, d.targetReps),
+    targetHoldSec: oneOf(o.targetHoldSec, HOLD_TARGETS, d.targetHoldSec),
+    plankTestMode: bool(o.plankTestMode, d.plankTestMode),
+    realPersonCheck: bool(o.realPersonCheck, d.realPersonCheck),
     camera: oneOf(o.camera, ['front', 'back'] as const, d.camera),
     voice: bool(o.voice, d.voice),
     countAloud: bool(o.countAloud, d.countAloud),
