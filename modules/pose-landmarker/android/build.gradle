@@ -1,0 +1,99 @@
+buildscript {
+  ext.getExtOrDefault = { prop, fallback ->
+    return rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+  }
+  repositories {
+    google()
+    mavenCentral()
+  }
+}
+
+def reactNativeArchitectures() {
+  def value = rootProject.getProperties().get("reactNativeArchitectures")
+  return value ? value.split(",") : ["armeabi-v7a", "x86", "x86_64", "arm64-v8a"]
+}
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+apply from: '../nitrogen/generated/android/PoseLandmarker+autolinking.gradle'
+apply plugin: "com.facebook.react"
+
+android {
+  namespace "com.margelo.nitro.poselandmarker"
+  compileSdkVersion getExtOrDefault("compileSdkVersion", 36)
+
+  defaultConfig {
+    minSdkVersion getExtOrDefault("minSdkVersion", 24)
+    targetSdkVersion getExtOrDefault("targetSdkVersion", 36)
+    externalNativeBuild {
+      cmake {
+        cppFlags "-frtti -fexceptions -Wall -fstack-protector-all"
+        arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+        abiFilters(*reactNativeArchitectures())
+      }
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path "CMakeLists.txt"
+    }
+  }
+
+  sourceSets {
+    main {
+      // Bundled .task models (fetched by scripts/fetch-models.mjs).
+      assets.srcDirs += ["../models"]
+    }
+  }
+
+  // .task files are already compressed model archives; MediaPipe memory-maps them.
+  androidResources {
+    noCompress += ["task"]
+  }
+
+  packagingOptions {
+    excludes = [
+      "META-INF",
+      "META-INF/**",
+      "**/libc++_shared.so",
+      "**/libfbjni.so",
+      "**/libjsi.so",
+      "**/libfolly_json.so",
+      "**/libfolly_runtime.so",
+      "**/libglog.so",
+      "**/libhermes.so",
+      "**/libhermes-executor-debug.so",
+      "**/libhermes_executor.so",
+      "**/libreactnative.so",
+      "**/libreactnativejni.so",
+      "**/libturbomodulejsijni.so",
+      "**/libreact_nativemodule_core.so",
+      "**/libjscexecutor.so"
+    ]
+  }
+
+  buildFeatures {
+    buildConfig true
+    prefab true
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+}
+
+repositories {
+  google()
+  mavenCentral()
+}
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+  implementation project(":react-native-nitro-modules")
+  implementation project(":react-native-vision-camera")
+  implementation "com.google.mediapipe:tasks-vision:1.2.3"
+  // Same CameraX as VisionCamera v5 (ImageProxy comes from its frames); compile-only so we never pull a second copy.
+  compileOnly "androidx.camera:camera-core:1.7.0-alpha03"
+}

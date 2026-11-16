@@ -1,0 +1,304 @@
+import type { EngineConfig } from './config';
+import { sideScore, type TrackedPose } from './tracker';
+import { LM, type BodyMetrics, type PhoneAttitude, type SideChain } from './types';
+
+// ─── Gate 1: phone placement ────────────────────────────────────────────────
+
+export type PhoneIssue =
+  | 'stand-up' // lying flat on its back or face
+  | 'wrong-orientation' // portrait when landscape was picked, or the other way round
+  | 'tilted-sideways'
+  | 'leaning'
+  | 'moving'
+  | 'no-sensor';
+
+export interface PhoneCheck {
+  ok: boolean;
+  issue: PhoneIssue | null;
+  /** 0..1 progress of the steady-hold timer. */
+  steadyProgress: number;
+  rollDeg: number | null;
+  pitchDeg: number | null;
+}
+
+/**
+ * Requires the phone to be level and still for `steadyMs`. If the sensor is
+ * missing or stale (permission denied, no hardware), reports `no-sensor` so
+ * the UI can offer a manual "Phone is set" confirmation instead of blocking.
+ */
+export class PhoneGate {
+  private steadySince: number | null = null;
+  private last: PhoneAttitude | null = null;
+  /** Attitude the user accepted by skipping the level check; "moved" is measured from here. */
+  private base = { roll: 0, pitch: 0 };
+
+  constructor(private cfg: EngineConfig) {}
+
+  reset(): void {
+    this.steadySince = null;
+  }
+
+  get attitude(): PhoneAttitude | null {
+    return this.last;
+  }
+
+  push(a: PhoneAttitude): void {
+    if (!Number.isFinite(a.rollDeg) || !Number.isFinite(a.pitchDeg)) return;
+    if (this.last && a.t < this.last.t) return;
+    this.last = a;
+  }
+
+  /** Roll to use for horizon correction; 0 when the sensor is unavailable. */
+  horizonRoll(now: number): number {
+    const a = this.last;
+    if (!a || now - a.t > this.cfg.phone.staleMs) return 0;
+    return a.rollDeg;
+  }
+
+  check(now: number): PhoneCheck {
+    const p = this.cfg.phone;
+    const a = this.last;
+    if (!a || now - a.t > p.staleMs) {
+      this.steadySince = null;
+      return { ok: false, issue: 'no-sensor', steadyProgress: 0, rollDeg: null, pitchDeg: null };
+    }
+    let issue: PhoneIssue | null = null;
+    if (Math.abs(a.pitchDeg) > 55) issue = 'stand-up';
+    else if (Math.abs(a.rollDeg) > 45) issue = 'wrong-orientation';
+    else if (Math.abs(a.rollDeg) > p.maxRollDeg) issue = 'tilted-sideways';
+    else if (Math.abs(a.pitchDeg) > p.maxPitchDeg) issue = 'leaning';
+    else if (a.motionDegPerSec > p.maxMotionDegPerSec) issue = 'moving';
+
+    if (issue) {
+      this.steadySince = null;
+      return { ok: false, issue, steadyProgress: 0, rollDeg: a.rollDeg, pitchDeg: a.pitchDeg };
+    }
+    if (this.steadySince === null) this.steadySince = a.t;
+    const progress = Math.min(1, (now - this.steadySince) / p.steadyMs);
+    return { ok: progress >= 1, issue: null, steadyProgress: progress, rollDeg: a.rollDeg, pitchDeg: a.pitchDeg };
+  }
+
+  /** Remember the phone's current angle as its resting angle (level check passed or skipped). */
+  acceptCurrent(): void {
+    if (this.last) this.base = { roll: this.last.rollDeg, pitch: this.last.pitchDeg };
+  }
+
+  /**
+   * Quick check used mid-session: was the phone clearly knocked over or moved,
+   * compared with the angle it was resting at when the set began? Capped so a
+   * relaxed level check (Easy) still notices a phone that fell flat.
+   */
+  isDisturbed(now: number): boolean {
+    const a = this.last;
+    if (!a || now - a.t > this.cfg.phone.staleMs) return false;
+    const p = this.cfg.phone;
+    const rollLimit = Math.min(p.maxRollDeg * 3, 30);
+    const pitchLimit = Math.min(p.maxPitchDeg * 2.5, 50);
+    return Math.abs(a.rollDeg - this.base.roll) > rollLimit || Math.abs(a.pitchDeg - this.base.pitch) > pitchLimit;
+  }
+}
+
+// ─── Gate 2: whole body in frame ────────────────────────────────────────────
+
+export type FramingIssue = 'no-person' | 'move-back' | 'move-closer' | 'show-feet' | 'show-head' | 'turn-sideways' | 'low-light';
+
+export interface FramingCheck {
+  ok: boolean;
+  issue: FramingIssue | null;
+  /** Soft warning that does not block, e.g. low light while all joints are found. */
+  hint: FramingIssue | null;
+  meanVisibility: number;
+}
+
+export class FramingGate {
+  private lowVisSince: number | null = null;
+
+  constructor(private cfg: EngineConfig) {}
+
+  reset(): void {
+    this.lowVisSince = null;
+  }
+
+  check(pose: TrackedPose | null, chain: SideChain | null): FramingCheck {
+    const f = this.cfg.framing;
+    if (!pose || !pose.detected || !chain) {
+      this.lowVisSince = null;
+      return { ok: false, issue: 'no-person', hint: null, meanVisibility: 0 };
+    }
+    const meanVis = sideScore(pose, chain.side);
+    const t = pose.t;
+    if (meanVis < f.lowLightVisibility) {
+      if (this.lowVisSince === null) this.lowVisSince = t;
+    } else this.lowVisSince = null;
+    const lowLight = this.lowVisSince !== null && t - this.lowVisSince >= f.lowLightMs;
+
+    const min = this.cfg.minVisibility;
+    const v = chain.vis;
+    const W = pose.width;
+    const H = pose.height;
+    const m = f.edgeMargin;
+    const nearEdge = (p: { x: number; y: number }) => p.x < m * W || p.x > (1 - m) * W || p.y < m * H || p.y > (1 - m) * H;
+
+    const headOk = v.shoulder >= min && !nearEdge(chain.shoulder);
+    const feetOk = v.ankle >= min && !nearEdge(chain.ankle);
+    // Counting itself only needs the arm and torso.
+    const coreOk = v.shoulder >= min && v.hip >= min && v.elbow >= min && v.wrist >= min;
+
+    if (f.requireHead && f.requireFeet && !headOk && !feetOk) {
+      return { ok: false, issue: v.hip >= min ? 'move-back' : 'no-person', hint: null, meanVisibility: meanVis };
+    }
+    if (f.requireFeet && !feetOk) return { ok: false, issue: 'show-feet', hint: null, meanVisibility: meanVis };
+    if (f.requireHead && !headOk) return { ok: false, issue: 'show-head', hint: null, meanVisibility: meanVis };
+    if (!coreOk) {
+      const issue: FramingIssue = lowLight ? 'low-light' : v.shoulder < min ? 'show-head' : 'move-back';
+      return { ok: false, issue, hint: null, meanVisibility: meanVis };
+    }
+    // Not required, but worth a gentle tip: tracking is steadier with the whole body in view.
+    const softHint: FramingIssue | null = !feetOk ? 'show-feet' : !headOk ? 'show-head' : null;
+
+    // Facing the camera head-on: both shoulders visible and far apart relative to the torso.
+    const ls = pose.points[LM.leftShoulder];
+    const rs = pose.points[LM.rightShoulder];
+    const torso = Math.hypot(chain.shoulder.x - chain.hip.x, chain.shoulder.y - chain.hip.y);
+    if (pose.vis[LM.leftShoulder] >= min && pose.vis[LM.rightShoulder] >= min && torso > 0) {
+      const shoulderWidth = Math.hypot(ls.x - rs.x, ls.y - rs.y);
+      if (shoulderWidth / torso > f.maxShoulderWidthRatio) {
+        return { ok: false, issue: 'turn-sideways', hint: null, meanVisibility: meanVis };
+      }
+    }
+
+    // Distance needs the feet. Only judge it when the body is roughly
+    // horizontal; a standing person has a tiny horizontal span and would
+    // wrongly be told to come closer.
+    if (feetOk) {
+      const span = Math.abs(chain.ankle.x - chain.shoulder.x) / W;
+      const horizontal = Math.abs(chain.ankle.y - chain.shoulder.y) < Math.abs(chain.ankle.x - chain.shoulder.x);
+      if (horizontal && span > f.maxBodySpan) return { ok: false, issue: 'move-back', hint: null, meanVisibility: meanVis };
+      if (horizontal && span < f.minBodySpan) return { ok: false, issue: 'move-closer', hint: null, meanVisibility: meanVis };
+    }
+
+    return { ok: true, issue: null, hint: lowLight ? 'low-light' : softHint, meanVisibility: meanVis };
+  }
+}
+
+// ─── Gate 3: valid starting plank ───────────────────────────────────────────
+
+export type PlankIssue =
+  'get-down' | 'straighten-arms' | 'straighten-legs' | 'hips-sagging' | 'hips-high' | 'hands-under-shoulders' | 'hold-still';
+
+export interface PlankCheck {
+  ok: boolean;
+  /** Most important issue first. */
+  issues: PlankIssue[];
+}
+
+export function checkPlank(m: BodyMetrics, cfg: EngineConfig): PlankCheck {
+  const p = cfg.plank;
+  const issues: PlankIssue[] = [];
+  if (m.trunkTiltDeg === null || m.trunkTiltDeg > p.maxTrunkTiltDeg) issues.push('get-down');
+  if (m.kneeDeg !== null && m.kneeDeg < p.minKneeDeg && !cfg.allowKneeling) issues.push('straighten-legs');
+  if (p.checkHips && m.bodyLineDeg !== null && m.bodyLineDeg < p.minBodyLineDeg && m.hipOffset !== null) {
+    issues.push(m.hipOffset > 0 ? 'hips-sagging' : 'hips-high');
+  }
+  if (m.elbowDeg === null || m.elbowDeg < p.minElbowDeg) issues.push('straighten-arms');
+  if (p.checkHands && m.wristOffset !== null && m.wristOffset > p.maxWristOffset) issues.push('hands-under-shoulders');
+  return { ok: issues.length === 0, issues };
+}
+
+/**
+ * Times how long a valid plank has been held, and rejects wobbly holds so a
+ * user swinging into position does not trigger the start.
+ */
+export class PlankHold {
+  private since: number | null = null;
+  private refShoulderY: number | null = null;
+  private heights: number[] = [];
+  private torsos: number[] = [];
+  private elbows: number[] = [];
+  private lastT: number | null = null;
+  /** Start of a run of failing frames inside an otherwise good hold. */
+  private badSince: number | null = null;
+  private lastProgress = 0;
+
+  /** Failing readings shorter than this do not reset the hold. */
+  static readonly GRACE_MS = 350;
+
+  constructor(private cfg: EngineConfig) {}
+
+  reset(): void {
+    this.since = null;
+    this.lastT = null;
+    this.badSince = null;
+    this.lastProgress = 0;
+    this.refShoulderY = null;
+    this.heights = [];
+    this.torsos = [];
+    this.elbows = [];
+  }
+
+  /** @returns progress 0..1, and calibration once complete. */
+  update(
+    m: BodyMetrics,
+    shoulderY: number,
+    valid: boolean,
+    holdMs = this.cfg.plank.holdMs,
+  ): { progress: number; wobbly: boolean; calibration: Calibration | null; riding: boolean } {
+    if (!valid) {
+      // Ride out a brief failing reading (a noisy frame or two) without losing
+      // the hold; a real change of position lasts longer than this.
+      if (this.since !== null) {
+        if (this.badSince === null) this.badSince = m.t;
+        if (m.t - this.badSince <= PlankHold.GRACE_MS) {
+          this.lastT = m.t;
+          return { progress: this.lastProgress, wobbly: false, calibration: null, riding: true };
+        }
+      }
+      this.reset();
+      return { progress: 0, wobbly: false, calibration: null, riding: false };
+    }
+    this.badSince = null;
+    // A hold only counts while we are actually watching: a camera stall or
+    // dropped frames must not be filled in as "held still".
+    if (this.lastT !== null && m.t - this.lastT > this.cfg.maxFrameGapMs) this.reset();
+    this.lastT = m.t;
+    if (this.since === null || this.refShoulderY === null) {
+      this.since = m.t;
+      this.refShoulderY = shoulderY;
+    }
+    if (Math.abs(shoulderY - this.refShoulderY) / m.torsoPx > this.cfg.plank.maxWobble) {
+      this.since = m.t;
+      this.refShoulderY = shoulderY;
+      this.heights = [];
+      this.torsos = [];
+      this.elbows = [];
+      this.lastProgress = 0;
+      return { progress: 0, wobbly: true, calibration: null, riding: false };
+    }
+    if (m.shoulderHeight !== null) this.heights.push(m.shoulderHeight);
+    this.torsos.push(m.torsoPx);
+    if (m.elbowDeg !== null) this.elbows.push(m.elbowDeg);
+    const progress = Math.min(1, (m.t - this.since) / holdMs);
+    this.lastProgress = progress;
+    if (progress < 1) return { progress, wobbly: false, calibration: null, riding: false };
+    const cal: Calibration = {
+      topShoulderHeight: this.heights.length ? avg(this.heights) : null,
+      torsoPx: avg(this.torsos),
+      topElbowDeg: this.elbows.length ? avg(this.elbows) : null,
+      side: m.side,
+    };
+    return { progress: 1, wobbly: false, calibration: cal, riding: false };
+  }
+}
+
+export interface Calibration {
+  /** Shoulder height above the wrist at lockout, in torso lengths. */
+  topShoulderHeight: number | null;
+  torsoPx: number;
+  /** The user's own "straight arm" elbow angle while holding the start plank. */
+  topElbowDeg: number | null;
+  side: BodyMetrics['side'];
+}
+
+function avg(xs: number[]): number {
+  return xs.reduce((a, b) => a + b, 0) / xs.length;
+}

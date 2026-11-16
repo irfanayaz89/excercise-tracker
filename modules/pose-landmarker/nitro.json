@@ -1,0 +1,18 @@
+{
+  "$schema": "https://nitro.margelo.com/nitro.schema.json",
+  "cxxNamespace": ["poselandmarker"],
+  "ios": {
+    "iosModuleName": "PoseLandmarker"
+  },
+  "android": {
+    "androidNamespace": ["poselandmarker"],
+    "androidCxxLibName": "PoseLandmarker"
+  },
+  "autolinking": {
+    "PoseLandmarker": {
+      "ios": { "language": "swift", "implementationClassName": "HybridPoseLandmarker" },
+      "android": { "language": "kotlin", "implementationClassName": "HybridPoseLandmarker" }
+    }
+  },
+  "ignorePaths": ["**/node_modules"]
+}

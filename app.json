@@ -1,0 +1,65 @@
+{
+  "expo": {
+    "name": "Trueline",
+    "slug": "exercise-tracker",
+    "scheme": "trueline",
+    "version": "0.1.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0C1A1D",
+    "ios": {
+      "bundleIdentifier": "com.exercisetracker.trueline",
+      "appleTeamId": "J26V956L84",
+      "supportsTablet": false,
+      "requireFullScreen": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Trueline uses the camera to see your body position and count your push-ups. Video never leaves your phone.",
+        "NSMotionUsageDescription": "Trueline uses motion sensors to check your phone is level before a set."
+      }
+    },
+    "android": {
+      "package": "com.exercisetracker.trueline",
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#0C1A1D",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-sqlite",
+      "expo-sharing",
+      [
+        "expo-screen-orientation",
+        {
+          "initialOrientation": "PORTRAIT_UP"
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Trueline uses motion sensors to check your phone is level before a set."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0C1A1D",
+          "imageWidth": 160
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
