@@ -204,3 +204,70 @@ describe('every plank fault has words', () => {
     expect(Object.keys(s.hold?.faultMs ?? {}).sort()).toEqual([...faults].sort());
   });
 });
+
+describe('side plank storage', () => {
+  const row = { startedAt: 1000, endedAt: 61000, totalReps: 0, cleanReps: 0, activeMs: 60000, endReason: 'target' };
+  const side = (goodMs: number) => ({
+    variant: 'forearm',
+    goodMs,
+    totalMs: goodMs,
+    longestMs: goodMs,
+    breaks: 0,
+    faultMs: {},
+    headDownMs: 0,
+  });
+
+  it('keeps the side plank and each side', () => {
+    expect(normalizeSettings({ exercise: 'sidePlank' }).exercise).toBe('sidePlank');
+    const s = normalizeSummary(
+      { exercise: 'sidePlank', hold: side(60000), holdSides: { left: side(31000), right: side(29000), middle: side(5) } },
+      { ...row, exercise: 'sidePlank', holdMs: 60000 },
+    );
+    expect(s.exercise).toBe('sidePlank');
+    expect(s.hold?.goodMs).toBe(60000);
+    expect(Object.keys(s.holdSides ?? {}).sort()).toEqual(['left', 'right']);
+    expect(s.holdSides?.left?.goodMs).toBe(31000);
+  });
+
+  it('an unknown exercise name falls back to push-ups', () => {
+    expect(normalizeSettings({ exercise: 'burpees' }).exercise).toBe('pushup');
+    expect(normalizeSummary({ exercise: 'burpees', totalReps: 3, cleanReps: 3 }, { ...row, totalReps: 3, cleanReps: 3 }).exercise).toBe(
+      'pushup',
+    );
+  });
+
+  it('daily totals keep each exercise apart', () => {
+    const now = new Date(2026, 10, 16, 18, 0).getTime();
+    const at = new Date(2026, 10, 16, 9, 0).getTime();
+    const r = (o: Partial<SessionRow>): SessionRow => ({
+      id: 'x',
+      exercise: 'pushup',
+      holdMs: 0,
+      startedAt: at,
+      endedAt: at,
+      totalReps: 0,
+      cleanReps: 0,
+      activeMs: 0,
+      endReason: 'user',
+      ...o,
+    });
+    const [today] = dailyTotals(
+      [r({ totalReps: 10 }), r({ exercise: 'plank', holdMs: 40000 }), r({ exercise: 'sidePlank', holdMs: 50000 })],
+      1,
+      now,
+    );
+    expect(today.byExercise).toEqual({ pushup: 10, plank: 40000, sidePlank: 50000 });
+    expect(today.reps).toBe(10);
+    expect(today.holdMs).toBe(90000);
+  });
+
+  it('side plank words: start, rolling, switching sides', () => {
+    const o = { countAloud: true, guided: true, orientation: 'landscape', exercise: 'sidePlank' } as const;
+    expect(cueSpeech({ kind: 'plank', issue: 'roll-onto-side' }, o)?.text).toContain('side');
+    expect(cueSpeech({ kind: 'plank', issue: 'get-down' }, { ...o, guided: false })?.text).toBe('Get into a side plank');
+    expect(cueSpeech({ kind: 'plank', issue: 'get-down' }, o)?.text).toContain('Lie on one side facing the phone');
+    expect(cueSpeech({ kind: 'hold', state: 'break', fault: 'rolled' }, o)?.text).toBe('Clock stopped. Stack your shoulders');
+    expect(cueSpeech({ kind: 'switch-sides', done: 'left' }, o)).toEqual({ text: 'Time. Switch sides', priority: 'queued' });
+    expect(cueBanner({ kind: 'switch-sides', done: 'left' }, 'sidePlank')?.detail).toContain('Left side done');
+  });
+});

@@ -38,7 +38,8 @@ type Vote = 'fake' | 'real';
 export class RealityCheck {
   private votes: { t: number; v: Vote }[] = [];
   private contacts: { t: number; p: Vec2; gap: Vec2 | null }[] = [];
-  private shakingSince: number | null = null;
+  /** Recent frames, each judged shaking or not (judging per frame scatters, so the verdict uses a share). */
+  private shakeLog: { t: number; shaking: boolean }[] = [];
   private lastSuspicionAt: number | null = null;
   private fakeSince: number | null = null;
   private last: { standOut: number | null; torsoM: number | null } = { standOut: null, torsoM: null };
@@ -48,7 +49,7 @@ export class RealityCheck {
   reset(): void {
     this.votes = [];
     this.contacts = [];
-    this.shakingSince = null;
+    this.shakeLog = [];
     this.fakeSince = null;
   }
 
@@ -59,7 +60,7 @@ export class RealityCheck {
    */
   distrustContacts(): void {
     this.contacts = [];
-    this.shakingSince = null;
+    this.shakeLog = [];
   }
 
   /** The latest depth reading, for diagnostics. */
@@ -99,7 +100,7 @@ export class RealityCheck {
     // The phone itself moving shakes the picture too; that is the phone check's job.
     if (phoneStill !== true || points.length === 0) {
       this.contacts = [];
-      this.shakingSince = null;
+      this.shakeLog = [];
       return;
     }
     const p = { x: points.reduce((s, q) => s + q.x, 0) / points.length, y: points.reduce((s, q) => s + q.y, 0) / points.length };
@@ -136,19 +137,16 @@ export class RealityCheck {
         : speed >= r.shakeSpeed * 1.6; // one point only: ask for clearer shaking
     // Shaking: moving together, mostly back and forth rather than one move.
     const shaking = together && net < path * 0.3;
-    if (shaking) {
-      if (this.shakingSince === null) this.shakingSince = this.contacts[0].t;
-      this.lastSuspicionAt = t;
-    } else {
-      this.shakingSince = null;
-    }
+    this.shakeLog.push({ t, shaking });
+    this.shakeLog = this.shakeLog.filter((x) => t - x.t <= r.shakeMs);
+    if (shaking) this.lastSuspicionAt = t;
   }
 
   /** A sustained sign that this is not a real person, or null. */
   issue(t: number): RealityIssue | null {
     if (!this.cfg.reality.enabled) return null;
     const r = this.cfg.reality;
-    if (this.shakingSince !== null && t - this.shakingSince >= r.shakeMs) return 'handheld';
+    if (this.isShaking(t)) return 'handheld';
     const recent = this.votes.filter((x) => t - x.t <= r.windowMs);
     if (recent.length >= r.minVotes) {
       const fakes = recent.filter((x) => x.v === 'fake');
@@ -161,10 +159,18 @@ export class RealityCheck {
     return null;
   }
 
+  /** Shaking for most of the last `shakeMs`, over a window that really covers that long. */
+  private isShaking(t: number): boolean {
+    const r = this.cfg.reality;
+    const log = this.shakeLog.filter((x) => t - x.t <= r.shakeMs);
+    if (log.length < 20 || log[log.length - 1].t - log[0].t < r.shakeMs * 0.9) return false;
+    return log.filter((x) => x.shaking).length / log.length >= r.shakeShare;
+  }
+
   /** When the suspicious stretch began; reps and time after this are not trusted. */
   suspectSince(t: number): number | null {
     const kind = this.issue(t);
-    if (kind === 'handheld') return this.shakingSince;
+    if (kind === 'handheld') return this.shakeLog.find((x) => x.shaking)?.t ?? null;
     if (kind === 'screen') return this.fakeSince;
     return null;
   }

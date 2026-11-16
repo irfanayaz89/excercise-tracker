@@ -1,5 +1,6 @@
 import { mergeConfig, type DeepPartial, type EngineConfig } from './config';
 import type { Exercise } from './types';
+import { isTimed } from './exercises';
 
 /**
  * How strict the session is.
@@ -43,6 +44,13 @@ const PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
  * the whole time, so even Easy checks the hips, just with wide limits; the
  * start check uses the same line limit so a hold never starts already broken.
  */
+/** Side plank only, on top of the plank changes: how square the stack must be. */
+const SIDE_PLANK_PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
+  easy: { sidePlank: { startStack: 0.3, minStack: 0.18 } },
+  medium: { sidePlank: { startStack: 0.35, minStack: 0.22 } },
+  hard: {},
+};
+
 const PLANK_PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
   easy: {
     plank: { checkHips: true, minBodyLineDeg: 145, maxElbowStack: 0.6, forearmMaxRise: 0.25 },
@@ -98,6 +106,7 @@ export function difficultyConfig(d: Difficulty, opts: DifficultyOptions = {}): E
 
 /** The overrides only, for saving with a recording. */
 export function difficultyOverrides(d: Difficulty, opts: DifficultyOptions = {}): DeepPartial<EngineConfig> {
-  const base = opts.exercise === 'plank' ? combine(PRESETS[d], PLANK_PRESETS[d]) : PRESETS[d];
+  let base = opts.exercise && isTimed(opts.exercise) ? combine(PRESETS[d], PLANK_PRESETS[d]) : PRESETS[d];
+  if (opts.exercise === 'sidePlank') base = combine(base, SIDE_PLANK_PRESETS[d]);
   return { ...base, allowKneeling: d === 'easy' ? true : (opts.allowKneeling ?? false) };
 }

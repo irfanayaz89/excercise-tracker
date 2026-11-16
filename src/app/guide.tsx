@@ -8,6 +8,7 @@ import { OrientationHint, OrientationPicker } from '@/ui/OrientationPicker';
 import { Body, Button, Display, Label, Strong } from '@/ui/primitives';
 import { color, radius, space } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
+import { isTimed } from '@/engine/exercises';
 
 /**
  * Guided mode only: the whole set explained on one page before the camera
@@ -20,7 +21,8 @@ export default function Guide() {
   const [s, update] = useSettings();
   const place = PLACEMENT[s.orientation];
   const art = Math.min(width, 560) - space.xl * 4;
-  const plank = s.exercise === 'plank';
+  const plank = isTimed(s.exercise);
+  const side = s.exercise === 'sidePlank';
 
   return (
     <View style={{ flex: 1, backgroundColor: color.ground }}>
@@ -37,7 +39,7 @@ export default function Guide() {
           <OrientationPicker value={s.orientation} onChange={(orientation) => update({ orientation })} />
           <OrientationHint value={s.orientation} />
           <SetupDiagram width={art} orientation={s.orientation} exercise={s.exercise} />
-          <Body tone="muted">{`${place.how} Put it about ${place.distance} to the side of ${plank ? 'where you will hold your plank' : 'your push-up spot'}, level with your hips, camera facing straight at you. A level, still phone is checked for you.`}</Body>
+          <Body tone="muted">{`${place.how} Put it about ${place.distance} to the side of ${side ? 'your mat; you will lie on your side facing it' : plank ? 'where you will hold your plank' : 'your push-up spot'}, level with your hips, camera facing straight at you. A level, still phone is checked for you.`}</Body>
         </Step>
 
         <Step n={2} title="Get in view, side-on">
@@ -52,11 +54,13 @@ export default function Guide() {
 
         {plank ? (
           <Step n={3} title="How the clock works">
-            <HoldDiagram width={art} />
+            <HoldDiagram width={art} exercise={s.exercise} />
             <Body tone="muted">
-              {s.difficulty === 'easy'
-                ? 'Get into a plank on straight arms or forearms (knees are fine) and the clock starts by itself. Only a big sag or piked hips stop it.'
-                : 'Hold a plank on straight arms, or on your forearms with elbows under your shoulders, and the clock starts by itself. It runs while your body stays in one straight line, and pauses if your hips sag or rise until you fix them.'}
+              {side
+                ? `Lie on one side facing the phone, elbow under your shoulder (or on a straight arm), feet stacked, and lift your hips. The clock starts by itself and runs while your body stays in one line; it pauses if your hips drop or you roll forward or back. Each side is timed on its own${s.targetHoldSec > 0 ? `: when one side reaches ${s.targetHoldSec} seconds you will hear "switch sides"` : ''}.`
+                : s.difficulty === 'easy'
+                  ? 'Get into a plank on straight arms or forearms (knees are fine) and the clock starts by itself. Only a big sag or piked hips stop it.'
+                  : 'Hold a plank on straight arms, or on your forearms with elbows under your shoulders, and the clock starts by itself. It runs while your body stays in one straight line, and pauses if your hips sag or rise until you fix them.'}
               {s.plankTestMode ? ' Test mode is on: the hold ends at the first real form break.' : ''}
             </Body>
           </Step>
@@ -73,9 +77,11 @@ export default function Guide() {
 
         <Step n={4} title="During the set">
           <Body tone="muted">
-            {plank
-              ? 'Listen for the voice coach: it calls your time every 15 seconds and tells you when your hips drift, before the clock stops. To rest, drop to the floor; your time is kept. Tap Finish when you are done.'
-              : 'Listen for the voice coach: it counts out loud and tells you what to fix. To rest, just stand up or sit back; your count is kept. Tap Finish set when you are done.'}
+            {side
+              ? 'Listen for the voice coach: it calls your time and tells you when your hips drop, before the clock stops. To switch sides, get up and turn around so you face the phone again on your other side. Tap Finish when both sides are done.'
+              : plank
+                ? 'Listen for the voice coach: it calls your time every 15 seconds and tells you when your hips drift, before the clock stops. To rest, drop to the floor; your time is kept. Tap Finish when you are done.'
+                : 'Listen for the voice coach: it counts out loud and tells you what to fix. To rest, just stand up or sit back; your count is kept. Tap Finish set when you are done.'}
           </Body>
         </Step>
       </ScrollView>

@@ -1,76 +1,263 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { hold, plank, rep, timeline, type Segment } from '@/engine/testing/synth';
+import type { DepthProbe } from '@/engine/reality';
+import { emptySample, hold, plank, rep, sidePlank, timeline, type BodyParams, type Segment } from '@/engine/testing/synth';
 import type { Exercise, PhoneAttitude, PoseSample } from '@/engine/types';
+import { isTimed } from '@/engine/exercises';
 
 /**
- * Demo mode: plays a scripted synthetic set through the real engine with no
- * camera. Used to preview the live screen on simulators and in design review.
+ * Demo scenarios (`?demo=<name>`): each plays one situation through the real
+ * engine with a synthetic body, so every edge case can be seen on a simulator.
  *
- * Push-ups: phone settles → feet out of frame → plank → clean reps → a
- * sagging rep → a half rep → more reps, then loops.
+ * - `1` / `basic`: a normal set with a few form problems along the way.
+ * - `nofeet`: the legs never in view (a room too small for the whole body).
+ * - `standup`: stands up mid-set, then comes back.
+ * - `lost`: walks out of view, then comes back.
+ * - `swap`: someone else takes the spot for a few seconds.
+ * - `knocked`: the phone is knocked over, then put back.
+ * - `shake`: a video of the set held up to the camera (picture shakes, phone still).
+ * - `tv`: a video of the set on a TV (flat depth readings), then the real person again.
+ * - `faults`: push-ups: half reps, no lockout, sagging, rushing. Plank: sag break,
+ *   raised hips, soft knees, a switch to the forearms.
  */
-const PUSHUP_SCRIPT: Segment[] = [
-  hold(1600, { hide: { ankle: 0.1 } }),
-  hold(2600),
-  rep(1700),
-  rep(1700),
-  rep(1600),
-  rep(1700, 80, 172, (k) => ({ sag: 0.4 * Math.sin(Math.PI * k) })),
-  rep(1500, 118),
-  rep(1700),
-  rep(1600),
-  hold(1200),
-  rep(1700),
-  rep(1700),
-  hold(2000),
-];
+export type DemoScenario = 'basic' | 'nofeet' | 'standup' | 'lost' | 'swap' | 'knocked' | 'shake' | 'tv' | 'faults';
 
-/**
- * Plank: feet out of frame → a steady hold past the first time call → hips
- * slowly sinking (warning, then the clock stops) → fixed → steady again, then loops.
- */
-const PLANK_SCRIPT: Segment[] = [
-  plank(1600, { hide: { ankle: 0.1 } }),
-  plank(18000),
-  plank(4000, (k) => ({ sag: 0.3 * k })),
-  plank(2500, { sag: 0.3 }),
-  plank(1200, (k) => ({ sag: 0.3 * (1 - k) })),
-  plank(10000),
-];
+export const DEMO_SCENARIOS: DemoScenario[] = ['basic', 'nofeet', 'standup', 'lost', 'swap', 'knocked', 'shake', 'tv', 'faults'];
+
+export function demoScenario(param: string | undefined): DemoScenario | null {
+  if (param === undefined) return null;
+  if (param === '1') return 'basic';
+  return (DEMO_SCENARIOS as string[]).includes(param) ? (param as DemoScenario) : null;
+}
+
+/** One stretch of a scenario, with what else happens during it. */
+interface Part {
+  segs: Segment[];
+  /** Model finds nobody. */
+  nobody?: boolean;
+  /** Phone roll during this stretch (knocked over). */
+  roll?: number;
+  /** Depth readings: a real person in a room, or a flat screen. */
+  depth?: 'real' | 'flat';
+  /** The whole picture shakes (a screen held up to the camera). */
+  shake?: boolean;
+  /** Body changes for this stretch (e.g. someone else). */
+  body?: Partial<BodyParams>;
+}
+
+const holdOf = (ex: Exercise) => (ex === 'sidePlank' ? sidePlank : plank);
+const work = (ex: Exercise, n: number): Segment[] => (isTimed(ex) ? [holdOf(ex)(n * 1600)] : Array.from({ length: n }, () => rep(1600)));
+const start = (ex: Exercise, ms = 3000): Segment[] => (isTimed(ex) ? [holdOf(ex)(ms)] : [hold(ms)]);
+
+/** Side plank: left side with a hip drop, get up, turn around, right side; then the faults. */
+function sidePlankScript(s: DemoScenario): Part[] | null {
+  const up = (facing: 'left' | 'right'): Part => ({
+    segs: [plank(1200, (k) => ({ bodyTiltDeg: 80 * k, stack: 0.7 })), plank(2500, { bodyTiltDeg: 80, stack: 0.7 })],
+    body: { facing },
+  });
+  if (s === 'basic')
+    return [
+      { segs: [sidePlank(14000)], body: { facing: 'left' } },
+      {
+        segs: [
+          sidePlank(3500, (k) => ({ sag: 0.3 * k })),
+          sidePlank(2000, { sag: 0.3 }),
+          sidePlank(1000, (k) => ({ sag: 0.3 * (1 - k) })),
+          sidePlank(6000),
+        ],
+        body: { facing: 'left' },
+      },
+      up('left'),
+      { segs: [sidePlank(800, (k) => ({ bodyTiltDeg: 80 * (1 - k) })), sidePlank(16000)], body: { facing: 'right' } },
+    ];
+  if (s === 'faults')
+    return [
+      { segs: [sidePlank(3000), sidePlank(5000)] },
+      { segs: [sidePlank(3500, { sag: 0.3 }), sidePlank(3000)] }, // hips drop: a break
+      { segs: [sidePlank(3500, { stack: 0.1 }), sidePlank(3000)] }, // rolled forward: a break
+      { segs: [sidePlank(3500, { kneeDeg: 130 }), sidePlank(3000)] }, // soft knees: break on Medium/Hard
+      { segs: [plank(8000, { stack: 0.7 })] }, // straight-arm side plank
+    ];
+  return null;
+}
+
+function script(ex: Exercise, s: DemoScenario): Part[] {
+  if (ex === 'sidePlank') {
+    const own = sidePlankScript(s);
+    if (own) return own;
+  }
+  switch (s) {
+    case 'basic':
+      return isTimed(ex)
+        ? [
+            { segs: [plank(1600, { hide: { ankle: 0.1 } }), plank(18000)] },
+            {
+              segs: [
+                plank(4000, (k) => ({ sag: 0.3 * k })),
+                plank(2500, { sag: 0.3 }),
+                plank(1200, (k) => ({ sag: 0.3 * (1 - k) })),
+                plank(10000),
+              ],
+            },
+          ]
+        : [
+            {
+              segs: [
+                hold(1600, { hide: { ankle: 0.1 } }),
+                hold(2600),
+                rep(1700),
+                rep(1700),
+                rep(1600),
+                rep(1700, 80, 172, (k) => ({ sag: 0.4 * Math.sin(Math.PI * k) })),
+                rep(1500, 118),
+                rep(1700),
+                rep(1600),
+                hold(1200),
+                rep(1700),
+                rep(1700),
+                hold(2000),
+              ],
+            },
+          ];
+    case 'nofeet':
+      return [{ segs: [...start(ex), ...work(ex, 8)], body: { hide: { ankle: 0.1, knee: 0.1 } } }];
+    case 'standup': {
+      const up = plank; // a straight-arm hold either way; plank() also takes a changing body
+      return [
+        { segs: [...start(ex), ...work(ex, 4)] },
+        {
+          segs: [
+            up(1500, (k) => ({ bodyTiltDeg: 80 * k })),
+            up(4000, { bodyTiltDeg: 80 }),
+            up(1500, (k) => ({ bodyTiltDeg: 80 * (1 - k) })),
+          ],
+        },
+        { segs: [...start(ex, 2500), ...work(ex, 5)] },
+      ];
+    }
+    case 'lost':
+      return [
+        { segs: [...start(ex), ...work(ex, 4)] },
+        { segs: [plank(4000)], nobody: true },
+        { segs: [...start(ex, 2500), ...work(ex, 5)] },
+      ];
+    case 'swap':
+      return [
+        { segs: [...start(ex), ...work(ex, 4)] },
+        { segs: work(ex, 3), body: { torsoPx: 150, wristX: 700 } },
+        { segs: [...start(ex, 2500), ...work(ex, 4)] },
+      ];
+    case 'knocked':
+      return [{ segs: [...start(ex), ...work(ex, 4)] }, { segs: work(ex, 2), roll: 50 }, { segs: [...start(ex, 3000), ...work(ex, 5)] }];
+    case 'shake':
+      return [{ segs: [...start(ex), ...work(ex, 4)] }, { segs: work(ex, 5), shake: true }, { segs: [...start(ex, 3000), ...work(ex, 5)] }];
+    case 'tv':
+      return [
+        { segs: [...start(ex), ...work(ex, 4)], depth: 'real' },
+        { segs: work(ex, 5), depth: 'flat' },
+        { segs: [...start(ex, 3500), ...work(ex, 5)], depth: 'real' },
+      ];
+    case 'faults':
+      return isTimed(ex)
+        ? [
+            { segs: [plank(3000), plank(6000)] },
+            { segs: [plank(3500, { sag: 0.3 }), plank(3000)] }, // sag past the limit: a break
+            { segs: [plank(4000, { sag: -0.08 }), plank(2000)] }, // hips slightly up: no cue
+            { segs: [plank(3500, { kneeDeg: 130 }), plank(3000)] }, // soft knees: break on Medium/Hard
+            { segs: [plank(600, (k) => ({ elbowDeg: 172 - 60 * k })), plank(8000, { forearm: true })] }, // down to forearms
+          ]
+        : [
+            {
+              segs: [
+                hold(3000),
+                rep(1600),
+                rep(1500, 125), // half rep: not counted
+                rep(1600),
+                rep(1600, 80, 140), // no lockout: not counted on Medium/Hard
+                hold(800),
+                rep(1700, 80, 172, (k) => ({ sag: 0.4 * Math.sin(Math.PI * k) })), // sagging: flagged
+                rep(650), // rushed: flagged
+                rep(1600),
+                hold(1500),
+              ],
+            },
+          ];
+  }
+}
+
+/** A real person 2 m away with a wall behind, or a flat screen. */
+function probe(t: number, kind: 'real' | 'flat'): DepthProbe {
+  const j = (a: number) => (Math.random() - 0.5) * 2 * a;
+  return kind === 'real'
+    ? { t, body: [2, 2, 2, 2, 2, 2].map((d) => d + j(0.05)), around: [3.5, 3.5, 3.5, 3.5].map((d) => d + j(0.1)), torsoM: 0.5 + j(0.03) }
+    : { t, body: [2, 2, 2, 2, 2, 2].map((d) => d + j(0.02)), around: [2, 2, 2, 2].map((d) => d + j(0.02)), torsoM: 0.5 + j(0.03) };
+}
+
+interface DemoFrame {
+  sample: PoseSample;
+  roll: number;
+  depth?: 'real' | 'flat';
+}
 
 export function useDemoFeed(
   enabled: boolean,
   portrait: boolean,
   onPose: (s: PoseSample) => void,
   onAttitude: (a: PhoneAttitude) => void,
-  /** Keep the legs out of view the whole time (a room too small for the whole body). */
-  noFeet = false,
+  scenario: DemoScenario = 'basic',
   exercise: Exercise = 'pushup',
+  onDepth?: (p: DepthProbe) => void,
 ) {
   const pose = useRef(onPose);
   const att = useRef(onAttitude);
+  const dep = useRef(onDepth);
   useLayoutEffect(() => {
     pose.current = onPose;
     att.current = onAttitude;
+    dep.current = onDepth;
   });
 
   useEffect(() => {
     if (!enabled) return;
     // Portrait frames are tall and narrow, like a real upright camera.
-    const size = portrait ? { noisePx: 3, width: 720, height: 1280, torsoPx: 190 } : { noisePx: 3 };
-    const base = noFeet ? { ...size, hide: { ankle: 0.1, knee: 0.1 } } : size;
-    const frames = timeline(exercise === 'plank' ? PLANK_SCRIPT : PUSHUP_SCRIPT, { startT: 0, base });
-    const length = frames[frames.length - 1].t + 33;
+    const size: Partial<BodyParams> = portrait ? { noisePx: 3, width: 720, height: 1280, torsoPx: 190 } : { noisePx: 3 };
+    const frames: DemoFrame[] = [];
+    let t = 0;
+    for (const part of script(exercise, scenario)) {
+      const base = { ...size, ...part.body };
+      const samples = timeline(part.segs, {
+        startT: t,
+        base,
+        mapFrame: part.shake
+          ? (s, ft) => ({
+              ...s,
+              landmarks: s.landmarks.map((l) => ({
+                ...l,
+                x: l.x + 0.012 * Math.sin((2 * Math.PI * 3 * ft) / 1000),
+                y: l.y + 0.008 * Math.cos((2 * Math.PI * 2.3 * ft) / 1000),
+              })),
+            })
+          : undefined,
+      });
+      for (const s of samples) {
+        frames.push({ sample: part.nobody ? emptySample(s.t, s.width, s.height) : s, roll: part.roll ?? 0, depth: part.depth });
+      }
+      t = samples[samples.length - 1].t + 33;
+    }
+    const length = t;
     const t0 = performance.now();
     let i = 0;
     let loop = 0;
+    let n = 0;
     const id = setInterval(() => {
       const now = performance.now();
-      att.current({ t: now, rollDeg: 0.6 * Math.sin(now / 900), pitchDeg: 3, motionDegPerSec: 0.5 });
       const local = now - t0 - loop * length;
-      while (i < frames.length && frames[i].t <= local) {
+      const roll = frames[Math.min(i, frames.length - 1)].roll;
+      att.current({ t: now, rollDeg: roll + 0.6 * Math.sin(now / 900), pitchDeg: 3, motionDegPerSec: 0.5 });
+      while (i < frames.length && frames[i].sample.t <= local) {
         const f = frames[i++];
-        pose.current({ ...f, t: t0 + loop * length + f.t });
+        const ft = t0 + loop * length + f.sample.t;
+        pose.current({ ...f.sample, t: ft });
+        if (f.depth && n++ % 3 === 0) dep.current?.(probe(ft, f.depth));
       }
       if (i >= frames.length) {
         i = 0;
@@ -78,5 +265,5 @@ export function useDemoFeed(
       }
     }, 33);
     return () => clearInterval(id);
-  }, [enabled, portrait, noFeet, exercise]);
+  }, [enabled, portrait, scenario, exercise]);
 }

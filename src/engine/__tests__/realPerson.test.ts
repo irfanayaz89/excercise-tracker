@@ -288,3 +288,16 @@ describe('real person, heavy camera noise, phone perfectly still', () => {
     }
   });
 });
+
+describe('a held-up screen with real camera noise (missed before; found in the simulator demo)', () => {
+  it.each(DIFFICULTIES)('%s: caught for both exercises at 3 px and 6 px of noise', (level) => {
+    for (const exercise of ['pushup', 'plank'] as const) {
+      for (const noisePx of [3, 6]) {
+        const r = run(level, exercise);
+        r.play([...start(exercise), ...work(exercise, 6400)], null, { base: { noisePx } });
+        r.play(work(exercise, 8000), null, { mapFrame: handheld, base: { noisePx } });
+        expect(notReal(r)).toBe(true);
+      }
+    }
+  });
+});

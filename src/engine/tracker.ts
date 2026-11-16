@@ -181,6 +181,57 @@ export class SideSelector {
   }
 }
 
+/**
+ * Side plank: the side on the floor is the one whose shoulder is lower in the
+ * picture (both sides are in view when you face the phone). Switches only after
+ * the other shoulder has been clearly lower for a while, so a wobble never flips it.
+ */
+export class SupportSideSelector {
+  private side: Side | null = null;
+  private challengerSince: number | null = null;
+
+  constructor(private cfg: EngineConfig) {}
+
+  reset(): void {
+    this.side = null;
+    this.challengerSince = null;
+  }
+
+  get current(): Side | null {
+    return this.side;
+  }
+
+  update(pose: TrackedPose): Side | null {
+    const min = this.cfg.minVisibility;
+    const l = pose.vis[LM.leftShoulder] >= min ? pose.points[LM.leftShoulder].y : null;
+    const r = pose.vis[LM.rightShoulder] >= min ? pose.points[LM.rightShoulder].y : null;
+    if (l === null || r === null) {
+      // Only one shoulder in view: that side is the one facing the camera; keep the last choice if any.
+      if (this.side === null) this.side = l !== null ? 'left' : r !== null ? 'right' : null;
+      return this.side;
+    }
+    const lower: Side = l > r ? 'left' : 'right';
+    if (this.side === null) {
+      this.side = lower;
+      return this.side;
+    }
+    const torso = Math.max(
+      1,
+      Math.hypot(pose.points[LM.leftShoulder].x - pose.points[LM.leftHip].x, pose.points[LM.leftShoulder].y - pose.points[LM.leftHip].y),
+    );
+    if (lower !== this.side && Math.abs(l - r) / torso > 0.1) {
+      if (this.challengerSince === null) this.challengerSince = pose.t;
+      if (pose.t - this.challengerSince >= this.cfg.sideSwitchMs * 0.6) {
+        this.side = lower;
+        this.challengerSince = null;
+      }
+    } else {
+      this.challengerSince = null;
+    }
+    return this.side;
+  }
+}
+
 export function buildChain(pose: TrackedPose, side: Side): SideChain {
   const i = SIDE_IDX[side];
   return {
@@ -239,6 +290,8 @@ export function computeMetrics(chain: SideChain, pose: TrackedPose, horizonRollD
   const shoulderHeight = ok(v.wrist) ? (chain.wrist.y - chain.shoulder.y) / torsoPx : null;
   const wristOffset = ok(v.wrist) ? Math.abs(chain.wrist.x - chain.shoulder.x) / torsoPx : null;
   const elbowStack = ok(v.elbow) ? Math.abs(chain.elbow.x - chain.shoulder.x) / torsoPx : null;
+  const otherShoulder = chain.side === 'left' ? LM.rightShoulder : LM.leftShoulder;
+  const shoulderStack = ok(pose.vis[otherShoulder]) ? (chain.shoulder.y - pose.points[otherShoulder].y) / torsoPx : null;
   const forearmRise = ok(v.elbow) && ok(v.wrist) ? Math.abs(chain.wrist.y - chain.elbow.y) / torsoPx : null;
 
   const hip = { x: chain.hip.x / pose.width, y: chain.hip.y / pose.height };
@@ -256,6 +309,7 @@ export function computeMetrics(chain: SideChain, pose: TrackedPose, horizonRollD
     wristOffset,
     elbowStack,
     forearmRise,
+    shoulderStack,
     torsoPx,
     hipCenter: hip,
   };

@@ -1,5 +1,5 @@
 import type { EngineConfig } from './config';
-import { isForearmPlank, type Calibration } from './gates';
+import { isForearmPlank, isForearmSidePlank, type Calibration } from './gates';
 import type { BodyMetrics, PlankVariant } from './types';
 
 /**
@@ -14,6 +14,8 @@ export type HoldFault =
   | 'elbows-under-shoulders'
   | 'hands-under-shoulders'
   | 'dropped'
+  /** Side plank: rolled towards the floor or the ceiling (shoulders no longer stacked). */
+  | 'rolled'
   /** Medium and Hard judge the hips from the feet: with the feet out of view the clock waits. */
   | 'out-of-view';
 
@@ -113,6 +115,8 @@ export class HoldTimer {
     private cfg: EngineConfig,
     calibration: Pick<Calibration, 'hipOffset'>,
     readonly variant: PlankVariant = 'high',
+    /** Side plank rules: stacked shoulders, the support arm judged from the front. */
+    private sidePlank = false,
   ) {
     this.baseHip = calibration.hipOffset ?? null;
   }
@@ -307,6 +311,15 @@ export class HoldTimer {
       return hip !== null && hip < 0 ? 'hips-piking' : 'hips-sagging';
     }
 
+    if (this.sidePlank) {
+      if (m.shoulderStack !== null && m.shoulderStack < this.cfg.sidePlank.minStack) return 'rolled';
+      if (isForearmSidePlank(m, this.cfg)) {
+        if (m.elbowStack !== null && m.elbowStack > p.maxElbowStack) return 'elbows-under-shoulders';
+      } else if (m.elbowDeg !== null && m.elbowDeg < p.minElbowDeg - h.armBendDeg) {
+        return 'arms-bent';
+      }
+      return null;
+    }
     if (isForearmPlank(m, this.cfg)) {
       if (m.elbowStack !== null && m.elbowStack > p.maxElbowStack) return 'elbows-under-shoulders';
     } else if (m.elbowDeg !== null && m.elbowDeg < p.minElbowDeg - h.armBendDeg) {
@@ -325,7 +338,8 @@ export class HoldTimer {
       const slope = this.hipSlope();
       if (slope !== null && slope >= h.sagTrendPerSec && hip > h.sagFault * 0.3) return 'hips-sagging';
     }
-    if (h.checkHands && !isForearmPlank(m, this.cfg) && m.wristOffset !== null && m.wristOffset > this.cfg.plank.maxWristOffset) {
+    const forearm = this.sidePlank ? isForearmSidePlank(m, this.cfg) : isForearmPlank(m, this.cfg);
+    if (h.checkHands && !forearm && m.wristOffset !== null && m.wristOffset > this.cfg.plank.maxWristOffset) {
       return 'hands-under-shoulders';
     }
     return null;

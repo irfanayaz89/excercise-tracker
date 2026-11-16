@@ -25,7 +25,7 @@ export function SetupDiagram({
       height={h}
       viewBox="0 40 320 96"
       accessibilityLabel={`Stand the phone on the floor in ${orientation}, ${distance} to the side of where you will ${
-        exercise === 'plank' ? 'hold your plank' : 'do push-ups'
+        exercise === 'plank' ? 'hold your plank' : exercise === 'sidePlank' ? 'hold your side plank, facing it' : 'do push-ups'
       }`}
     >
       <Line x1="6" y1="116" x2="314" y2="116" stroke={color.line} strokeWidth={2} />
@@ -47,7 +47,18 @@ export function SetupDiagram({
       <SvgText x="94" y="135" fontSize={10} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
         {distance}
       </SvgText>
-      {exercise === 'plank' ? (
+      {exercise === 'sidePlank' ? (
+        <>
+          {/* side plank facing the phone: support forearm under the shoulder, top arm raised */}
+          <G stroke={color.chalk} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M176 94 L178 113 L168 113" />
+            <Path d="M176 94 L232 103 L292 112" />
+            <Path d="M176 94 L174 62" />
+          </G>
+          <Circle cx="163" cy="89" r="8" fill={color.chalk} />
+          <Line x1="170" y1="92" x2="294" y2="112" stroke={color.vial} strokeWidth={1.5} strokeDasharray="5 4" />
+        </>
+      ) : exercise === 'plank' ? (
         <>
           {/* forearm plank, head left: forearm flat on the floor, elbow under the shoulder */}
           <G stroke={color.chalk} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" fill="none">
@@ -105,8 +116,9 @@ export function RepDiagram({ width = 320 }: { width?: number }) {
   );
 }
 
-/** Both ways to hold a plank, side by side, each with its straight body line. */
-export function HoldDiagram({ width = 320 }: { width?: number }) {
+/** Both ways to hold a plank (or side plank), side by side, each with its straight body line. */
+export function HoldDiagram({ width = 320, exercise = 'plank' }: { width?: number; exercise?: Exercise }) {
+  if (exercise === 'sidePlank') return <SideHoldDiagram width={width} />;
   return (
     <Svg
       width={width}
@@ -138,6 +150,41 @@ export function HoldDiagram({ width = 320 }: { width?: number }) {
   );
 }
 
+/** Side plank: on the forearm, or on a straight arm, each with the top arm raised. */
+function SideHoldDiagram({ width }: { width: number }) {
+  return (
+    <Svg
+      width={width}
+      height={width * 0.3}
+      viewBox="0 8 320 96"
+      accessibilityLabel="Side plank on the forearm with the elbow under the shoulder, or on a straight arm with the hand under the shoulder, in one straight line"
+    >
+      <Line x1="6" y1="78" x2="150" y2="78" stroke={color.line} strokeWidth={2} />
+      <Line x1="170" y1="78" x2="314" y2="78" stroke={color.line} strokeWidth={2} />
+      <G stroke={color.chalk} strokeWidth={4.5} strokeLinecap="round" strokeLinejoin="round" fill="none">
+        {/* forearm */}
+        <Path d="M36 60 L37 76 L28 76" />
+        <Path d="M36 60 L88 68 L146 76" />
+        <Path d="M36 60 L35 30" />
+        {/* straight arm */}
+        <Path d="M204 46 L205 76" />
+        <Path d="M204 46 L258 61 L312 76" />
+        <Path d="M204 46 L203 16" />
+      </G>
+      <Line x1="30" y1="58" x2="148" y2="76" stroke={color.vial} strokeWidth={1.5} strokeDasharray="4 4" />
+      <Line x1="198" y1="44" x2="314" y2="76" stroke={color.vial} strokeWidth={1.5} strokeDasharray="4 4" />
+      <Circle cx="24" cy="56" r="7" fill={color.chalk} />
+      <Circle cx="192" cy="42" r="7" fill={color.chalk} />
+      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        FOREARM · ELBOW UNDER
+      </SvgText>
+      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        STRAIGHT ARM · HAND UNDER
+      </SvgText>
+    </Svg>
+  );
+}
+
 /**
  * Small exercise icon for pickers and lists: a push-up with an up-down arrow
  * (counted), or a forearm plank with a stopwatch (timed).
@@ -148,7 +195,23 @@ export function ExerciseGlyph({ exercise, active = true, size = 44 }: { exercise
   return (
     <Svg width={size} height={(size * 30) / 44} viewBox="0 0 44 30" accessibilityElementsHidden importantForAccessibility="no">
       <Line x1="1" y1="27.5" x2="43" y2="27.5" stroke={color.line} strokeWidth={1.5} />
-      {exercise === 'plank' ? (
+      {exercise === 'sidePlank' ? (
+        <>
+          {/* side plank: forearm down, top arm raised, a left-right arrow for "each side" */}
+          <G stroke={ink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M12 18 L13 26 L9 26" />
+            <Path d="M12 18 L26 22 L40 26" />
+            <Path d="M12 18 L11 6" />
+          </G>
+          <Circle cx="8" cy="15.5" r="3" fill={ink} />
+          <G stroke={accent} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" fill="none">
+            {/* left-right arrow: each side */}
+            <Path d="M25 8 L37 8" />
+            <Path d="M27.5 5.5 L25 8 L27.5 10.5" />
+            <Path d="M34.5 5.5 L37 8 L34.5 10.5" />
+          </G>
+        </>
+      ) : exercise === 'plank' ? (
         <>
           <G stroke={ink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" fill="none">
             <Path d="M12 19 L13 26 L5 26" />
@@ -189,16 +252,23 @@ export function PlankGhost({
   width: number;
   height: number;
   facing: 'left' | 'right';
-  /** Push-ups start from a high plank; the plank exercise shows a forearm plank. */
-  variant?: PlankVariant;
+  /** Push-ups start from a high plank; the plank shows a forearm plank; 'side' is a side plank. */
+  variant?: PlankVariant | 'side';
 }) {
   // Normalized plank pose in a 100×56 box, head on the left.
   const flip = facing === 'right';
   const X = (x: number) => ((flip ? 100 - x : x) / 100) * width;
   const Y = (y: number) => (y / 56) * height;
-  const forearm = variant === 'forearm';
+  const forearm = variant === 'forearm' || variant === 'side';
   const pts = forearm
-    ? { head: [16, 32], shoulder: [23, 36], elbow: [24, 47], wrist: [11, 47], hip: [53, 41], ankle: [87, 46] }
+    ? {
+        head: [16, 32],
+        shoulder: [23, 36],
+        elbow: [24, 47],
+        wrist: variant === 'side' ? [18, 47] : [11, 47],
+        hip: [53, 41],
+        ankle: [87, 46],
+      }
     : { head: [16, 22], shoulder: [22, 27], elbow: [22.5, 37], wrist: [23, 47], hip: [52, 35], ankle: [86, 46] };
   const P = (k: keyof typeof pts) => `${X(pts[k][0])} ${Y(pts[k][1])}`;
   return (
@@ -213,6 +283,7 @@ export function PlankGhost({
       >
         <Path d={`M${P('shoulder')} L${P('elbow')} L${P('wrist')}`} />
         <Path d={`M${P('shoulder')} L${P('hip')} L${P('ankle')}`} />
+        {variant === 'side' && <Path d={`M${P('shoulder')} L${X(22)} ${Y(14)}`} />}
       </G>
       <Circle
         cx={X(pts.head[0])}

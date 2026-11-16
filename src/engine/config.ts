@@ -162,6 +162,17 @@ export interface EngineConfig {
   allowKneeling: boolean;
 
   /**
+   * Side plank: you face the phone, lying on one side. The top shoulder sits
+   * above the bottom one by about a shoulder width (0.6–0.8 torso lengths).
+   */
+  sidePlank: {
+    /** Shoulder stack needed to start (torso lengths). */
+    startStack: number;
+    /** Below this mid-hold, the body has rolled towards the floor or the ceiling. */
+    minStack: number;
+  };
+
+  /**
    * Real-person check: a video of someone exercising, shown on a screen, must
    * not count. Two independent signals, each needing sustained evidence.
    */
@@ -185,8 +196,14 @@ export interface EngineConfig {
      * real person stays under 0.042; a screen shaken by about 5 mm reads 0.05+.
      */
     shakeSpeed: number;
-    /** ...and moving together: their midpoint moves at least this many times more than the gap between them changes. */
+    /**
+     * ...and moving together: their midpoint moves at least this many times more
+     * than the gap between them changes. Measured: camera noise on a real person
+     * never above 0.9; a held-up screen mostly above 1.1.
+     */
     shakeRigidity: number;
+    /** Share of frames over `shakeMs` that must look like shaking. */
+    shakeShare: number;
     /** ...for this long, mostly back and forth rather than one move. */
     shakeMs: number;
     /** The phone counts as still below this rotation speed (deg/s). */
@@ -287,6 +304,7 @@ export const DEFAULT_CONFIG: EngineConfig = {
     identityScale: 0.35,
   },
   allowKneeling: false,
+  sidePlank: { startStack: 0.4, minStack: 0.28 },
   reality: {
     enabled: true,
     minStandOutM: 0.12,
@@ -297,7 +315,8 @@ export const DEFAULT_CONFIG: EngineConfig = {
     minVotes: 6,
     fakeShare: 0.75,
     shakeSpeed: 0.045,
-    shakeRigidity: 2,
+    shakeRigidity: 1.1,
+    shakeShare: 0.7,
     shakeMs: 3000,
     stillPhoneDegPerSec: 3,
     clearMs: 2000,

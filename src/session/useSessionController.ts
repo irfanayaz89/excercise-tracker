@@ -260,7 +260,7 @@ function diagnosticLine(session: PushupSession): string {
   const pl = s.placement;
   return [
     '[trueline]',
-    s.phase,
+    s.phase === 'paused' ? `paused(${s.pauseReason})` : s.phase,
     `framing=${s.framing.ok ? 'ok' : s.framing.issue}${s.framing.hint ? `(${s.framing.hint})` : ''}`,
     `vis=${s.framing.meanVisibility.toFixed(2)}`,
     `plank=${s.plankIssues.join(',') || 'ok'}`,

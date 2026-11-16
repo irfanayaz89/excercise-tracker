@@ -120,10 +120,10 @@ export default function SettingsScreen() {
         />
       </Section>
 
-      <Section title="Plank">
+      <Section title="Planks">
         <ToggleRow
           label="Test mode"
-          hint="For a max-hold test: the plank ends at the first real form break. Off, the clock just pauses until you fix your form."
+          hint="For a max-hold test: a plank or side plank ends at the first real form break. Off, the clock just pauses until you fix your form."
           value={s.plankTestMode}
           onChange={(v) => update({ plankTestMode: v })}
         />

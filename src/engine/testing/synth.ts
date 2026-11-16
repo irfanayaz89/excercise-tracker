@@ -40,6 +40,12 @@ export interface BodyParams {
   forearm?: boolean;
   /** Forearm plank: shoulders ahead of the elbows (towards the head) by this many torso lengths; negative = behind. */
   elbowStack?: number;
+  /**
+   * Side plank, facing the camera: the top side of the body is in view, this many
+   * torso lengths above the bottom (supporting) side, top arm resting on the hip.
+   * The near side is the one on the floor.
+   */
+  stack?: number;
   /** Forearm plank: share of the forearm seen side-on (hands clasped in front point the forearm partly away). */
   forearmScale?: number;
   /**
@@ -187,12 +193,24 @@ export function renderPose(t: number, params: BodyParams): PoseSample {
     presence: 0.99,
   }));
   const sw = (params.shoulderWidth ?? 0.12) * torsoPx;
+  const stack = (params.stack ?? 0) * torsoPx;
+  // Side plank: the top side sits above the bottom one; the top arm rests on the top hip.
+  const top = (q: Vec2): Vec2 => ({ x: q.x, y: q.y - stack });
+  const topArm = {
+    wrist: top(pts.hip),
+    elbow: { x: (pts.shoulder.x + pts.hip.x) / 2, y: (pts.shoulder.y + pts.hip.y) / 2 - stack - 0.25 * torsoPx },
+  };
   for (const name of ['shoulder', 'elbow', 'wrist', 'hip', 'knee', 'ankle', 'ear'] as const) {
     const p = pts[name];
     const nv = hide[name] ?? near;
     const ni = idx(name, nearSide);
     const fi = idx(name, nearSide === 'left' ? 'right' : 'left');
     lms[ni] = { x: (p.x + jitter()) / width, y: (p.y + jitter()) / height, z: 0, visibility: nv, presence: 0.99 };
+    if (stack > 0) {
+      const q = name === 'elbow' || name === 'wrist' ? topArm[name] : top(p);
+      lms[fi] = { x: (q.x + jitter()) / width, y: (q.y + jitter()) / height, z: -0.1, visibility: hide[name] ?? near, presence: 0.99 };
+      continue;
+    }
     const spread = name === 'shoulder' ? sw : 6;
     lms[fi] = { x: (p.x + spread + jitter()) / width, y: (p.y - 4 + jitter()) / height, z: 0.1, visibility: far, presence: 0.9 };
   }
@@ -231,6 +249,16 @@ export const plank = (
   durationMs,
   at: (k) => ({ elbowDeg: 172, ...(typeof extra === 'function' ? extra(k) : extra) }),
 });
+
+/**
+ * Side plank on the forearm, facing the camera: forearm pointing at the camera
+ * (so the wrist shows next to the elbow), top side stacked above.
+ */
+export const sidePlank = (
+  durationMs: number,
+  extra: Partial<BodyParams> | ((k: number) => Partial<BodyParams>) = {},
+): Segment =>
+  plank(durationMs, (k) => ({ forearm: true, forearmScale: 0.1, stack: 0.7, ...(typeof extra === 'function' ? extra(k) : extra) }));
 
 /** Forearm plank shorthand. */
 export const forearmPlank = (

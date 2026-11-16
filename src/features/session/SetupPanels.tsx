@@ -9,6 +9,7 @@ import { SetupDiagram } from '@/ui/Diagrams';
 import { LevelVial } from '@/ui/LevelVial';
 import { Body, Button, Display, Label, Mono } from '@/ui/primitives';
 import { color, radius, space, type } from '@/ui/theme';
+import { isTimed } from '@/engine/exercises';
 
 /** Step 1: get the phone standing level on the floor. */
 export function PhonePanel({
@@ -70,6 +71,15 @@ const CHECKS: { key: string; label: string; issues: PlankIssue[] }[] = [
   { key: 'hands', label: 'Hands under shoulders', issues: ['hands-under-shoulders'] },
 ];
 
+/** Side plank: on one side facing the phone, support arm under the shoulder. */
+const SIDE_PLANK_CHECKS: { key: string; label: string; issues: PlankIssue[] }[] = [
+  { key: 'down', label: 'Down on the floor', issues: ['get-down'] },
+  { key: 'side', label: 'On your side, facing the phone', issues: ['roll-onto-side'] },
+  { key: 'arms', label: 'Elbow or hand under your shoulder', issues: ['straighten-arms', 'elbows-under-shoulders'] },
+  { key: 'line', label: 'Hips up, body in one line', issues: ['hips-sagging', 'hips-high'] },
+  { key: 'legs', label: 'Legs straight', issues: ['straighten-legs'] },
+];
+
 /** Plank: arms straight or forearms down both work; hand position is not checked. */
 const PLANK_CHECKS: { key: string; label: string; issues: PlankIssue[] }[] = [
   { key: 'down', label: 'In a plank', issues: ['get-down'] },
@@ -91,8 +101,8 @@ export function BodyPanel({
   /** Only the checks this difficulty actually applies are listed. */
   config: EngineConfig;
 }) {
-  const plank = snap.exercise === 'plank';
-  const checks = (plank ? PLANK_CHECKS : CHECKS).filter(
+  const plank = isTimed(snap.exercise);
+  const checks = (snap.exercise === 'sidePlank' ? SIDE_PLANK_CHECKS : plank ? PLANK_CHECKS : CHECKS).filter(
     (c) =>
       (c.key !== 'line' || config.plank.checkHips) &&
       (c.key !== 'hands' || config.plank.checkHands) &&

@@ -16,13 +16,15 @@ import { HoldTimer, type HoldEvent, type HoldFault, type HoldSnapshot, type Hold
 import { RealityCheck, type DepthProbe, type RealityIssue } from './reality';
 import { MetricMedian } from './smoothing';
 import { RepCounter, type MissRecord, type RepFault, type RepPhase, type RepRecord } from './repCounter';
-import { buildChain, computeMetrics, PoseTracker, SideSelector, type TrackedPose } from './tracker';
+import { buildChain, computeMetrics, PoseTracker, SideSelector, SupportSideSelector, type TrackedPose } from './tracker';
 import { LM, type BodyMetrics, type Exercise, type PhoneAttitude, type PlankVariant, type PoseSample, type Side } from './types';
+import { isTimed } from './exercises';
 
 export type SessionPhase = 'phone-setup' | 'body-check' | 'counting' | 'paused' | 'ended';
 
 /** not-real: the real-person check found a video on a screen, not a person. */
-export type PauseReason = 'lost-tracking' | 'left-position' | 'phone-moved' | 'interrupted' | 'other-person' | 'not-real';
+/** switch-sides: side plank, one side reached its target; hold the other side next. */
+export type PauseReason = 'lost-tracking' | 'left-position' | 'phone-moved' | 'interrupted' | 'other-person' | 'not-real' | 'switch-sides';
 
 /** form-break: plank test mode, the hold ended at the first real form break. */
 export type EndReason = 'user' | 'target' | 'idle' | 'paused-too-long' | 'form-break';
@@ -39,6 +41,8 @@ export type Cue =
   | { kind: 'miss'; reason: MissRecord['reason'] }
   | { kind: 'paused'; reason: PauseReason }
   | { kind: 'target-reached' }
+  /** Side plank: this side is done (or was already done); hold the other side. */
+  | { kind: 'switch-sides'; done: Side }
   /** Setup: what the camera sees looks like a video on a screen, so the set will not start. */
   | { kind: 'not-real'; issue: RealityIssue }
   /** Plank: form slipping (clock still running) or broken (clock stopped). */
@@ -88,6 +92,10 @@ export interface SessionSnapshot {
   targetHoldMs: number | null;
   /** A sustained sign the camera sees a screen, not a person. */
   reality: RealityIssue | null;
+  /** Side plank: time in good form on each side so far, the side being timed, and sides at their target. */
+  holdSides: Partial<Record<Side, number>> | null;
+  activeSide: Side | null;
+  doneSides: Side[];
 }
 
 /** Where the body sits in the camera frame, for on-screen alignment hints. */
@@ -141,8 +149,10 @@ export interface SessionSummary {
   avgScore: number | null;
   bestCleanStreak: number;
   pauses: number;
-  /** Plank only. */
+  /** Plank and side plank (both sides together for a side plank). */
   hold?: HoldSummary;
+  /** Side plank: each side on its own. */
+  holdSides?: Partial<Record<Side, HoldSummary>>;
   /** Times the set paused because it looked like a video on a screen. */
   realityFlags?: number;
 }
@@ -185,7 +195,14 @@ export class PushupSession {
   /** Same, for the form readings during reps (body line, hips, neck). */
   private formSmoother = new MetricMedian();
   private counter: RepCounter | null = null;
+  /** The hold clock being timed now (side plank: the active side's). */
   private holdTimer: HoldTimer | null = null;
+  /** Side plank: a clock per side, plus its time calls and countdown so far. */
+  private sideTimers: Partial<Record<Side, HoldTimer>> = {};
+  private sideMarks: Partial<Record<Side, { milestone: number; countdown: number | null }>> = {};
+  private activeSide: Side | null = null;
+  private doneSides = new Set<Side>();
+  private supportSides: SupportSideSelector;
   readonly exercise: Exercise;
   private targetHoldMs: number | null;
   /** Plank type seen in the latest start check. */
@@ -236,14 +253,24 @@ export class PushupSession {
     this.cfg = opts.config ?? DEFAULT_CONFIG;
     this.difficulty = opts.difficulty;
     this.exercise = opts.exercise ?? 'pushup';
-    this.targetReps = this.exercise === 'pushup' && opts.targetReps && opts.targetReps > 0 ? Math.floor(opts.targetReps) : null;
-    this.targetHoldMs = this.exercise === 'plank' && opts.targetHoldMs && opts.targetHoldMs > 0 ? opts.targetHoldMs : null;
+    this.targetReps = !isTimed(this.exercise) && opts.targetReps && opts.targetReps > 0 ? Math.floor(opts.targetReps) : null;
+    this.targetHoldMs = isTimed(this.exercise) && opts.targetHoldMs && opts.targetHoldMs > 0 ? opts.targetHoldMs : null;
     this.tracker = new PoseTracker(this.cfg);
     this.sides = new SideSelector(this.cfg);
     this.phoneGate = new PhoneGate(this.cfg);
     this.framingGate = new FramingGate(this.cfg);
     this.plankHold = new PlankHold(this.cfg);
     this.reality = new RealityCheck(this.cfg);
+    this.supportSides = new SupportSideSelector(this.cfg);
+  }
+
+  /**
+   * The body side the rules read. Push-ups and plank: the side facing the
+   * camera. Side plank: the side on the floor (you face the phone, both sides in view).
+   */
+  private pickSide(pose: TrackedPose): Side | null {
+    if (this.exercise === 'sidePlank') return pose.detected ? this.supportSides.update(pose) : this.supportSides.current;
+    return pose.detected ? this.sides.update(pose) : this.sides.current;
   }
 
   subscribe(fn: (e: SessionEvent) => void): () => void {
@@ -306,7 +333,7 @@ export class PushupSession {
       if (this.pauseReason === 'interrupted') return;
       if (this.pauseReason === 'not-real') {
         // Stay paused until there has been no sign of a screen for a while.
-        const side = pose.detected ? this.sides.update(pose) : this.sides.current;
+        const side = this.pickSide(pose);
         const chain = side && pose.detected ? buildChain(pose, side) : null;
         if (chain) this.feedContacts(chain, pose);
         if (this.reality.issue(this.now) || this.reality.clearFor(this.now) < this.cfg.reality.clearMs) {
@@ -375,6 +402,7 @@ export class PushupSession {
     this.advanceClock(t);
     this.tracker.reset();
     this.sides.reset();
+    this.supportSides.reset();
     this.reality.reset();
     this.plankHold.reset();
     this.plankProgress = 0;
@@ -403,7 +431,7 @@ export class PushupSession {
   }
 
   get currentSide(): Side | null {
-    return this.sides.current;
+    return this.exercise === 'sidePlank' ? this.supportSides.current : this.sides.current;
   }
 
   /** Smoothed pixel landmarks from the last usable frame, for drawing. */
@@ -418,7 +446,7 @@ export class PushupSession {
   get bodyState(): 0 | 1 | 2 | 3 {
     const m = this.metrics;
     if (!m || (this.phase !== 'counting' && this.phase !== 'body-check')) return 3;
-    if (this.exercise === 'plank') {
+    if (isTimed(this.exercise)) {
       if (this.phase === 'body-check') return this.plankIssues.length > 0 ? 1 : 0;
       const st = this.holdTimer?.currentState;
       return st === 'broken' ? 2 : st === 'warning' ? 1 : 0;
@@ -446,7 +474,7 @@ export class PushupSession {
       repPhase: this.counter?.phase ?? null,
       depth: this.depth,
       metrics: this.metrics,
-      side: this.sides.current,
+      side: this.currentSide,
       pauseReason: this.pauseReason,
       lastRep: last,
       targetReps: this.targetReps,
@@ -456,6 +484,9 @@ export class PushupSession {
       hold: this.holdTimer?.snapshot() ?? null,
       targetHoldMs: this.targetHoldMs,
       reality: this.reality.issue(this.now),
+      holdSides: this.exercise === 'sidePlank' ? Object.fromEntries(Object.entries(this.sideTimers).map(([k, v]) => [k, v!.good])) : null,
+      activeSide: this.activeSide,
+      doneSides: [...this.doneSides],
     };
   }
 
@@ -506,7 +537,7 @@ export class PushupSession {
     // instead of resetting the plank hold the user is in the middle of.
     if (pose.detected) this.lastDetectedT = pose.t;
     else if (this.lastDetectedT !== null && pose.t - this.lastDetectedT <= this.cfg.landmarkHoldMs) return;
-    const side = pose.detected ? this.sides.update(pose) : this.sides.current;
+    const side = this.pickSide(pose);
     const chain = side && pose.detected ? buildChain(pose, side) : null;
     this.framing = this.framingGate.check(pose, chain);
     const metrics = chain ? computeMetrics(chain, pose, this.phoneGate.horizonRoll(pose.t), this.cfg) : null;
@@ -544,6 +575,13 @@ export class PushupSession {
     if (hold.wobbly) this.cue({ kind: 'plank', issue: 'hold-still' });
     if (hold.calibration) {
       // A video of someone in a plank must not start the set.
+      // Side plank: a side that already reached its target is done; ask for the other one.
+      if (this.exercise === 'sidePlank' && this.doneSides.has(hold.calibration.side)) {
+        this.plankHold.reset();
+        this.plankProgress = 0;
+        this.cue({ kind: 'switch-sides', done: hold.calibration.side });
+        return;
+      }
       const issue = this.reality.issue(pose.t);
       if (issue) {
         this.plankHold.reset();
@@ -558,7 +596,19 @@ export class PushupSession {
   private beginCounting(cal: Calibration, t: number): void {
     this.calibration = cal;
     const resuming = this.phase === 'paused';
-    if (this.exercise === 'plank') {
+    if (this.exercise === 'sidePlank') {
+      // One clock per side; time calls and the countdown carry on per side too.
+      if (this.activeSide !== null) this.sideMarks[this.activeSide] = { milestone: this.lastMilestone, countdown: this.lastCountdown };
+      const side = cal.side;
+      const existing = this.sideTimers[side];
+      if (existing) existing.restart(cal);
+      else this.sideTimers[side] = new HoldTimer(this.cfg, cal, this.startVariant, true);
+      this.holdTimer = this.sideTimers[side]!;
+      this.activeSide = side;
+      const marks = this.sideMarks[side];
+      this.lastMilestone = marks?.milestone ?? 0;
+      this.lastCountdown = marks?.countdown ?? null;
+    } else if (isTimed(this.exercise)) {
       if (this.holdTimer) this.holdTimer.restart(cal);
       else this.holdTimer = new HoldTimer(this.cfg, cal, this.startVariant);
     } else if (this.counter) this.counter.restart(cal);
@@ -582,7 +632,7 @@ export class PushupSession {
 
   private evaluateCounting(pose: TrackedPose): void {
     const t = pose.t;
-    const side = pose.detected ? this.sides.update(pose) : this.sides.current;
+    const side = this.pickSide(pose);
     const chain = side && pose.detected ? buildChain(pose, side) : null;
     const metrics = chain ? computeMetrics(chain, pose, this.phoneGate.horizonRoll(t), this.cfg) : null;
 
@@ -615,7 +665,12 @@ export class PushupSession {
       return;
     }
 
-    if (this.exercise === 'plank') {
+    if (isTimed(this.exercise)) {
+      // Side plank: turning onto the other side mid-hold is a new hold on that side.
+      if (this.exercise === 'sidePlank' && side !== null && this.activeSide !== null && side !== this.activeSide) {
+        this.pause('left-position');
+        return;
+      }
       this.evaluateHold(metrics, t);
       return;
     }
@@ -687,6 +742,15 @@ export class PushupSession {
     if (this.targetHoldMs !== null) {
       const left = this.targetHoldMs - good;
       if (left <= 0) {
+        if (this.exercise === 'sidePlank' && this.activeSide !== null) {
+          // The target is per side: this side is done; finish once both are.
+          this.doneSides.add(this.activeSide);
+          if (this.doneSides.size < 2) {
+            this.cue({ kind: 'switch-sides', done: this.activeSide }, true);
+            this.pause('switch-sides');
+            return;
+          }
+        }
         this.cue({ kind: 'target-reached' }, true);
         this.end('target');
         return;
@@ -707,6 +771,34 @@ export class PushupSession {
         this.cue({ kind: 'hold-time', seconds: milestone * this.cfg.hold.milestoneSec }, true);
       }
     }
+  }
+
+  /** The plank's summary; a side plank adds each side and combines them. */
+  private holdSummaries(): Pick<SessionSummary, 'hold' | 'holdSides'> {
+    if (this.exercise !== 'sidePlank') return { hold: this.holdTimer?.summary() };
+    const sides = Object.fromEntries(Object.entries(this.sideTimers).map(([k, v]) => [k, v!.summary()])) as Partial<
+      Record<Side, HoldSummary>
+    >;
+    const all = Object.values(sides);
+    if (all.length === 0) return {};
+    const faultMs: HoldSummary['faultMs'] = {};
+    for (const s of all)
+      for (const [f, ms] of Object.entries(s.faultMs)) faultMs[f as HoldFault] = (faultMs[f as HoldFault] ?? 0) + (ms ?? 0);
+    const goodMs = all.reduce((n, s) => n + s.goodMs, 0);
+    const totalMs = all.reduce((n, s) => n + s.totalMs, 0);
+    return {
+      holdSides: sides,
+      hold: {
+        variant: all[0].variant,
+        goodMs,
+        totalMs,
+        longestMs: Math.max(...all.map((s) => s.longestMs)),
+        breaks: all.reduce((n, s) => n + s.breaks, 0),
+        faultMs,
+        headDownMs: all.reduce((n, s) => n + s.headDownMs, 0),
+        formPct: totalMs > 0 ? Math.min(1, goodMs / totalMs) : 0,
+      },
+    };
   }
 
   /** @returns true when the set ended. */
@@ -885,7 +977,7 @@ export class PushupSession {
       avgScore: n ? reps.reduce((s, r) => s + r.score, 0) / n : null,
       bestCleanStreak: best,
       pauses: this.pauses,
-      hold: this.holdTimer?.summary(),
+      ...this.holdSummaries(),
       realityFlags: this.realityFlags,
     };
   }

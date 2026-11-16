@@ -2,6 +2,7 @@ import Storage from 'expo-sqlite/kv-store';
 import { useCallback, useEffect, useState } from 'react';
 import type { Difficulty } from '@/engine/difficulty';
 import type { Exercise, PhoneOrientation } from '@/engine/types';
+import { EXERCISE_IDS } from '@/engine/exercises';
 
 /** guided = step-by-step help for newcomers; quick = minimal screens for experienced users. */
 export type Experience = 'guided' | 'quick';
@@ -77,10 +78,10 @@ export const HOLD_TARGETS = [0, 30, 45, 60, 90, 120];
 export function normalizeSettings(raw: unknown): Settings {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const d = DEFAULT_SETTINGS;
-  const oneOf = <T,>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
+  const oneOf = <T>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
   const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
   return {
-    exercise: oneOf(o.exercise, ['pushup', 'plank'] as const, d.exercise),
+    exercise: oneOf(o.exercise, EXERCISE_IDS, d.exercise),
     targetReps: oneOf(o.targetReps, TARGETS, d.targetReps),
     targetHoldSec: oneOf(o.targetHoldSec, HOLD_TARGETS, d.targetHoldSec),
     plankTestMode: bool(o.plankTestMode, d.plankTestMode),

@@ -9,7 +9,7 @@ import { usePoseStream, type PoseStats } from '@/camera/usePoseStream';
 import type { SessionSnapshot, SessionSummary } from '@/engine/session';
 import type { PhoneOrientation } from '@/engine/types';
 import { Gate, openSettings } from '@/features/session/Gate';
-import { useDemoFeed } from '@/features/session/useDemoFeed';
+import { demoScenario, useDemoFeed, type DemoScenario } from '@/features/session/useDemoFeed';
 import { CountColumn, CueBanner, DepthColumn, LineColumn, PausedPanel, TimerColumn, TrackingDebug } from '@/features/session/LiveHud';
 import { AlignmentGuide } from '@/features/session/AlignmentGuide';
 import { BodyPanel, PhonePanel } from '@/features/session/SetupPanels';
@@ -23,10 +23,11 @@ import { PlankGhost } from '@/ui/Diagrams';
 import { Button, Label } from '@/ui/primitives';
 import { SkeletonOverlay } from '@/ui/SkeletonOverlay';
 import { color, radius, space } from '@/ui/theme';
+import { isExercise, isTimed } from '@/engine/exercises';
 
 /** Something worth saving: a counted rep, or a second of plank in good form. */
 function hasWork(s: SessionSnapshot): boolean {
-  return s.exercise === 'plank' ? (s.hold?.goodMs ?? 0) >= 1000 : s.reps > 0;
+  return isTimed(s.exercise) ? (s.hold?.goodMs ?? 0) >= 1000 : s.reps > 0;
 }
 
 /** Back if there is somewhere to go back to (not after a cold-start deep link), else home. */
@@ -38,10 +39,20 @@ function goBack() {
 export default function SessionScreen() {
   // One set uses the settings it started with; changes apply to the next set.
   const [liveSettings] = useSettings();
-  const [settings] = useState(liveSettings);
-  const demoParam = useLocalSearchParams<{ demo?: string }>().demo;
-  // demo=1: scripted set; demo=nofeet: legs never in view (previews the "no room" help).
-  const demo = demoParam === '1' || demoParam === 'nofeet';
+  const params = useLocalSearchParams<{ demo?: string; ex?: string; level?: string }>();
+  // demo=<scenario> plays a scripted synthetic set (see useDemoFeed); a demo can
+  // also pick the exercise and level (`ex=plank`, `level=hard`) without changing Settings.
+  const scenario = demoScenario(params.demo);
+  const demo = scenario !== null;
+  const [settings] = useState<Settings>(() =>
+    demo
+      ? {
+          ...liveSettings,
+          ...(isExercise(params.ex) ? { exercise: params.ex } : {}),
+          ...(params.level === 'easy' || params.level === 'medium' || params.level === 'hard' ? { difficulty: params.level } : {}),
+        }
+      : liveSettings,
+  );
   const permission = useCameraPermission();
   const preferred = useCameraDevice(settings.camera);
   const other = useCameraDevice(settings.camera === 'front' ? 'back' : 'front');
@@ -78,7 +89,7 @@ export default function SessionScreen() {
         usingFallbackCamera={false}
         withDepth={false}
         demo
-        demoNoFeet={demoParam === 'nofeet'}
+        scenario={scenario ?? 'basic'}
       />
     );
   if (!permission.hasPermission) {
@@ -126,7 +137,7 @@ function LiveSession({
   usingFallbackCamera,
   withDepth,
   demo = false,
-  demoNoFeet = false,
+  scenario = 'basic',
 }: {
   settings: Settings;
   device: CameraDevice | null;
@@ -134,7 +145,7 @@ function LiveSession({
   /** The camera can deliver depth for the real-person check. */
   withDepth: boolean;
   demo?: boolean;
-  demoNoFeet?: boolean;
+  scenario?: DemoScenario;
 }) {
   const { width: winW, height: winH } = useWindowDimensions();
   const landscape = winW > winH;
@@ -196,7 +207,7 @@ function LiveSession({
   const ctrl = useSessionController(settings, onEnded);
   const pose = usePoseStream({ modelPreference: settings.model, onPose: ctrl.onPose, depth: withDepth, onDepth: ctrl.onDepth });
   const motion = usePhoneAttitude(!demo, settings.orientation, ctrl.onAttitude);
-  useDemoFeed(demo, settings.orientation === 'portrait', ctrl.onPose, ctrl.onAttitude, demoNoFeet, settings.exercise);
+  useDemoFeed(demo, settings.orientation === 'portrait', ctrl.onPose, ctrl.onAttitude, scenario, settings.exercise, ctrl.onDepth);
   useLayoutEffect(() => {
     ctrlRef.current = ctrl;
     modelRef.current = pose.model;
@@ -348,7 +359,7 @@ function StageDecor({
             width={width * 0.78}
             height={width * 0.78 * 0.56}
             facing={snap.side === 'right' ? 'right' : 'left'}
-            variant={snap.exercise === 'plank' ? 'forearm' : 'high'}
+            variant={snap.exercise === 'sidePlank' ? 'side' : isTimed(snap.exercise) ? 'forearm' : 'high'}
           />
         </View>
       )}
@@ -399,7 +410,7 @@ function Hud({
   const snap = useSnapshot(ctrl.store);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const counting = snap.phase === 'counting';
-  const plank = snap.exercise === 'plank';
+  const plank = isTimed(snap.exercise);
   const worked = hasWork(snap);
 
   useEffect(() => {

@@ -2,6 +2,7 @@ import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
 import type { SessionSummary } from '@/engine/session';
 import type { Exercise } from '@/engine/types';
 import { normalizeSummary } from './summaryShape';
+import { EXERCISE_IDS, isExercise, isTimed } from '@/engine/exercises';
 
 export interface SessionRow {
   id: string;
@@ -56,7 +57,7 @@ function migrate(d: SQLiteDatabase): void {
   if (!have.has('hold_ms')) d.execSync('ALTER TABLE sessions ADD COLUMN hold_ms INTEGER NOT NULL DEFAULT 0');
 }
 
-const asExercise = (v: unknown): Exercise => (v === 'plank' ? 'plank' : 'pushup');
+const asExercise = (v: unknown): Exercise => (isExercise(v) ? v : 'pushup');
 
 /** A plank shorter than this in good form is not worth keeping. */
 const MIN_PLANK_MS = 1000;
@@ -69,8 +70,8 @@ const MIN_PLANK_MS = 1000;
 export function saveSession(summary: SessionSummary, wallStart: number): string | null {
   // An empty set is shown once (summary) but not kept in history.
   const exercise = asExercise(summary.exercise);
-  const holdMs = exercise === 'plank' ? Math.round(summary.hold?.goodMs ?? 0) : 0;
-  if (exercise === 'plank' ? holdMs < MIN_PLANK_MS : summary.totalReps === 0) return null;
+  const holdMs = isTimed(exercise) ? Math.round(summary.hold?.goodMs ?? 0) : 0;
+  if (isTimed(exercise) ? holdMs < MIN_PLANK_MS : summary.totalReps === 0) return null;
   const d = getDb();
   if (!d) return null;
   const id = `${wallStart}-${Math.random().toString(36).slice(2, 8)}`;
@@ -101,7 +102,7 @@ export function listSessionsSince(since: number): SessionRow[] {
   return listSessions(Number.MAX_SAFE_INTEGER, since);
 }
 
-export function listSessions(limit = 60, since = 0): SessionRow[] {
+export function listSessions(limit = 60, since = 0, exercise?: Exercise): SessionRow[] {
   const d = getDb();
   if (!d) return [];
   try {
@@ -117,9 +118,10 @@ export function listSessions(limit = 60, since = 0): SessionRow[] {
         exercise: string;
         hold_ms: number;
       }>(
-        'SELECT id, started_at, ended_at, total_reps, clean_reps, active_ms, end_reason, exercise, hold_ms FROM sessions WHERE started_at >= ? ORDER BY started_at DESC LIMIT ?',
-        since,
-        limit,
+        `SELECT id, started_at, ended_at, total_reps, clean_reps, active_ms, end_reason, exercise, hold_ms FROM sessions WHERE started_at >= ?${
+          exercise ? ' AND exercise = ?' : ''
+        } ORDER BY started_at DESC LIMIT ?`,
+        ...(exercise ? [since, exercise, limit] : [since, limit]),
       )
       .map((r) => ({
         id: r.id,
@@ -134,6 +136,24 @@ export function listSessions(limit = 60, since = 0): SessionRow[] {
       }));
   } catch {
     return [];
+  }
+}
+
+/** Recent sets of one exercise, newest first. */
+export function listSessionsFor(exercise: Exercise, limit = 30): SessionRow[] {
+  return listSessions(limit, 0, exercise);
+}
+
+/** Personal best: most reps in a set, or the most time in good form. Null before the first set. */
+export function bestFor(exercise: Exercise): number | null {
+  const d = getDb();
+  if (!d) return null;
+  try {
+    const col = isTimed(exercise) ? 'hold_ms' : 'total_reps';
+    const r = d.getFirstSync<{ best: number | null }>(`SELECT MAX(${col}) AS best FROM sessions WHERE exercise = ?`, exercise);
+    return r?.best ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -185,9 +205,19 @@ export function deleteSession(id: string): void {
   }
 }
 
-/** Push-up reps and plank time per local calendar day for the last `days` days, oldest first. */
-export function dailyTotals(rows: SessionRow[], days = 7, now = Date.now()): { day: Date; reps: number; holdMs: number }[] {
-  const out: { day: Date; reps: number; holdMs: number }[] = [];
+export interface DayTotal {
+  day: Date;
+  /** Push-up reps. */
+  reps: number;
+  /** Time in good form across all timed exercises. */
+  holdMs: number;
+  /** Per exercise: reps for counted ones, milliseconds for timed ones. */
+  byExercise: Record<Exercise, number>;
+}
+
+/** Totals per local calendar day for the last `days` days, oldest first. */
+export function dailyTotals(rows: SessionRow[], days = 7, now = Date.now()): DayTotal[] {
+  const out: DayTotal[] = [];
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   for (let i = days - 1; i >= 0; i--) {
@@ -196,9 +226,11 @@ export function dailyTotals(rows: SessionRow[], days = 7, now = Date.now()): { d
     const next = new Date(day);
     next.setDate(day.getDate() + 1);
     const inDay = rows.filter((r) => r.startedAt >= day.getTime() && r.startedAt < next.getTime());
-    const reps = inDay.reduce((s, r) => s + (r.exercise === 'pushup' ? r.totalReps : 0), 0);
-    const holdMs = inDay.reduce((s, r) => s + (r.exercise === 'plank' ? r.holdMs : 0), 0);
-    out.push({ day, reps, holdMs });
+    const byExercise = Object.fromEntries(EXERCISE_IDS.map((e) => [e, 0])) as Record<Exercise, number>;
+    for (const r of inDay) byExercise[r.exercise] += isTimed(r.exercise) ? r.holdMs : r.totalReps;
+    const reps = byExercise.pushup;
+    const holdMs = inDay.reduce((s, r) => s + (isTimed(r.exercise) ? r.holdMs : 0), 0);
+    out.push({ day, reps, holdMs, byExercise });
   }
   return out;
 }

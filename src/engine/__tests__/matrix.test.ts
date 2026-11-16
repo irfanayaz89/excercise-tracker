@@ -308,6 +308,7 @@ describe('medium and hard keep their standards', () => {
       wristOffset: 0.7, // hands far in front of the shoulders
       elbowStack: null,
       forearmRise: null,
+      shoulderStack: null,
       torsoPx: 240,
       hipCenter: { x: 0.5, y: 0.6 },
     };
@@ -330,6 +331,7 @@ describe('medium and hard keep their standards', () => {
       wristOffset: 0.6,
       elbowStack: null,
       forearmRise: null,
+      shoulderStack: null,
       torsoPx: 240,
       hipCenter: { x: 0.5, y: 0.6 },
     };

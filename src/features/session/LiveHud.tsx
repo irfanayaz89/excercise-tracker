@@ -9,6 +9,7 @@ import { LineGauge } from '@/ui/LineGauge';
 import { Body, Button, Display, Label, Mono } from '@/ui/primitives';
 import { Tally } from '@/ui/Tally';
 import { color, radius, space, type } from '@/ui/theme';
+import { EXERCISES, isTimed } from '@/engine/exercises';
 
 /** The giant rep counter column, readable from across a room. */
 export function CountColumn({ snap, repMarks, compact }: { snap: SessionSnapshot; repMarks: boolean[]; compact: boolean }) {
@@ -53,9 +54,13 @@ export function TimerColumn({ snap, compact }: { snap: SessionSnapshot; compact:
   const tone = h?.state === 'broken' ? 'fault' : h?.state === 'warning' ? 'cue' : 'chalk';
   const size = compact ? 104 : type.liveCount * 0.82;
   const breaks = h?.breaks ?? 0;
+  const side = snap.exercise === 'sidePlank';
+  const name = EXERCISES[snap.exercise].label;
+  const which = side && snap.activeSide ? ` · ${snap.activeSide}` : '';
+  const each = side ? ' each' : '';
   return (
     <View style={styles.count}>
-      <Label>{target ? `Plank · target ${formatDuration(target)}` : 'Plank'}</Label>
+      <Label>{target ? `${name}${which} · target ${formatDuration(target)}${each}` : `${name}${which}`}</Label>
       <Display
         size={size}
         tone={tone}
@@ -73,8 +78,17 @@ export function TimerColumn({ snap, compact }: { snap: SessionSnapshot; compact:
         <Mono tone={h?.state === 'broken' ? 'fault' : h?.state === 'warning' ? 'cue' : 'good'}>
           {h?.state === 'broken' ? 'clock stopped' : h?.state === 'warning' ? 'form slipping' : 'good form'}
         </Mono>
-        <Mono tone="muted">{`${h?.variant === 'forearm' ? 'forearm' : 'high'} · ${breaks} ${breaks === 1 ? 'break' : 'breaks'}`}</Mono>
+        <Mono tone="muted">{`${h?.variant === 'forearm' ? 'forearm' : side ? 'straight arm' : 'high'} · ${breaks} ${breaks === 1 ? 'break' : 'breaks'}`}</Mono>
       </View>
+      {side && (
+        <View style={styles.subRow}>
+          {(['left', 'right'] as const).map((s) => (
+            <Mono key={s} tone={snap.activeSide === s ? 'chalk' : 'muted'}>
+              {`${s === 'left' ? 'L' : 'R'} ${snap.holdSides?.[s] !== undefined ? formatDuration(snap.holdSides[s]!) : '–'}${snap.doneSides.includes(s) ? ' ✓' : ''}`}
+            </Mono>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -123,7 +137,7 @@ export function DepthColumn({ snap }: { snap: SessionSnapshot }) {
 
 export function PausedPanel({ snap, onEnd }: { snap: SessionSnapshot; onEnd: () => void }) {
   const c = pauseCopy(snap.pauseReason ?? 'lost-tracking', snap.exercise);
-  const saved = snap.exercise === 'plank' ? `${formatDuration(snap.hold?.goodMs ?? 0)} saved` : `${snap.reps} reps saved`;
+  const saved = isTimed(snap.exercise) ? `${formatDuration(snap.hold?.goodMs ?? 0)} saved` : `${snap.reps} reps saved`;
   // A screen instead of a person is an alert, not a rest: red, and stays up until a real person is back.
   const notReal = snap.pauseReason === 'not-real';
   return (

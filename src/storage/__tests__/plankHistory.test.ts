@@ -87,3 +87,11 @@ describe('plank history', () => {
     expect(mockDb.rows[1].slice(-2)).toEqual(['pushup', 0]);
   });
 });
+
+describe('side plank history', () => {
+  it('saves a side plank with its total time', () => {
+    mockDb.rows = [];
+    expect(saveSession({ ...base, exercise: 'sidePlank', hold: hold(45000) }, 1000)).not.toBeNull();
+    expect(mockDb.rows[0].slice(-2)).toEqual(['sidePlank', 45000]);
+  });
+});

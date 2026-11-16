@@ -51,6 +51,7 @@ const METRICS: BodyMetrics = {
   wristOffset: 0.05,
   elbowStack: 0.04,
   forearmRise: 0.53,
+  shoulderStack: null,
   torsoPx: 240,
   hipCenter: { x: 0.5, y: 0.6 },
 };

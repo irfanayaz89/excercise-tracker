@@ -61,6 +61,7 @@ export default function RootLayout() {
         >
           <Stack.Screen name="index" />
           <Stack.Screen name="welcome" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="exercise/[id]" options={{ animation: 'slide_from_right' }} />
           <Stack.Screen name="guide" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="session" options={{ gestureEnabled: false, animation: 'fade_from_bottom' }} />
           <Stack.Screen name="summary/[id]" options={{ animation: 'slide_from_bottom' }} />

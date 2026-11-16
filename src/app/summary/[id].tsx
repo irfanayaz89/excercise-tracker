@@ -14,6 +14,7 @@ import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Tally } from '@/ui/Tally';
 import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
+import { EXERCISES, isTimed } from '@/engine/exercises';
 
 const END_NOTE: Record<SessionSummary['endReason'], string | null> = {
   user: null,
@@ -62,18 +63,19 @@ export default function SummaryScreen() {
   const levelLabel = level ? `${DIFFICULTY_COPY[level].label} mode` : null;
   const header = `${new Date(wallStart).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${formatDuration(s.activeMs)}${levelLabel ? ` · ${levelLabel}` : ''}`;
 
-  if (s.exercise === 'plank') {
+  if (isTimed(s.exercise ?? 'pushup')) {
     return (
       <ScrollView
         style={{ flex: 1, backgroundColor: color.ground }}
         contentContainerStyle={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.huge }]}
       >
         <View style={styles.headRow}>
-          <ExerciseGlyph exercise="plank" size={36} />
+          <ExerciseGlyph exercise={s.exercise ?? 'plank'} size={36} />
           <Label style={{ flexShrink: 1 }}>{header}</Label>
         </View>
         <PlankResult
           hold={s.hold}
+          sides={s.exercise === 'sidePlank' ? (s.holdSides ?? {}) : null}
           note={s.endReason === 'idle' ? 'Ended on its own after a long stretch out of position.' : note}
           saved={saved}
           demo={demo}
@@ -81,7 +83,11 @@ export default function SummaryScreen() {
           easy={level === 'easy'}
         />
         <View style={{ gap: space.md }}>
-          <Button label="Another plank" size="lg" onPress={guard(() => router.replace('/session'))} />
+          <Button
+            label={`Another ${EXERCISES[s.exercise ?? 'plank'].label.toLowerCase()}`}
+            size="lg"
+            onPress={guard(() => router.replace('/session'))}
+          />
           <Button label="Done" variant="ghost" onPress={() => router.dismissTo('/')} />
         </View>
       </ScrollView>
@@ -208,6 +214,7 @@ export default function SummaryScreen() {
 /** Plank results: time in good form first, then where the rest of the time went. */
 function PlankResult({
   hold,
+  sides,
   note,
   saved,
   demo,
@@ -215,6 +222,8 @@ function PlankResult({
   easy,
 }: {
   hold: HoldSummary | undefined;
+  /** Side plank: each side's hold; null for a regular plank. */
+  sides: SessionSummary['holdSides'] | null;
   note: string | null;
   saved: boolean;
   demo: boolean;
@@ -224,7 +233,7 @@ function PlankResult({
   if (!hold || hold.goodMs < 1000) {
     return (
       <View style={{ gap: space.md }}>
-        <Display size={type.headline}>No plank timed</Display>
+        <Display size={type.headline}>{sides ? 'No side plank timed' : 'No plank timed'}</Display>
         <Body tone="muted">
           Hold a plank on straight arms or forearms, side-on to the phone, with your body in view. The clock starts once you are steady.
         </Body>
@@ -257,6 +266,8 @@ function PlankResult({
           <View style={{ width: `${pct}%`, height: '100%', backgroundColor: color.good }} />
         </View>
       </View>
+
+      {sides && <SideBalance sides={sides} />}
 
       {note && <Mono tone="vial">{note}</Mono>}
       {demo ? (
@@ -409,3 +420,35 @@ const styles = StyleSheet.create({
   barSlot: { flex: 1, height: '100%', justifyContent: 'flex-end' },
   bar: { width: '100%', borderRadius: 2 },
 });
+
+/**
+ * Side plank: each side, and whether they match. The McGill side-bridge test
+ * treats left and right within about 5% of each other as balanced.
+ */
+function SideBalance({ sides }: { sides: NonNullable<SessionSummary['holdSides']> }) {
+  const l = sides.left?.goodMs ?? 0;
+  const r = sides.right?.goodMs ?? 0;
+  const both = l > 0 && r > 0;
+  const gap = both ? Math.abs(l - r) / Math.max(l, r) : 0;
+  const weaker = l < r ? 'left' : 'right';
+  const verdict = !both
+    ? `Only the ${l > 0 ? 'left' : 'right'} side was timed. Do the other side next time to compare.`
+    : gap <= 0.05
+      ? 'Balanced: both sides within 5% of each other.'
+      : `Your ${weaker} side held ${Math.round(gap * 100)}% less. Give it a little extra work.`;
+  return (
+    <View style={{ gap: space.md }}>
+      <Label>Each side</Label>
+      <View style={{ flexDirection: 'row', gap: space.lg }}>
+        {(['left', 'right'] as const).map((s) => (
+          <View key={s} style={{ flex: 1, gap: 4 }}>
+            <Label>{s === 'left' ? 'Left side' : 'Right side'}</Label>
+            <Display size={40}>{sides[s] ? formatDuration(sides[s]!.goodMs) : '–'}</Display>
+            {sides[s] && <Mono size={12} tone="muted">{`${Math.round(sides[s]!.formPct * 100)}% good form`}</Mono>}
+          </View>
+        ))}
+      </View>
+      <Body tone={both && gap > 0.05 ? 'chalk' : 'muted'}>{verdict}</Body>
+    </View>
+  );
+}

@@ -1,6 +1,7 @@
 import type { EngineConfig } from './config';
 import { sideScore, type TrackedPose } from './tracker';
 import { LM, type BodyMetrics, type Exercise, type PhoneAttitude, type PlankVariant, type SideChain } from './types';
+import { isTimed } from './exercises';
 
 // ─── Gate 1: phone placement ────────────────────────────────────────────────
 
@@ -191,6 +192,8 @@ export type PlankIssue =
   | 'hips-high'
   | 'hands-under-shoulders'
   | 'elbows-under-shoulders'
+  /** Side plank: lying face down or on the back instead of on one side. */
+  | 'roll-onto-side'
   | 'hold-still';
 
 export interface PlankCheck {
@@ -218,6 +221,15 @@ export function isForearmPlank(m: BodyMetrics, cfg: EngineConfig): boolean {
 }
 
 /**
+ * Side plank on the forearm: the forearm lies on the floor pointing towards the
+ * camera, so the wrist sits at elbow height and close to it. The elbow angle is
+ * not used: seen end-on, a forearm pointing at the camera has no clear angle.
+ */
+export function isForearmSidePlank(m: BodyMetrics, cfg: EngineConfig): boolean {
+  return m.forearmRise !== null && m.forearmRise <= cfg.plank.forearmMaxRise;
+}
+
+/**
  * Is this a valid starting position? Push-ups always start from a high plank.
  * The plank exercise also accepts a forearm plank, and checks the hips against
  * the hold limits so a timed hold never starts already broken.
@@ -225,12 +237,19 @@ export function isForearmPlank(m: BodyMetrics, cfg: EngineConfig): boolean {
 export function checkPlank(m: BodyMetrics, cfg: EngineConfig, exercise: Exercise = 'pushup'): PlankCheck {
   const p = cfg.plank;
   const issues: PlankIssue[] = [];
-  const variant: PlankVariant = exercise === 'plank' && isForearmPlank(m, cfg) ? 'forearm' : 'high';
+  const variant: PlankVariant =
+    exercise === 'plank' && isForearmPlank(m, cfg)
+      ? 'forearm'
+      : exercise === 'sidePlank' && isForearmSidePlank(m, cfg)
+        ? 'forearm'
+        : 'high';
   if (m.trunkTiltDeg === null || m.trunkTiltDeg > p.maxTrunkTiltDeg) issues.push('get-down');
+  // Side plank: on one side, facing the phone, shoulders stacked.
+  if (exercise === 'sidePlank' && (m.shoulderStack === null || m.shoulderStack < cfg.sidePlank.startStack)) issues.push('roll-onto-side');
   if (m.kneeDeg !== null && m.kneeDeg < p.minKneeDeg && !cfg.allowKneeling) issues.push('straighten-legs');
   if (p.checkHips && m.bodyLineDeg !== null && m.bodyLineDeg < p.minBodyLineDeg && m.hipOffset !== null) {
     issues.push(m.hipOffset > 0 ? 'hips-sagging' : 'hips-high');
-  } else if (exercise === 'plank' && m.hipOffset !== null) {
+  } else if (isTimed(exercise) && m.hipOffset !== null) {
     if (m.hipOffset > cfg.hold.sagFault) issues.push('hips-sagging');
     else if (m.hipOffset < -cfg.hold.pikeFault) issues.push('hips-high');
   }

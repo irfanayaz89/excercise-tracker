@@ -11,6 +11,7 @@ const FIELDS = [
   'wristOffset',
   'elbowStack',
   'forearmRise',
+  'shoulderStack',
 ] as const;
 
 /**

@@ -119,6 +119,12 @@ export interface BodyMetrics {
   elbowStack: number | null;
   /** Height difference between wrist and elbow, in torso lengths (≈ 0 when the forearm lies on the floor). */
   forearmRise: number | null;
+  /**
+   * How far the other shoulder sits above this side's shoulder, in torso lengths.
+   * Side plank: the shoulders stack (about 0.6–0.8); rolling towards the floor or
+   * the ceiling shrinks it. Null when the other shoulder is not clearly visible.
+   */
+  shoulderStack: number | null;
   /** Shoulder-to-hip distance in pixels. */
   torsoPx: number;
   /** Hip centre in normalized coordinates, for identity tracking. */
@@ -129,7 +135,7 @@ export interface BodyMetrics {
 export type PhoneOrientation = 'landscape' | 'portrait';
 
 /** What the set is: push-ups are counted, a plank is timed. */
-export type Exercise = 'pushup' | 'plank';
+export type Exercise = 'pushup' | 'plank' | 'sidePlank';
 
 /** High plank on straight arms, or forearm plank with the forearms on the floor. */
 export type PlankVariant = 'high' | 'forearm';

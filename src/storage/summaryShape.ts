@@ -1,6 +1,8 @@
 import type { HoldFault, HoldSummary } from '@/engine/holdTimer';
 import type { EndReason, SessionSummary } from '@/engine/session';
 import type { MissReason, RepFault, RepRecord } from '@/engine/repCounter';
+import { isExercise, isTimed } from '@/engine/exercises';
+import type { Exercise } from '@/engine/types';
 
 const FAULTS: RepFault[] = ['hips-sagging', 'hips-piking', 'rushed', 'head-dropping'];
 const MISSES: MissReason[] = ['not-deep-enough', 'no-lockout', 'too-slow'];
@@ -12,6 +14,7 @@ const HOLD_FAULTS: HoldFault[] = [
   'elbows-under-shoulders',
   'hands-under-shoulders',
   'dropped',
+  'rolled',
   'out-of-view',
 ];
 const ENDS: EndReason[] = ['user', 'target', 'idle', 'paused-too-long', 'form-break'];
@@ -80,10 +83,15 @@ export function normalizeSummary(
       ? (row.endReason as EndReason)
       : 'user';
   const totalReps = num(o.totalReps, row.totalReps);
-  const exercise = o.exercise === 'plank' || (o.exercise === undefined && row.exercise === 'plank') ? 'plank' : 'pushup';
+  const exercise: Exercise = isExercise(o.exercise)
+    ? o.exercise
+    : o.exercise === undefined && isExercise(row.exercise)
+      ? row.exercise
+      : 'pushup';
   return {
     exercise,
-    hold: exercise === 'plank' ? normalizeHold(o.hold, row.holdMs ?? 0) : undefined,
+    hold: isTimed(exercise) ? normalizeHold(o.hold, row.holdMs ?? 0) : undefined,
+    holdSides: exercise === 'sidePlank' ? normalizeSides(o.holdSides) : undefined,
     difficulty: typeof o.difficulty === 'string' ? o.difficulty : undefined,
     startedAt: num(o.startedAt, row.startedAt),
     endedAt: num(o.endedAt, row.endedAt),
@@ -122,4 +130,13 @@ function normalizeHold(raw: unknown, rowHoldMs: number): HoldSummary {
     headDownMs: Math.max(0, num(o.headDownMs, 0)),
     formPct: totalMs > 0 ? goodMs / totalMs : 0,
   };
+}
+
+/** Side plank: each side's hold, when stored; unknown sides are dropped. */
+function normalizeSides(raw: unknown): SessionSummary['holdSides'] {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const out: NonNullable<SessionSummary['holdSides']> = {};
+  for (const side of ['left', 'right'] as const) if (o[side] && typeof o[side] === 'object') out[side] = normalizeHold(o[side], 0);
+  return Object.keys(out).length ? out : undefined;
 }

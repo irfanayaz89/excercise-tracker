@@ -26,10 +26,10 @@ interface Trial {
   describe: string;
 }
 
-function makeTrial(level: Difficulty, seed: number): Trial {
+function makeTrial(level: Difficulty, seed: number, exercise: 'plank' | 'sidePlank' = 'plank'): Trial {
   const r = mulberry32(seed);
   const pick = (a: number, b: number) => a + (b - a) * r();
-  const cfg = difficultyConfig(level, { exercise: 'plank' });
+  const cfg = difficultyConfig(level, { exercise });
   const portrait = r() < 0.5;
   const forearm = r() < 0.5;
   const facing = r() < 0.5 ? 'left' : 'right';
@@ -39,6 +39,11 @@ function makeTrial(level: Difficulty, seed: number): Trial {
   base.facing = facing;
   base.noisePx = pick(1, 4);
   base.forearm = forearm;
+  // Side plank: facing the camera, top side stacked above; a forearm points at the camera.
+  if (exercise === 'sidePlank') {
+    base.stack = pick(0.55, 0.8);
+    if (forearm) base.forearmScale = 0.1;
+  }
   if (forearm) base.elbowStack = pick(-0.1, 0.15);
   else base.elbowDeg = pick(160, 175);
   // A slight natural sag or pike that stays well inside the limits.
@@ -121,12 +126,19 @@ function spikes(every: number, seed: number): TimelineOptions['mapFrame'] {
   };
 }
 
-describe.each(['easy', 'medium', 'hard'] as const)('%s, randomised planks', (level) => {
-  const cfg = difficultyConfig(level, { exercise: 'plank' });
-  const trials = Array.from({ length: TRIALS }, (_, i) => makeTrial(level, 5000 + i));
+describe.each([
+  ['easy', 'plank'],
+  ['medium', 'plank'],
+  ['hard', 'plank'],
+  ['easy', 'sidePlank'],
+  ['medium', 'sidePlank'],
+  ['hard', 'sidePlank'],
+] as const)('%s, randomised %s', (level, exercise) => {
+  const cfg = difficultyConfig(level, { exercise });
+  const trials = Array.from({ length: TRIALS }, (_, i) => makeTrial(level, 5000 + i, exercise));
 
   it.each(trials.map((t) => [t.describe, t] as const))('%s', (_d, t) => {
-    const h = harness({ config: cfg, base: t.base, exercise: 'plank' });
+    const h = harness({ config: cfg, base: t.base, exercise });
     const opts = { startT: 1033, base: t.base, mapFrame: spikes(t.spikeEvery, t.breaks * 31 + 7) };
     // Phone settles, then the start hold.
     h.play(timeline([plank(3500)], opts), { roll: t.roll });
