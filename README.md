@@ -4,6 +4,9 @@ Working name. An Expo app that watches you through the phone camera, checks
 your position, and counts and grades every push-up. All tracking runs on the
 phone; no video is stored or sent anywhere.
 
+New to the code? [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) walks through how
+it runs, from a camera frame to a counted rep, file by file.
+
 ## How a set works
 
 0. **First launch** asks how much help you want: **Guided** (setup guide
