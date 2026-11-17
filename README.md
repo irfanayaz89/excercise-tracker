@@ -18,10 +18,25 @@ it runs, from a camera frame to a counted rep, file by file.
 
 ## How a set works
 
-0. **First launch** asks how much help you want: **Guided** (setup guide
-   before each set, full spoken instructions, checklists, tips after the set)
-   or **Quick** (one tap to start, short cues, compact screens). Changeable in
-   Settings.
+0. **First launch** runs a short setup (about a minute; "Use recommended
+   setup" skips most of it). One question per screen, with a progress bar,
+   Back and Skip:
+   1. Which exercises you want (shown first on Home).
+   2. How strict: Easy / Medium / Hard.
+   3. How much help: **Guided** or **Quick**.
+   4. A daily goal (Light, Regular, Serious or none). Home shows bars for reps
+      (push-ups and crunches) and plank time.
+   5. A quick safety check (back, neck, wrist, pregnancy, recent injury).
+      Never blocking; it only adds "Take care" notes on each exercise, and it
+      stays on the phone.
+   6. Voice coach on or off, with a sample.
+   7. How the phone stands: landscape or portrait, front or back camera, and
+      **side-on or facing the phone** for push-ups and the plank.
+   8. Camera access, explained before the system asks.
+   9. On iPhone in landscape: turn off Rotation Lock.
+   10. A summary with every answer, each tappable to change.
+
+   Everything can be changed later in Settings, which also has **Redo setup**.
 1. **Pick the exercise** on Home. Home shows today's totals, one card per
    exercise and recent sets (filterable by exercise). Each card opens the
    exercise's own screen: this week, personal best, setup, level, target
@@ -80,6 +95,36 @@ it runs, from a camera frame to a counted rep, file by file.
 Standing up, losing tracking, the phone being knocked or the app going to the
 background pauses the set and keeps the count or time; get back into position
 to carry on.
+
+## Side-on or facing the phone
+
+Push-ups and the plank can be tracked two ways, picked during setup or on the
+exercise's screen. Crunches are side-on only (a head-on camera can't measure
+the curl well), and the side plank is always done facing the phone.
+
+- **Side-on** (the default): the phone beside you sees your profile. Full form
+  checks, including the hip line.
+- **Facing the phone (front)**: easier to set up, as most rep-counting apps do.
+  - Push-ups and planks: the phone stands upright on the floor 1.2–2 m beyond
+    your hands (portrait fits best). Face, shoulders and both hands in view.
+
+Head-on, the body points at the camera, and pose models are least accurate in
+depth, so everything is measured across the picture in shoulder widths:
+
+| | Front counts / times by | Front checks | Only side-on |
+|---|---|---|---|
+| Push-ups | Shoulders dropping towards the hands | Depth, lockout, half reps, rushing, **elbows flaring**, **one side lower (uneven)** | Hip sag and pike, body line, head |
+| Plank | Holding position, forearms or straight arms | Elbows/hands under shoulders, leaving position | Hip sag and pike |
+
+Front view also checks framing head-on ("Show both hands", move closer/back),
+the upside-down picture, and the shaking-screen check (both hands). Research
+note: the only controlled study (Oliosi 2026) found head-on
+push-up counting worse than side or diagonal views at long distances, so the
+thresholds are starting values to tune with real recordings.
+
+Tests build bodies in 3D and photograph them with a phone camera placed in
+front (`src/engine/testing/synth3d.ts`), so front and side tests describe the
+same movements (`frontView.test.ts`).
 
 ## Crunches
 
@@ -239,7 +284,7 @@ npm run typecheck && npm run lint
 Expo Go cannot run this app (custom native code). On a simulator, use
 **Home → Preview a demo set** (dev builds only) to see the live screen driven
 by a synthetic body through the real engine (from an exercise's screen). Every
-edge case has a scenario: `trueline:///session?demo=<basic|nofeet|standup|lost|swap|knocked|shake|tv|faults>&ex=<pushup|crunch|plank|sidePlank>&level=<easy|medium|hard>`. Every scenario is also played through the engine in `demoScenarios.test.ts`.
+edge case has a scenario: `trueline:///session?demo=<basic|nofeet|standup|lost|swap|knocked|shake|tv|faults>&ex=<pushup|crunch|plank|sidePlank>&level=<easy|medium|hard>&view=<side|front>`. Every scenario is also played through the engine in `demoScenarios.test.ts`.
 
 After editing `modules/pose-landmarker/src/PoseLandmarker.nitro.ts`, run
 `npm run codegen` and rebuild.
