@@ -116,6 +116,10 @@ depth, so everything is measured across the picture in shoulder widths:
 | Push-ups | Shoulders dropping towards the hands | Depth, lockout, half reps, rushing, **elbows flaring**, **one side lower (uneven)** | Hip sag and pike, body line, head |
 | Plank | Holding position, forearms or straight arms | Elbows/hands under shoulders, leaving position | Hip sag and pike |
 
+Head-on, the knees sit behind the body, so knee push-ups and knee planks
+count like full ones whatever the knee setting, and plank test mode can't end
+on a sag (it still ends if you drop out of position).
+
 Front view also checks framing head-on ("Show both hands", move closer/back),
 the upside-down picture, and the shaking-screen check (both hands). Research
 note: the only controlled study (Oliosi 2026) found head-on
@@ -125,6 +129,31 @@ thresholds are starting values to tune with real recordings.
 Tests build bodies in 3D and photograph them with a phone camera placed in
 front (`src/engine/testing/synth3d.ts`), so front and side tests describe the
 same movements (`frontView.test.ts`).
+
+## Frame edges and partial views
+
+Joints near or past the edge of the picture are where counting goes wrong on
+real phones, so the engine handles them explicitly:
+
+- **Edge hysteresis:** a joint must be a margin inside the picture to get
+  started, but once framed it may come close to the edge without flickering
+  "out" (which used to keep restarting the start hold on camera noise).
+- **Flickering tracking pauses:** if the points a rep is counted from keep
+  dropping out (for example the shoulders leaving the top of the picture at the
+  top of every push-up), the set pauses with "Lost you" instead of silently not
+  counting. Framing problems are spoken mid-set too ("Show your head").
+- **Standing up near a floor-level phone** usually takes the head out of the
+  picture: it reads as a rest (left position), not a camera problem, and ends
+  a plank test. A standing user is told "Get down on the floor".
+- **Floor at the bottom edge:** "Floor at the edge" asks to move back or tilt
+  the phone down, instead of "Show your feet" while the feet are visible.
+
+`edgeMatrix.test.ts` runs every exercise × view × level × phone orientation ×
+facing, with the knee setting, the real-person check and plank test mode on and
+off, through clean sets, misread joints, dropped frames, 15 fps, dim light, a
+crooked phone, bodies 3% from each edge, cut off at each edge, the floor at the
+bottom edge, and drifting out of the picture in every direction mid-set. Test
+bodies report off-picture joints with low confidence, as a real pose model does.
 
 ## Crunches
 
