@@ -112,7 +112,11 @@ export type FramingIssue =
   /** The camera picture is upside down (usually Rotation Lock on with the phone in landscape). */
   | 'upside-down'
   /** Front view: both hands must be in the picture. */
-  | 'show-hands';
+  | 'show-hands'
+  /** Standing (legs upright in the picture): get down on the floor. */
+  | 'get-down'
+  /** Hands and feet on the bottom edge of the picture: the floor sits too low in it. */
+  | 'floor-low';
 
 export interface FramingCheck {
   ok: boolean;
@@ -125,12 +129,15 @@ export interface FramingCheck {
 export class FramingGate {
   private lowVisSince: number | null = null;
   private flippedSince: number | null = null;
+  /** Framed on the last check: a smaller edge margin keeps it framed. */
+  private framed = false;
 
   constructor(private cfg: EngineConfig) {}
 
   reset(): void {
     this.lowVisSince = null;
     this.flippedSince = null;
+    this.framed = false;
   }
 
   /**
@@ -161,6 +168,12 @@ export class FramingGate {
   }
 
   check(pose: TrackedPose | null, chain: SideChain | null): FramingCheck {
+    const r = this.evaluate(pose, chain);
+    if (!r.ok) this.framed = false;
+    return r;
+  }
+
+  private evaluate(pose: TrackedPose | null, chain: SideChain | null): FramingCheck {
     const f = this.cfg.framing;
     if (!pose || !pose.detected || !chain) {
       this.lowVisSince = null;
@@ -176,6 +189,21 @@ export class FramingGate {
       // needs a shorter hold than this). A single odd frame is ridden out.
       return { ok: false, issue: null, hint: null, meanVisibility: meanVis };
     } else this.flippedSince = null;
+
+    // Standing up in front of a phone on the floor: the head and shoulders are
+    // usually above the picture, but the legs show upright. Say what to do
+    // ("get down") rather than "show your head" or "more light".
+    const v0 = chain.vis;
+    const min0 = this.cfg.minVisibility;
+    if (v0.hip >= min0 && v0.knee >= min0 && v0.ankle >= min0) {
+      const dy = chain.ankle.y - chain.hip.y;
+      const dx = Math.abs(chain.ankle.x - chain.hip.x);
+      const torso = Math.hypot(chain.shoulder.x - chain.hip.x, chain.shoulder.y - chain.hip.y);
+      if (dy > 1.5 * dx && dy > 0.8 * (v0.shoulder >= min0 && torso > 0 ? torso : dy)) {
+        this.lowVisSince = null;
+        return { ok: false, issue: 'get-down', hint: null, meanVisibility: meanVis };
+      }
+    }
     if (meanVis < f.lowLightVisibility) {
       if (this.lowVisSince === null) this.lowVisSince = t;
     } else this.lowVisSince = null;
@@ -185,7 +213,10 @@ export class FramingGate {
     const v = chain.vis;
     const W = pose.width;
     const H = pose.height;
-    const m = f.edgeMargin;
+    // Hysteresis: the full margin to get framed, a small one to stay framed, so
+    // a joint resting near the edge doesn't flicker in and out (which would
+    // keep restarting the start hold) on camera noise.
+    const m = this.framed ? f.edgeMargin * 0.3 : f.edgeMargin;
     const nearEdge = (p: { x: number; y: number }) => p.x < m * W || p.x > (1 - m) * W || p.y < m * H || p.y > (1 - m) * H;
 
     const headOk = v.shoulder >= min && !nearEdge(chain.shoulder);
@@ -196,7 +227,12 @@ export class FramingGate {
     if (f.requireHead && f.requireFeet && !headOk && !feetOk) {
       return { ok: false, issue: v.hip >= min ? 'move-back' : 'no-person', hint: null, meanVisibility: meanVis };
     }
-    if (f.requireFeet && !feetOk) return { ok: false, issue: 'show-feet', hint: null, meanVisibility: meanVis };
+    if (f.requireFeet && !feetOk) {
+      // Feet seen, but on the bottom edge of the picture: the floor sits too low
+      // in the frame. Moving back (or tilting the phone down) brings it in.
+      const onFloorEdge = v.ankle >= min && chain.ankle.y > (1 - m) * H && chain.ankle.x >= m * W && chain.ankle.x <= (1 - m) * W;
+      return { ok: false, issue: onFloorEdge ? 'floor-low' : 'show-feet', hint: null, meanVisibility: meanVis };
+    }
     if (f.requireHead && !headOk) return { ok: false, issue: 'show-head', hint: null, meanVisibility: meanVis };
     if (!coreOk) {
       const issue: FramingIssue = lowLight ? 'low-light' : v.shoulder < min ? 'show-head' : 'move-back';
@@ -230,6 +266,7 @@ export class FramingGate {
       if (horizontal && span < f.minBodySpan) return { ok: false, issue: 'move-closer', hint: null, meanVisibility: meanVis };
     }
 
+    this.framed = true;
     return { ok: true, issue: null, hint: lowLight ? 'low-light' : softHint, meanVisibility: meanVis };
   }
 }

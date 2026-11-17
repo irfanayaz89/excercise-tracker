@@ -249,7 +249,10 @@ describe('easy is forgiving', () => {
     const h = easy();
     h.segments([hold(3000, { bodyTiltDeg: 80 })]);
     expect(phase(h)).toBe('body-check');
-    expect(h.session.snapshot().plankIssues).toContain('get-down');
+    // Standing near a floor-level phone, the head is usually above the picture:
+    // either way the user is told to get down, not to show their head.
+    const s = h.session.snapshot();
+    expect(s.framing.issue === 'get-down' || s.plankIssues.includes('get-down')).toBe(true);
   });
 
   it('still does not count a quarter rep', () => {

@@ -158,8 +158,8 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
             {view === 'side'
               ? 'The phone beside you sees your whole body line: the strictest form checks.'
               : exercise === 'plank'
-                ? 'The phone on the floor beyond your hands. Easier to set up; times the hold and checks your arms. Hips are only judged side-on.'
-                : 'The phone on the floor beyond your hands. Easier to set up; counts reps and checks depth, arms and elbows. Hips are only judged side-on.'}
+                ? 'The phone on the floor beyond your hands. Easier to set up; times the hold and checks your arms. Hips and knees are only judged side-on, so plank test mode ends only when you drop out of position.'
+                : 'The phone on the floor beyond your hands. Easier to set up; counts reps and checks depth, arms and elbows. Hips and knees are only judged side-on, so knee push-ups count here.'}
           </Body>
         </View>
       )}

@@ -177,6 +177,17 @@ export const FRAMING_COPY: Record<FramingIssue, Copy> = {
     detail: 'Face along the floor, side-on to the phone, not towards it.',
     say: 'Turn side-on to the phone',
   },
+  'floor-low': {
+    short: 'Floor at the edge',
+    detail:
+      'Your feet are on the bottom edge of the picture. Move a little further from the phone, or tilt it down slightly, so the floor sits inside the screen.',
+    say: 'Move back a little',
+  },
+  'get-down': {
+    short: 'Get down on the floor',
+    detail: 'You look like you are standing. Get down into position on the floor, as in the picture.',
+    say: 'Get down on the floor',
+  },
   'show-hands': {
     short: 'Show both hands',
     detail: 'Both hands need to be in the picture. Move the phone back a little or centre it on your head.',

@@ -172,6 +172,12 @@ export interface SessionOptions {
   targetHoldMs?: number | null;
 }
 
+/** Window for judging how steadily the counting points are seen during a set. */
+const COVERAGE_MS = 4000;
+
+/** Missing more than this share of frames in that window pauses the set. */
+const COVERAGE_MAX_MISSING = 0.3;
+
 /** Accepted frames the identity reference is the median of. */
 const IDENTITY_FRAMES = 5;
 
@@ -234,6 +240,9 @@ export class PushupSession {
   private pausedAt: number | null = null;
   private pauses = 0;
   private lostSince: number | null = null;
+  /** Recent frames during the set, each usable for counting or not. */
+  private coverage: { t: number; ok: boolean }[] = [];
+  private lostReason: PauseReason = 'lost-tracking';
   private outOfPositionSince: number | null = null;
   /** Last moment of progress (counting began or a rep landed), for the idle timeout. */
   private idleSince: number | null = null;
@@ -395,9 +404,9 @@ export class PushupSession {
     if (this.phase === 'counting') {
       // No frames at all (camera stalled) also counts as lost tracking.
       if (this.lostSince === null && this.metrics && t - this.metrics.t > this.cfg.session.pauseAfterMs) {
-        this.pause('lost-tracking', this.metrics.t);
+        this.pauseLost('lost-tracking', this.metrics.t);
       } else if (this.lostSince !== null && t - this.lostSince >= this.cfg.session.pauseAfterMs) {
-        this.pause('lost-tracking', this.lostSince);
+        this.pauseLost(this.lostReason, this.lostSince);
       } else if (this.idleSince !== null && t - this.idleSince > this.cfg.session.autoEndIdleMs) {
         this.end('idle');
       }
@@ -655,6 +664,7 @@ export class PushupSession {
     this.pausedAt = null;
     this.identity = [];
     this.identityJumping = false;
+    this.coverage = [];
     this.plankHold.reset();
     this.plankProgress = 0;
     this.formSmoother.reset();
@@ -686,8 +696,17 @@ export class PushupSession {
     const usable =
       metrics !== null &&
       (this.exercise === 'crunch' ? metrics.trunkLiftDeg !== null : metrics.elbowDeg !== null || metrics.shoulderHeight !== null);
+    this.noteCoverage(t, usable);
+    // Say what is out of view, mid-set too (rate-limited like every cue).
+    if (!framing.ok && framing.issue && this.counter) this.cue({ kind: 'framing', issue: framing.issue });
     if (!usable) {
       this.markLost(t, 'lost-tracking');
+      return;
+    }
+    // Tracking keeps dropping out (a joint we count from leaves the picture at
+    // one end of every rep): the count would silently stall, so pause and say so.
+    if (this.coverageLow(t)) {
+      this.pause('lost-tracking');
       return;
     }
     this.lostSince = null;
@@ -958,9 +977,55 @@ export class PushupSession {
     return j > 1 || sc > 1 || j + sc > IDENTITY_COMBINED;
   }
 
+  private noteCoverage(t: number, ok: boolean): void {
+    this.coverage.push({ t, ok });
+    while (this.coverage.length && t - this.coverage[0].t > COVERAGE_MS) this.coverage.shift();
+  }
+
+  /**
+   * Counting points missing for a good share of the last few seconds, on and
+   * off. One long gap is already handled by `markLost`; this catches the
+   * flicker that keeps resetting it.
+   */
+  private coverageLow(t: number): boolean {
+    const c = this.coverage;
+    if (c.length < 20 || t - c[0].t < COVERAGE_MS * 0.9) return false;
+    const missing = c.filter((f) => !f.ok).length / c.length;
+    return missing > COVERAGE_MAX_MISSING;
+  }
+
   private markLost(t: number, reason: PauseReason): void {
     if (this.lostSince === null) this.lostSince = t;
-    if (t - this.lostSince >= this.cfg.session.pauseAfterMs) this.pause(reason, this.lostSince);
+    this.lostReason = reason;
+    if (t - this.lostSince >= this.cfg.session.pauseAfterMs) this.pauseLost(reason, this.lostSince);
+  }
+
+  /**
+   * Was the user getting up when we lost them? A phone on the floor can't see
+   * the head of someone standing, so standing up usually ends in lost tracking
+   * before "stood up" can be measured. If the last frames showed them rising,
+   * it is a rest (left position), not a camera problem.
+   */
+  private wasGettingUp(): boolean {
+    if (this.outOfPositionSince !== null) return true;
+    const m = this.metrics;
+    if (!m) return false;
+    if (this.exercise === 'crunch') return m.trunkLiftDeg !== null && m.trunkLiftDeg > this.cfg.crunch.outLiftDeg * 0.75;
+    return m.trunkTiltDeg !== null && m.trunkTiltDeg > this.cfg.plank.maxTrunkTiltDeg;
+  }
+
+  /** Pause after losing the user; standing up instead reads as a rest, and ends a plank test. */
+  private pauseLost(reason: PauseReason, at: number): void {
+    if (reason === 'lost-tracking' && this.wasGettingUp()) {
+      // Plank test mode: getting up is the end of the test, as it would be if we could still see it.
+      if (this.cfg.hold.endOnBreak && isTimed(this.exercise) && (this.holdTimer?.good ?? 0) > 0) {
+        this.stopActiveClock(at);
+        this.end('form-break');
+        return;
+      }
+      reason = 'left-position';
+    }
+    this.pause(reason, at);
   }
 
   /** @param at when the set actually stopped (e.g. when tracking was lost), defaults to now. */

@@ -301,7 +301,19 @@ export function renderPose(t: number, params: BodyParams): PoseSample {
   lms[LM.rightHeel] = { ...lms[LM.rightAnkle] };
   lms[LM.leftFootIndex] = { ...lms[LM.leftAnkle] };
   lms[LM.rightFootIndex] = { ...lms[LM.rightAnkle] };
-  return { t, width, height, landmarks: lms };
+  return { t, width, height, landmarks: lms.map(atFrameEdge) };
+}
+
+/**
+ * How a real pose model reports joints at the edge of the picture: a joint
+ * outside the frame comes back as a low-confidence guess (MediaPipe keeps
+ * extrapolating its position), and one right at the edge is less certain.
+ */
+export function atFrameEdge(l: Landmark): Landmark {
+  const out = Math.max(0, -l.x, l.x - 1, -l.y, l.y - 1);
+  if (out > 0) return { ...l, visibility: Math.min(l.visibility, 0.12), presence: Math.min(l.presence, 0.25) };
+  const edge = Math.min(l.x, 1 - l.x, l.y, 1 - l.y);
+  return edge < 0.01 ? { ...l, visibility: Math.min(l.visibility, 0.6) } : l;
 }
 
 export function levelPhone(t: number, rollDeg = 0, pitchDeg = 0, motion = 0): PhoneAttitude {
@@ -324,10 +336,7 @@ export const hold = (durationMs: number, extra: Partial<BodyParams> = {}): Segme
  * A timed plank. `extra` can change over the segment (k = 0..1), e.g. hips
  * slowly sagging: plank(20000, (k) => ({ sag: 0.2 * k })).
  */
-export const plank = (
-  durationMs: number,
-  extra: Partial<BodyParams> | ((k: number) => Partial<BodyParams>) = {},
-): Segment => ({
+export const plank = (durationMs: number, extra: Partial<BodyParams> | ((k: number) => Partial<BodyParams>) = {}): Segment => ({
   durationMs,
   at: (k) => ({ elbowDeg: 172, ...(typeof extra === 'function' ? extra(k) : extra) }),
 });
@@ -336,17 +345,12 @@ export const plank = (
  * Side plank on the forearm, facing the camera: forearm pointing at the camera
  * (so the wrist shows next to the elbow), top side stacked above.
  */
-export const sidePlank = (
-  durationMs: number,
-  extra: Partial<BodyParams> | ((k: number) => Partial<BodyParams>) = {},
-): Segment =>
+export const sidePlank = (durationMs: number, extra: Partial<BodyParams> | ((k: number) => Partial<BodyParams>) = {}): Segment =>
   plank(durationMs, (k) => ({ forearm: true, forearmScale: 0.1, stack: 0.7, ...(typeof extra === 'function' ? extra(k) : extra) }));
 
 /** Forearm plank shorthand. */
-export const forearmPlank = (
-  durationMs: number,
-  extra: Partial<BodyParams> | ((k: number) => Partial<BodyParams>) = {},
-): Segment => plank(durationMs, (k) => ({ forearm: true, ...(typeof extra === 'function' ? extra(k) : extra) }));
+export const forearmPlank = (durationMs: number, extra: Partial<BodyParams> | ((k: number) => Partial<BodyParams>) = {}): Segment =>
+  plank(durationMs, (k) => ({ forearm: true, ...(typeof extra === 'function' ? extra(k) : extra) }));
 
 /** One rep from `topDeg` down to `bottomDeg` and back, with a cosine profile. */
 export const rep = (
