@@ -5,7 +5,7 @@
  * the exercise does.
  */
 import { EXERCISE_IDS } from '@/engine/exercises';
-import { FLOOR_Y, STILL_P, figureAt } from '../exerciseMotion';
+import { FLOOR_Y, STILL_P, figureAt, figureFrontAt } from '../exerciseMotion';
 
 const frames = (n = 120) => Array.from({ length: n + 1 }, (_, i) => i / n);
 const angle = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }) => {
@@ -89,5 +89,29 @@ describe('the movements', () => {
     expect(FLOOR_Y - figureAt('sidePlank', 0.2).pts.hip.y).toBeGreaterThan(12);
     expect(FLOOR_Y - figureAt('sidePlank', 0.47).pts.hip.y).toBeLessThan(7);
     expect(left.extra).toMatch(/^M/);
+  });
+});
+
+describe('head-on figures (front view)', () => {
+  it.each(['pushup', 'plank'] as const)('%s stays in the camera view and draws both sides', (e) => {
+    for (const p of frames()) {
+      const f = figureFrontAt(e, p);
+      for (const q of [...Object.values(f.pts), f.head]) {
+        expect(q.x).toBeGreaterThan(10);
+        expect(q.x).toBeLessThan(220);
+        expect(q.y).toBeGreaterThan(60);
+        expect(q.y).toBeLessThanOrEqual(FLOOR_Y);
+      }
+      expect(f.arm).toMatch(/^M/);
+      expect(f.extra).toMatch(/^M/);
+    }
+  });
+
+  it('push-ups go down and up; the plank holds still; hands stay on the floor', () => {
+    const sh = frames().map((p) => figureFrontAt('pushup', p).pts.shoulder.y);
+    expect(Math.max(...sh) - Math.min(...sh)).toBeGreaterThan(30);
+    const pl = frames().map((p) => figureFrontAt('plank', p).pts.shoulder.y);
+    expect(Math.max(...pl) - Math.min(...pl)).toBeLessThan(3);
+    for (const p of frames()) expect(FLOOR_Y - figureFrontAt('pushup', p).pts.wrist.y).toBeLessThan(3);
   });
 });

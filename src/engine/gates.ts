@@ -110,7 +110,9 @@ export type FramingIssue =
   | 'turn-sideways'
   | 'low-light'
   /** The camera picture is upside down (usually Rotation Lock on with the phone in landscape). */
-  | 'upside-down';
+  | 'upside-down'
+  /** Front view: both hands must be in the picture. */
+  | 'show-hands';
 
 export interface FramingCheck {
   ok: boolean;

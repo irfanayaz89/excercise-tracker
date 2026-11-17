@@ -16,6 +16,8 @@ export interface OverlayData {
   /** 0 = good, 1 = cue (amber), 2 = fault (red), 3 = idle (chalk). */
   bodyState: number;
   visible: boolean;
+  /** Head-on: points 7–10 are the other shoulder, elbow, wrist and hip. */
+  front?: boolean;
 }
 
 export const EMPTY_OVERLAY: OverlayData = { frameW: 1280, frameH: 720, pts: [], bodyState: 3, visible: false };
@@ -36,19 +38,23 @@ function project(d: OverlayData, vw: number, vh: number, i: number, fit: Preview
   return { x: nx * d.frameW * scale + ox, y: ny * d.frameH * scale + oy };
 }
 
-function chain(d: OverlayData, vw: number, vh: number, idx: number[], fit: PreviewFit) {
+/** One path through the given joints; several runs of joints become separate strokes. */
+function chain(d: OverlayData, vw: number, vh: number, runs: number[] | number[][], fit: PreviewFit) {
   'worklet';
   const p = Skia.PathBuilder.Make();
-  let started = false;
-  for (const i of idx) {
-    const q = project(d, vw, vh, i, fit);
-    if (!q) {
-      started = false;
-      continue;
+  const list = (typeof runs[0] === 'number' ? [runs] : runs) as number[][];
+  for (const idx of list) {
+    let started = false;
+    for (const i of idx) {
+      const q = project(d, vw, vh, i, fit);
+      if (!q) {
+        started = false;
+        continue;
+      }
+      if (!started) p.moveTo(q.x, q.y);
+      else p.lineTo(q.x, q.y);
+      started = true;
     }
-    if (!started) p.moveTo(q.x, q.y);
-    else p.lineTo(q.x, q.y);
-    started = true;
   }
   return p.build();
 }
@@ -64,14 +70,41 @@ export function SkeletonOverlay({
   height: number;
   fit?: PreviewFit;
 }) {
-  // Arm: shoulder → elbow → wrist. Body line: ear → shoulder → hip → knee → ankle.
-  const arm = useDerivedValue(() => (data.value.visible ? chain(data.value, width, height, [0, 1, 2], fit) : Skia.Path.Make()));
-  const body = useDerivedValue(() => (data.value.visible ? chain(data.value, width, height, [6, 0, 3, 4, 5], fit) : Skia.Path.Make()));
+  // Side-on. Arm: shoulder → elbow → wrist. Body line: ear → shoulder → hip → knee → ankle.
+  // Head-on: both arms, and the shoulder line with the trunk down to the hips.
+  const arm = useDerivedValue(() => {
+    if (!data.value.visible) return Skia.Path.Make();
+    if (!data.value.front) return chain(data.value, width, height, [0, 1, 2], fit);
+    return chain(
+      data.value,
+      width,
+      height,
+      [
+        [2, 1, 0],
+        [7, 8, 9],
+      ],
+      fit,
+    );
+  });
+  const body = useDerivedValue(() => {
+    if (!data.value.visible) return Skia.Path.Make();
+    if (!data.value.front) return chain(data.value, width, height, [6, 0, 3, 4, 5], fit);
+    return chain(
+      data.value,
+      width,
+      height,
+      [
+        [0, 7],
+        [3, 10],
+      ],
+      fit,
+    );
+  });
   const bodyColor = useDerivedValue(() => STATE_COLORS[data.value.bodyState] ?? color.chalk);
   const joints = useDerivedValue(() => {
     const p = Skia.PathBuilder.Make();
     if (data.value.visible) {
-      for (let i = 0; i < 6; i++) {
+      for (const i of data.value.front ? [0, 1, 2, 7, 8, 9] : [0, 1, 2, 3, 4, 5]) {
         const q = project(data.value, width, height, i, fit);
         if (q) p.addCircle(q.x, q.y, 7);
       }

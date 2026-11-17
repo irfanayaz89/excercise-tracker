@@ -7,6 +7,7 @@ import { sessionConfig, sessionOverrides } from './sessionConfig';
 import { Recorder } from '@/engine/recording';
 import { PushupSession, type Cue, type SessionSummary } from '@/engine/session';
 import type { DepthProbe } from '@/engine/reality';
+import { EXERCISES } from '@/engine/exercises';
 import { LM, type PhoneAttitude, type PoseSample } from '@/engine/types';
 import type { Settings } from '@/storage/settings';
 import { EMPTY_OVERLAY, type OverlayData } from '@/ui/SkeletonOverlay';
@@ -18,6 +19,20 @@ import { createSnapshotStore, type SnapshotStore } from './snapshotStore';
 const CHAIN = {
   left: [LM.leftShoulder, LM.leftElbow, LM.leftWrist, LM.leftHip, LM.leftKnee, LM.leftAnkle, LM.leftEar],
   right: [LM.rightShoulder, LM.rightElbow, LM.rightWrist, LM.rightHip, LM.rightKnee, LM.rightAnkle, LM.rightEar],
+  /** Front view: the other arm and the far shoulder, after the left chain (indices 7–10). */
+  front: [
+    LM.leftShoulder,
+    LM.leftElbow,
+    LM.leftWrist,
+    LM.leftHip,
+    LM.leftKnee,
+    LM.leftAnkle,
+    LM.leftEar,
+    LM.rightShoulder,
+    LM.rightElbow,
+    LM.rightWrist,
+    LM.rightHip,
+  ],
 };
 
 export type Banner = Copy & { tone: 'good' | 'cue' | 'fault'; id: number };
@@ -114,6 +129,7 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
         guided: st.experience !== 'quick',
         orientation: st.orientation,
         exercise: session.exercise,
+        view: session.cfg.view,
       });
       if (speech) coach.say(speech.text, speech.priority);
       const b = cueBanner(cue, session.exercise);
@@ -182,11 +198,12 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
         return;
       }
       const pts: number[] = [];
-      for (const i of CHAIN[side]) {
+      const front = session.cfg.view === 'front' && EXERCISES[session.exercise].frontView;
+      for (const i of CHAIN[front ? 'front' : side]) {
         if (tracked.vis[i] > 0) pts.push(tracked.points[i].x / tracked.width, tracked.points[i].y / tracked.height);
         else pts.push(NaN, NaN);
       }
-      overlay.set({ frameW: tracked.width, frameH: tracked.height, pts, bodyState: session.bodyState, visible: true });
+      overlay.set({ frameW: tracked.width, frameH: tracked.height, pts, bodyState: session.bodyState, visible: true, front });
     },
     [session, overlay],
   );

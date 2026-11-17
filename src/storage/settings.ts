@@ -1,11 +1,29 @@
 import Storage from 'expo-sqlite/kv-store';
 import { useCallback, useEffect, useState } from 'react';
 import type { Difficulty } from '@/engine/difficulty';
-import type { Exercise, PhoneOrientation } from '@/engine/types';
-import { EXERCISE_IDS } from '@/engine/exercises';
+import type { CameraView, Exercise, PhoneOrientation } from '@/engine/types';
+import { EXERCISE_IDS, EXERCISES } from '@/engine/exercises';
 
 /** guided = step-by-step help for newcomers; quick = minimal screens for experienced users. */
 export type Experience = 'guided' | 'quick';
+
+/** Daily goal picked during onboarding; 'none' = no goal shown. */
+export type DailyGoal = 'none' | 'light' | 'regular' | 'serious';
+
+/** Health notes from the onboarding safety check (stored on the phone only). */
+export type SafetyFlag = 'back' | 'neck' | 'wrist' | 'pregnancy' | 'injury';
+
+export const SAFETY_FLAGS: SafetyFlag[] = ['back', 'neck', 'wrist', 'pregnancy', 'injury'];
+
+/** What each daily goal asks for: counted reps (push-ups, crunches) and time in good form (planks). */
+export const GOAL_TARGETS: Record<Exclude<DailyGoal, 'none'>, { reps: number; holdMs: number }> = {
+  light: { reps: 10, holdMs: 30_000 },
+  regular: { reps: 25, holdMs: 60_000 },
+  serious: { reps: 50, holdMs: 120_000 },
+};
+
+/** Default camera view per exercise: side-on. Push-ups and the plank can be switched to front (see EXERCISES.frontView). */
+export const DEFAULT_VIEWS: Record<Exercise, CameraView> = { pushup: 'side', crunch: 'side', plank: 'side', sidePlank: 'side' };
 
 export interface Settings {
   /** Push-ups (counted) or plank (timed). */
@@ -34,6 +52,12 @@ export interface Settings {
   difficulty: Difficulty;
   /** Before a landscape set, remind the user to turn off Rotation Lock (Auto-rotate on, on Android). */
   rotationReminder: boolean;
+  /** Camera view per exercise. */
+  views: Record<Exercise, CameraView>;
+  /** Exercises picked in onboarding, shown first on Home. Empty = all, in the usual order. */
+  focus: Exercise[];
+  dailyGoal: DailyGoal;
+  safety: SafetyFlag[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -53,6 +77,10 @@ export const DEFAULT_SETTINGS: Settings = {
   experience: null,
   difficulty: 'easy',
   rotationReminder: true,
+  views: DEFAULT_VIEWS,
+  focus: [],
+  dailyGoal: 'none',
+  safety: [],
 };
 
 const KEY = 'settings.v1';
@@ -100,7 +128,19 @@ export function normalizeSettings(raw: unknown): Settings {
     experience: oneOf(o.experience, ['guided', 'quick', null] as const, null),
     difficulty: oneOf(o.difficulty, ['easy', 'medium', 'hard'] as const, d.difficulty),
     rotationReminder: bool(o.rotationReminder, d.rotationReminder),
+    views: normalizeViews(o.views),
+    focus: Array.isArray(o.focus) ? [...new Set(o.focus.filter((e): e is Exercise => EXERCISE_IDS.includes(e as Exercise)))] : [],
+    dailyGoal: oneOf(o.dailyGoal, ['none', 'light', 'regular', 'serious'] as const, d.dailyGoal),
+    safety: Array.isArray(o.safety) ? [...new Set(o.safety.filter((f): f is SafetyFlag => SAFETY_FLAGS.includes(f as SafetyFlag)))] : [],
   };
+}
+
+function normalizeViews(v: unknown): Record<Exercise, CameraView> {
+  const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  const out = { ...DEFAULT_VIEWS };
+  // Front view only where the exercise supports it (push-ups, plank); a saved "front" for anything else reads as side-on.
+  for (const e of EXERCISE_IDS) if (o[e] === 'side' || (o[e] === 'front' && EXERCISES[e].frontView)) out[e] = o[e] as CameraView;
+  return out;
 }
 
 export function saveSettings(s: Settings): void {

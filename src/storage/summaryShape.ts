@@ -4,7 +4,17 @@ import { HINT_FAULTS, type MissReason, type RepFault, type RepRecord } from '@/e
 import { isExercise, isTimed } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 
-const FAULTS: RepFault[] = ['hips-sagging', 'hips-piking', 'rushed', 'head-dropping', 'sat-up', 'feet-lifting', 'neck-pulling'];
+const FAULTS: RepFault[] = [
+  'hips-sagging',
+  'hips-piking',
+  'rushed',
+  'head-dropping',
+  'sat-up',
+  'feet-lifting',
+  'neck-pulling',
+  'elbows-flaring',
+  'uneven',
+];
 const MISSES: MissReason[] = ['not-deep-enough', 'no-lockout', 'too-slow', 'not-high-enough', 'not-back-down'];
 const HOLD_FAULTS: HoldFault[] = [
   'hips-sagging',

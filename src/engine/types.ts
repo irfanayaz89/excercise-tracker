@@ -133,6 +133,13 @@ export interface BodyMetrics {
   trunkLiftDeg: number | null;
   /** Ankle height above the hip, in torso lengths (crunch: feet lifting off the floor). */
   footRise: number | null;
+  /**
+   * Front view only: how far the elbows stick out past the shoulders, in
+   * shoulder widths (push-ups: flaring elbows). Null side-on, where it can't be seen.
+   */
+  elbowFlare?: number | null;
+  /** Front view only: one shoulder lower than the other, in shoulder widths (an uneven rep). */
+  shoulderTilt?: number | null;
   /** Shoulder-to-hip distance in pixels. */
   torsoPx: number;
   /** Hip centre in normalized coordinates, for identity tracking. */
@@ -141,6 +148,13 @@ export interface BodyMetrics {
 
 /** How the phone stands during a set; picked by the user. */
 export type PhoneOrientation = 'landscape' | 'portrait';
+
+/**
+ * Where the camera sees you from. side: the phone beside you, seeing your
+ * profile (full form checks). front: the phone in front of you, facing you
+ * (counts reps and checks what can be seen head-on).
+ */
+export type CameraView = 'side' | 'front';
 
 /** What the set is: push-ups and crunches are counted, planks are timed. */
 export type Exercise = 'pushup' | 'crunch' | 'plank' | 'sidePlank';

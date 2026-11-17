@@ -180,3 +180,50 @@ export function figureAt(exercise: Exercise, p: number): Figure {
 
 /** A still frame for reduced motion: the exercise's working position. */
 export const STILL_P: Record<Exercise, number> = { pushup: 0.5, crunch: 0.5, plank: 0.25, sidePlank: 0.3 };
+
+/**
+ * Head-on figures (front view: push-ups and the plank), as the phone sees you
+ * facing it from the head end: the face, shoulders and both arms, with the body
+ * running away from the camera. `arm` is the left arm, `extra` the right one.
+ */
+export function figureFrontAt(exercise: Exercise, p: number): Figure {
+  'worklet';
+  const cx = 115;
+  let shY: number;
+  let elbowOut: number;
+  let elbowY: number;
+  let handX: number;
+  if (exercise === 'pushup') {
+    const w = repWave(p);
+    shY = 80 + 40 * w;
+    elbowOut = 40 + 14 * w;
+    elbowY = (shY + FLOOR_Y) / 2 + 4 * w;
+    handX = 46;
+  } else {
+    // Plank (forearm), breathing.
+    shY = 108 + 0.8 * Math.sin(2 * Math.PI * p);
+    elbowOut = 36;
+    elbowY = FLOOR_Y - 3;
+    handX = 14;
+  }
+  const ls = { x: cx - 36, y: shY };
+  const rs = { x: cx + 36, y: shY };
+  const lw = { x: cx - handX, y: FLOOR_Y - 1 };
+  const rw = { x: cx + handX, y: FLOOR_Y - 1 };
+  const le = { x: cx - elbowOut, y: elbowY };
+  const re = { x: cx + elbowOut, y: elbowY };
+  return {
+    pts: { shoulder: ls, elbow: le, wrist: lw, ankle: lw },
+    // Shoulders, and the body running away from the camera behind them.
+    body:
+      line([ls, rs]) +
+      ' ' +
+      line([
+        { x: cx, y: shY },
+        { x: cx, y: shY + 14 },
+      ]),
+    arm: line([ls, le, lw]),
+    extra: line([rs, re, rw]),
+    head: { x: cx, y: shY - 15 },
+  };
+}

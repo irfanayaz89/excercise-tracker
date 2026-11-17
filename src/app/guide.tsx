@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { EXERCISES, isExercise, isTimed } from '@/engine/exercises';
+import { EXERCISES, isExercise, isTimed, viewFor } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { TechniqueAvoid, TechniqueSteps } from '@/features/exercise/TechniqueList';
 import { PLACEMENT, rotationCopy } from '@/session/copy';
@@ -98,6 +98,8 @@ interface Page {
 function guidePages(exercise: Exercise, s: Settings, art: number, update: (p: Partial<Settings>) => void): Page[] {
   const place = PLACEMENT[s.orientation];
   const timed = isTimed(exercise);
+  const camView = viewFor(exercise, s.views);
+  const front = camView === 'front';
   const easy = s.difficulty === 'easy';
   const spot =
     exercise === 'sidePlank'
@@ -114,8 +116,19 @@ function guidePages(exercise: Exercise, s: Settings, art: number, update: (p: Pa
       <>
         <OrientationPicker value={s.orientation} onChange={(orientation) => update({ orientation })} />
         <OrientationHint value={s.orientation} />
-        <ExerciseAnimation exercise={exercise} orientation={s.orientation} width={art} />
-        <Body tone="muted">{`${place.how} Put it about ${place.distance} to the side of ${spot}, level with your hips, camera facing straight at you. A level, still phone is checked for you.`}</Body>
+        <ExerciseAnimation exercise={exercise} orientation={s.orientation} width={art} view={camView} />
+        <Body tone="muted">
+          {front
+            ? 'Stand the phone upright on the floor 1.2–2 m beyond where your hands will be, facing you. Portrait fits best. A level, still phone is checked for you.'
+            : `${place.how} Put it about ${place.distance} to the side of ${spot}, level with your hips, camera facing straight at you. A level, still phone is checked for you.`}
+        </Body>
+        {front && (
+          <Body tone="faint" size={13}>
+            {exercise === 'plank'
+              ? 'Front view times the hold and checks your arms. Your hip line is only judged from the side.'
+              : 'Front view counts reps and checks what can be seen head-on (depth, arms, elbows flaring, one side dropping). Your hip line is only judged from the side.'}
+          </Body>
+        )}
         {s.orientation === 'landscape' && <RotationNote />}
       </>
     ),
@@ -125,11 +138,13 @@ function guidePages(exercise: Exercise, s: Settings, art: number, update: (p: Pa
     title: 'Get in view',
     body: (
       <Body tone="muted">
-        {exercise === 'sidePlank'
-          ? 'Face the phone, lying on your side, with your head at one end of the screen and your feet at the other.'
-          : exercise === 'crunch'
-            ? 'Lie on your back with your side to the phone, head at one end of the screen and feet at the other.'
-            : 'Side-on to the phone, not facing it, with your head at one end of the screen and your feet at the other.'}{' '}
+        {front
+          ? 'Head towards the phone, so your face, shoulders and both hands are in the picture. Your feet do not need to be.'
+          : exercise === 'sidePlank'
+            ? 'Face the phone, lying on your side, with your head at one end of the screen and your feet at the other.'
+            : exercise === 'crunch'
+              ? 'Lie on your back with your side to the phone, head at one end of the screen and feet at the other.'
+              : 'Side-on to the phone, not facing it, with your head at one end of the screen and your feet at the other.'}{' '}
         {easy
           ? 'Shoulders and hips on screen is enough; feet help but are not required.'
           : 'Keep everything from head to feet inside the screen.'}{' '}
@@ -221,7 +236,17 @@ function duringText(exercise: Exercise): string {
 }
 
 const styles = StyleSheet.create({
-  top: { gap: space.sm, paddingHorizontal: space.xl, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  // Opaque and on top, so content scrolled under the header never shows through it.
+  top: {
+    gap: space.sm,
+    paddingHorizontal: space.xl,
+    paddingBottom: space.sm,
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+    backgroundColor: color.ground,
+    zIndex: 2,
+  },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   progress: { flexDirection: 'row', gap: space.xs, marginTop: space.sm },
   dot: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line },

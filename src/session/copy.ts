@@ -4,7 +4,7 @@ import type { HoldFault } from '@/engine/holdTimer';
 import type { RealityIssue } from '@/engine/reality';
 import type { Cue, PauseReason } from '@/engine/session';
 import type { Difficulty } from '@/engine/difficulty';
-import type { Exercise, PhoneOrientation } from '@/engine/types';
+import type { CameraView, Exercise, PhoneOrientation } from '@/engine/types';
 import { EXERCISES, isTimed } from '@/engine/exercises';
 
 /**
@@ -177,6 +177,11 @@ export const FRAMING_COPY: Record<FramingIssue, Copy> = {
     detail: 'Face along the floor, side-on to the phone, not towards it.',
     say: 'Turn side-on to the phone',
   },
+  'show-hands': {
+    short: 'Show both hands',
+    detail: 'Both hands need to be in the picture. Move the phone back a little or centre it on your head.',
+    say: 'I can’t see both hands',
+  },
   'upside-down': {
     short: 'Picture upside down',
     detail:
@@ -242,8 +247,40 @@ export const PLANK_COPY: Record<PlankIssue, Copy> = {
   'hold-still': { short: 'Hold still', detail: 'Hold the plank steady for a second.' },
 };
 
-/** The start-check messages, worded for the exercise being set up. */
-export function plankIssueCopy(issue: PlankIssue, exercise: Exercise): Copy {
+/** Start-check messages when the phone faces you (front view). */
+function frontIssueCopy(issue: PlankIssue, exercise: Exercise): Copy | null {
+  switch (issue) {
+    case 'get-down':
+      return exercise === 'pushup'
+        ? {
+            short: 'Push-up position, facing the phone',
+            detail: 'Get down with your head towards the phone, hands on the floor a little wider than your shoulders.',
+            say: 'Get into push-up position, facing the phone',
+          }
+        : {
+            short: 'Plank, facing the phone',
+            detail: 'Get into a plank with your head towards the phone, on your forearms or straight arms.',
+            say: 'Get into a plank, facing the phone',
+          };
+    case 'hands-under-shoulders':
+      return {
+        short: 'Hands shoulder-width apart',
+        detail: 'Place your hands a little wider than your shoulders.',
+        say: 'Hands shoulder-width apart',
+      };
+    case 'elbows-under-shoulders':
+      return { short: 'Elbows under shoulders', detail: 'Keep your elbows about shoulder-width apart, under your shoulders.' };
+    default:
+      return null;
+  }
+}
+
+/** The start-check messages, worded for the exercise being set up (and how the phone sees it). */
+export function plankIssueCopy(issue: PlankIssue, exercise: Exercise, view: CameraView = 'side'): Copy {
+  if (view === 'front' && EXERCISES[exercise].frontView) {
+    const c = frontIssueCopy(issue, exercise);
+    if (c) return c;
+  }
   if (exercise === 'crunch' && issue === 'hold-still') {
     return { short: 'Lie still', detail: 'Rest your shoulders on the floor and keep still for a second.' };
   }
@@ -312,6 +349,16 @@ export const FAULT_COPY: Record<RepFault, Copy> = {
     short: 'Feet down',
     detail: 'Keep your feet flat on the floor. Curl up with your abs instead of swinging up.',
     say: 'Feet down',
+  },
+  'elbows-flaring': {
+    short: 'Tuck your elbows',
+    detail: 'Keep your elbows about 45° from your sides, not flared straight out. It is kinder to your shoulders.',
+    say: 'Tuck your elbows',
+  },
+  uneven: {
+    short: 'Keep it level',
+    detail: 'One side dropped lower than the other. Push evenly through both hands.',
+    say: 'Keep it level',
   },
   'neck-pulling': {
     short: 'Relax your neck',
@@ -456,6 +503,8 @@ const NUMBERS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 
 export interface SpeechOptions {
   countAloud: boolean;
   exercise?: Exercise;
+  /** How the phone sees the user; front view words some setup cues differently. */
+  view?: CameraView;
   /** Guided users hear the full instruction during setup; quick users hear a few words. */
   guided: boolean;
   orientation: PhoneOrientation;
@@ -479,7 +528,7 @@ export function cueSpeech(cue: Cue, o: SpeechOptions): { text: string; priority:
     case 'framing':
       return setupLine(framingCopy(cue.issue, orientation), guided);
     case 'plank':
-      return setupLine(plankIssueCopy(cue.issue, exercise), guided);
+      return setupLine(plankIssueCopy(cue.issue, exercise, o.view), guided);
     case 'start':
       // Mid-set cues stay short for everyone: nobody can listen to a sentence mid-rep.
       if (isTimed(exercise)) return { text: guided ? 'Go. The clock runs while your body stays in one line.' : 'Go', priority: 'high' };

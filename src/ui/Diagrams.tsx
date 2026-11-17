@@ -318,7 +318,7 @@ export function PlankGhost({
   height: number;
   facing: 'left' | 'right';
   /** Push-ups start from a high plank; the plank shows a forearm plank; 'side' is a side plank; 'crunch' lies on the back. */
-  variant?: PlankVariant | 'side' | 'crunch';
+  variant?: PlankVariant | 'side' | 'crunch' | 'front';
 }) {
   // Normalized plank pose in a 100×56 box, head on the left.
   const flip = facing === 'right';
@@ -336,6 +336,48 @@ export function PlankGhost({
       }
     : { head: [16, 22], shoulder: [22, 27], elbow: [22.5, 37], wrist: [23, 47], hip: [52, 35], ankle: [86, 46] };
   const P = (k: keyof typeof pts) => `${X(pts[k][0])} ${Y(pts[k][1])}`;
+  if (variant === 'front') {
+    // Head-on (push-ups, plank): the face and shoulders with both arms down to the floor.
+    const Q = (x: number, y: number) => `${(x / 100) * width} ${(y / 56) * height}`;
+    const paths = [`M${Q(34, 22)} L${Q(66, 22)}`, `M${Q(34, 22)} L${Q(28, 36)} L${Q(30, 48)}`, `M${Q(66, 22)} L${Q(72, 36)} L${Q(70, 48)}`];
+    const head = [50, 12];
+    return (
+      <Svg width={width} height={height} pointerEvents="none">
+        <G
+          stroke={color.chalk}
+          strokeOpacity={0.55}
+          strokeWidth={Math.max(3, width / 140)}
+          strokeDasharray="10 9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        >
+          {paths.map((d) => (
+            <Path key={d} d={d} />
+          ))}
+        </G>
+        <Circle
+          cx={(head[0] / 100) * width}
+          cy={(head[1] / 56) * height}
+          r={width / 30}
+          stroke={color.chalk}
+          strokeOpacity={0.55}
+          strokeDasharray="6 6"
+          strokeWidth={2}
+          fill="none"
+        />
+        <Line
+          x1={0.04 * width}
+          y1={(48.5 / 56) * height}
+          x2={0.96 * width}
+          y2={(48.5 / 56) * height}
+          stroke={color.chalk}
+          strokeOpacity={0.25}
+          strokeWidth={2}
+        />
+      </Svg>
+    );
+  }
   if (variant === 'crunch') {
     // On the back, knees bent, arm reaching towards the knees.
     const Q = (x: number, y: number) => `${X(x)} ${Y(y)}`;

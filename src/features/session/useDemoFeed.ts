@@ -13,8 +13,9 @@ import {
   type BodyParams,
   type Segment,
 } from '@/engine/testing/synth';
-import type { Exercise, PhoneAttitude, PoseSample } from '@/engine/types';
-import { isTimed } from '@/engine/exercises';
+import { timelineFront } from '@/engine/testing/synth3d';
+import type { CameraView, Exercise, PhoneAttitude, PoseSample } from '@/engine/types';
+import { EXERCISES, isTimed } from '@/engine/exercises';
 
 /**
  * Demo scenarios (`?demo=<name>`): each plays one situation through the real
@@ -272,14 +273,21 @@ export interface DemoFrame {
 }
 
 /** Every frame of a scenario, with its phone roll and depth kind. Also used by tests. */
-export function demoFrames(exercise: Exercise, scenario: DemoScenario, portrait: boolean): { frames: DemoFrame[]; length: number } {
+export function demoFrames(
+  exercise: Exercise,
+  scenario: DemoScenario,
+  portrait: boolean,
+  view: CameraView = 'side',
+): { frames: DemoFrame[]; length: number } {
+  // Head-on demos (push-ups, plank) are photographed from the front.
+  const front = view === 'front' && EXERCISES[exercise].frontView;
   // Portrait frames are tall and narrow, like a real upright camera.
   const size: Partial<BodyParams> = portrait ? { noisePx: 3, width: 720, height: 1280, torsoPx: 190 } : { noisePx: 3 };
   const frames: DemoFrame[] = [];
   let t = 0;
   for (const part of script(exercise, scenario)) {
     const base = { ...size, ...part.body };
-    const samples = timeline(part.segs, {
+    const samples = (front ? timelineFront : timeline)(part.segs, {
       startT: t,
       base,
       mapFrame: part.shake
@@ -312,6 +320,7 @@ export function useDemoFeed(
   scenario: DemoScenario = 'basic',
   exercise: Exercise = 'pushup',
   onDepth?: (p: DepthProbe) => void,
+  view: CameraView = 'side',
 ) {
   const pose = useRef(onPose);
   const att = useRef(onAttitude);
@@ -324,7 +333,7 @@ export function useDemoFeed(
 
   useEffect(() => {
     if (!enabled) return;
-    const { frames, length } = demoFrames(exercise, scenario, portrait);
+    const { frames, length } = demoFrames(exercise, scenario, portrait, view);
     const t0 = performance.now();
     let i = 0;
     let loop = 0;
@@ -346,5 +355,5 @@ export function useDemoFeed(
       }
     }, 33);
     return () => clearInterval(id);
-  }, [enabled, portrait, scenario, exercise]);
+  }, [enabled, portrait, scenario, exercise, view]);
 }

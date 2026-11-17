@@ -23,7 +23,7 @@ import { PlankGhost } from '@/ui/Diagrams';
 import { Button, Label } from '@/ui/primitives';
 import { SkeletonOverlay } from '@/ui/SkeletonOverlay';
 import { color, radius, space } from '@/ui/theme';
-import { isExercise, isTimed } from '@/engine/exercises';
+import { isExercise, isTimed, viewFor } from '@/engine/exercises';
 
 /** Something worth saving: a counted rep, or a second of plank in good form. */
 function hasWork(s: SessionSnapshot): boolean {
@@ -39,20 +39,23 @@ function goBack() {
 export default function SessionScreen() {
   // One set uses the settings it started with; changes apply to the next set.
   const [liveSettings] = useSettings();
-  const params = useLocalSearchParams<{ demo?: string; ex?: string; level?: string }>();
+  const params = useLocalSearchParams<{ demo?: string; ex?: string; level?: string; view?: string }>();
   // demo=<scenario> plays a scripted synthetic set (see useDemoFeed); a demo can
-  // also pick the exercise and level (`ex=plank`, `level=hard`) without changing Settings.
+  // also pick the exercise, level and camera view (`ex=plank`, `level=hard`,
+  // `view=front`) without changing Settings.
   const scenario = demoScenario(params.demo);
   const demo = scenario !== null;
-  const [settings] = useState<Settings>(() =>
-    demo
-      ? {
-          ...liveSettings,
-          ...(isExercise(params.ex) ? { exercise: params.ex } : {}),
-          ...(params.level === 'easy' || params.level === 'medium' || params.level === 'hard' ? { difficulty: params.level } : {}),
-        }
-      : liveSettings,
-  );
+  const [settings] = useState<Settings>(() => {
+    if (!demo) return liveSettings;
+    const s: Settings = {
+      ...liveSettings,
+      ...(isExercise(params.ex) ? { exercise: params.ex } : {}),
+      ...(params.level === 'easy' || params.level === 'medium' || params.level === 'hard' ? { difficulty: params.level } : {}),
+    };
+    // A demo's view override applies to the exercise it plays.
+    // (front only applies where the exercise supports it; see viewFor)
+    return params.view === 'front' || params.view === 'side' ? { ...s, views: { ...s.views, [s.exercise]: params.view } } : s;
+  });
   const permission = useCameraPermission();
   const preferred = useCameraDevice(settings.camera);
   const other = useCameraDevice(settings.camera === 'front' ? 'back' : 'front');
@@ -207,7 +210,16 @@ function LiveSession({
   const ctrl = useSessionController(settings, onEnded);
   const pose = usePoseStream({ modelPreference: settings.model, onPose: ctrl.onPose, depth: withDepth, onDepth: ctrl.onDepth });
   const motion = usePhoneAttitude(!demo, settings.orientation, ctrl.onAttitude);
-  useDemoFeed(demo, settings.orientation === 'portrait', ctrl.onPose, ctrl.onAttitude, scenario, settings.exercise, ctrl.onDepth);
+  useDemoFeed(
+    demo,
+    settings.orientation === 'portrait',
+    ctrl.onPose,
+    ctrl.onAttitude,
+    scenario,
+    settings.exercise,
+    ctrl.onDepth,
+    viewFor(settings.exercise, settings.views),
+  );
   useLayoutEffect(() => {
     ctrlRef.current = ctrl;
     modelRef.current = pose.model;
@@ -360,7 +372,15 @@ function StageDecor({
             height={width * 0.78 * 0.56}
             facing={snap.side === 'right' ? 'right' : 'left'}
             variant={
-              snap.exercise === 'crunch' ? 'crunch' : snap.exercise === 'sidePlank' ? 'side' : isTimed(snap.exercise) ? 'forearm' : 'high'
+              snap.view === 'front'
+                ? 'front'
+                : snap.exercise === 'crunch'
+                  ? 'crunch'
+                  : snap.exercise === 'sidePlank'
+                    ? 'side'
+                    : isTimed(snap.exercise)
+                      ? 'forearm'
+                      : 'high'
             }
           />
         </View>

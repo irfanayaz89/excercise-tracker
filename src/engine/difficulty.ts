@@ -1,6 +1,6 @@
 import { mergeConfig, type DeepPartial, type EngineConfig } from './config';
-import type { Exercise } from './types';
-import { isTimed } from './exercises';
+import type { CameraView, Exercise } from './types';
+import { EXERCISES, isTimed } from './exercises';
 
 /**
  * How strict the session is.
@@ -101,6 +101,23 @@ const CRUNCH_PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
   },
 };
 
+/**
+ * Front view (facing the phone: push-ups and the plank). The feet are not
+ * needed (they sit behind the body head-on); the face and both hands are.
+ * Push-ups: depth is read from the shoulders dropping towards the hands, whose
+ * bottom is about 45% of the top height head-on.
+ */
+function frontPreset(d: Difficulty, exercise: Exercise): DeepPartial<EngineConfig> {
+  const base: DeepPartial<EngineConfig> = { view: 'front', framing: { requireFeet: false, requireArms: true } };
+  if (exercise !== 'pushup') return base;
+  return {
+    ...base,
+    // Head-on a rep is read over a shorter stretch (the shoulder drop alone), so only real bounces are faster than 300 ms.
+    rep: { expectedBottomRatio: 0.45, minRepMs: 300 },
+    front: d === 'medium' ? { flareFault: 0.4, tiltFault: 0.22 } : {},
+  };
+}
+
 /** Section-by-section merge of two partial configs (the second wins). */
 function combine(a: DeepPartial<EngineConfig>, b: DeepPartial<EngineConfig>): DeepPartial<EngineConfig> {
   const out: Record<string, unknown> = { ...a };
@@ -115,6 +132,8 @@ export interface DifficultyOptions {
   allowKneeling?: boolean;
   /** Defaults to push-ups. */
   exercise?: Exercise;
+  /** Defaults to side-on. Only exercises with `frontView` (push-ups, plank) can use front; others ignore it. */
+  view?: CameraView;
 }
 
 /** Engine config for a difficulty. Easy always accepts knee push-ups (and knee planks). */
@@ -127,5 +146,6 @@ export function difficultyOverrides(d: Difficulty, opts: DifficultyOptions = {})
   let base = opts.exercise && isTimed(opts.exercise) ? combine(PRESETS[d], PLANK_PRESETS[d]) : PRESETS[d];
   if (opts.exercise === 'sidePlank') base = combine(base, SIDE_PLANK_PRESETS[d]);
   if (opts.exercise === 'crunch') base = combine(base, CRUNCH_PRESETS[d]);
+  if (opts.view === 'front' && opts.exercise && EXERCISES[opts.exercise].frontView) base = combine(base, frontPreset(d, opts.exercise));
   return { ...base, allowKneeling: d === 'easy' ? true : (opts.allowKneeling ?? false) };
 }

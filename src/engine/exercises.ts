@@ -1,4 +1,4 @@
-import type { Exercise } from './types';
+import type { CameraView, Exercise } from './types';
 
 /**
  * Every exercise the app knows, in one place. Adding an exercise starts here:
@@ -17,13 +17,27 @@ export interface ExerciseInfo {
   perSide: boolean;
   /** One line under the name. */
   tagline: string;
+  /**
+   * Can also be tracked facing the phone (front view): push-ups and the plank.
+   * Crunches need the side view to see the curl; the side plank is always done
+   * facing the phone in its own way.
+   */
+  frontView: boolean;
 }
 
 export const EXERCISES: Record<Exercise, ExerciseInfo> = {
-  pushup: { id: 'pushup', label: 'Push-ups', unit: 'push-ups', kind: 'reps', perSide: false, tagline: 'Counted reps' },
-  crunch: { id: 'crunch', label: 'Crunches', unit: 'crunches', kind: 'reps', perSide: false, tagline: 'Counted reps' },
-  plank: { id: 'plank', label: 'Plank', unit: 'plank', kind: 'hold', perSide: false, tagline: 'Timed hold' },
-  sidePlank: { id: 'sidePlank', label: 'Side plank', unit: 'side plank', kind: 'hold', perSide: true, tagline: 'Timed, each side' },
+  pushup: { id: 'pushup', label: 'Push-ups', unit: 'push-ups', kind: 'reps', perSide: false, tagline: 'Counted reps', frontView: true },
+  crunch: { id: 'crunch', label: 'Crunches', unit: 'crunches', kind: 'reps', perSide: false, tagline: 'Counted reps', frontView: false },
+  plank: { id: 'plank', label: 'Plank', unit: 'plank', kind: 'hold', perSide: false, tagline: 'Timed hold', frontView: true },
+  sidePlank: {
+    id: 'sidePlank',
+    label: 'Side plank',
+    unit: 'side plank',
+    kind: 'hold',
+    perSide: true,
+    tagline: 'Timed, each side',
+    frontView: false,
+  },
 };
 
 /** Display order. */
@@ -31,6 +45,11 @@ export const EXERCISE_IDS: Exercise[] = ['pushup', 'crunch', 'plank', 'sidePlank
 
 export function isExercise(v: unknown): v is Exercise {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(EXERCISES, v);
+}
+
+/** The camera view a set of this exercise uses: front only where the exercise supports it. */
+export function viewFor(e: Exercise, views: Partial<Record<Exercise, CameraView>> | undefined): CameraView {
+  return EXERCISES[e].frontView && views?.[e] === 'front' ? 'front' : 'side';
 }
 
 /** Timed holds (plank, side plank) rather than counted reps. */

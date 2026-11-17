@@ -17,9 +17,10 @@ import { RealityCheck, type DepthProbe, type RealityIssue } from './reality';
 import { MetricMedian } from './smoothing';
 import { HINT_FAULTS, RepCounter, type MissRecord, type RepFault, type RepPhase, type RepRecord } from './repCounter';
 import { CrunchCounter, type CrunchPhase } from './crunchCounter';
+import { checkFrontStart, frontContacts, frontMetrics, FrontFramingGate } from './front';
 import { buildChain, computeMetrics, PoseTracker, SideSelector, SupportSideSelector, type TrackedPose } from './tracker';
 import { LM, type BodyMetrics, type Exercise, type PhoneAttitude, type PlankVariant, type PoseSample, type Side } from './types';
-import { isTimed } from './exercises';
+import { EXERCISES, isTimed } from './exercises';
 
 export type SessionPhase = 'phone-setup' | 'body-check' | 'counting' | 'paused' | 'ended';
 
@@ -66,6 +67,8 @@ export type SessionEvent =
 
 export interface SessionSnapshot {
   exercise: Exercise;
+  /** Where the camera sees the user from. */
+  view: 'side' | 'front';
   phase: SessionPhase;
   phone: PhoneCheck;
   phoneConfirmedManually: boolean;
@@ -190,6 +193,7 @@ export class PushupSession {
   private sides: SideSelector;
   private phoneGate: PhoneGate;
   private framingGate: FramingGate;
+  private frontGate: FrontFramingGate;
   private plankHold: PlankHold;
   /** Median-smoothed measurements for the start check (removes single-frame spikes). */
   private checkSmoother = new MetricMedian();
@@ -260,9 +264,32 @@ export class PushupSession {
     this.sides = new SideSelector(this.cfg);
     this.phoneGate = new PhoneGate(this.cfg);
     this.framingGate = new FramingGate(this.cfg);
+    this.frontGate = new FrontFramingGate(this.cfg);
     this.plankHold = new PlankHold(this.cfg);
     this.reality = new RealityCheck(this.cfg);
     this.supportSides = new SupportSideSelector(this.cfg);
+  }
+
+  /** Seen head-on: push-ups and the plank (see EXERCISES.frontView). */
+  private get front(): boolean {
+    return this.cfg.view === 'front' && EXERCISES[this.exercise].frontView;
+  }
+
+  /** Framing and measurements for this frame, side-on or head-on. */
+  private read(
+    pose: TrackedPose,
+    side: Side | null,
+  ): { framing: FramingCheck; metrics: BodyMetrics | null; chain: ReturnType<typeof buildChain> | null } {
+    const chain = side && pose.detected ? buildChain(pose, side) : null;
+    if (this.front) {
+      const framing = this.frontGate.check(pose);
+      return { framing, metrics: pose.detected ? frontMetrics(pose, this.cfg, this.exercise) : null, chain };
+    }
+    return {
+      framing: this.framingGate.check(pose, chain),
+      metrics: chain ? computeMetrics(chain, pose, this.phoneGate.horizonRoll(pose.t), this.cfg) : null,
+      chain,
+    };
   }
 
   /**
@@ -336,7 +363,7 @@ export class PushupSession {
         // Stay paused until there has been no sign of a screen for a while.
         const side = this.pickSide(pose);
         const chain = side && pose.detected ? buildChain(pose, side) : null;
-        if (chain) this.feedContacts(chain, pose);
+        this.feedContacts(chain, pose);
         if (this.reality.issue(this.now) || this.reality.clearFor(this.now) < this.cfg.reality.clearMs) {
           this.cue({ kind: 'paused', reason: 'not-real' });
           return;
@@ -469,6 +496,7 @@ export class PushupSession {
     const last = this.reps[this.reps.length - 1] ?? null;
     return {
       exercise: this.exercise,
+      view: this.front ? 'front' : 'side',
       phase: this.phase,
       phone: this.phoneCheck,
       phoneConfirmedManually: this.phoneManual,
@@ -544,9 +572,8 @@ export class PushupSession {
     if (pose.detected) this.lastDetectedT = pose.t;
     else if (this.lastDetectedT !== null && pose.t - this.lastDetectedT <= this.cfg.landmarkHoldMs) return;
     const side = this.pickSide(pose);
-    const chain = side && pose.detected ? buildChain(pose, side) : null;
-    this.framing = this.framingGate.check(pose, chain);
-    const metrics = chain ? computeMetrics(chain, pose, this.phoneGate.horizonRoll(pose.t), this.cfg) : null;
+    const { framing, metrics, chain } = this.read(pose, side);
+    this.framing = framing;
     this.metrics = metrics;
 
     if (!this.framing.ok || !metrics || !chain) {
@@ -566,12 +593,14 @@ export class PushupSession {
     }
 
     this.framingBadSince = null;
-    const plank = checkPlank(this.checkSmoother.push(metrics), this.cfg, this.exercise);
+    const smoothed = this.checkSmoother.push(metrics);
+    const plank = this.front ? checkFrontStart(pose, smoothed, this.cfg, this.exercise) : checkPlank(smoothed, this.cfg, this.exercise);
     this.plankIssues = plank.issues;
     if (plank.ok) this.startVariant = plank.variant;
     if (!act) return;
 
-    const hold = this.plankHold.update(metrics, chain.shoulder.y, plank.ok, holdMs);
+    const shoulderY = this.front ? (pose.points[LM.leftShoulder].y + pose.points[LM.rightShoulder].y) / 2 : chain.shoulder.y;
+    const hold = this.plankHold.update(metrics, shoulderY, plank.ok, holdMs);
     this.plankProgress = hold.progress;
     if (!plank.ok) {
       // A short blip inside a good hold is ignored, not announced.
@@ -639,8 +668,7 @@ export class PushupSession {
   private evaluateCounting(pose: TrackedPose): void {
     const t = pose.t;
     const side = this.pickSide(pose);
-    const chain = side && pose.detected ? buildChain(pose, side) : null;
-    const metrics = chain ? computeMetrics(chain, pose, this.phoneGate.horizonRoll(t), this.cfg) : null;
+    const { framing, metrics, chain } = this.read(pose, side);
 
     // Identity: a sudden jump in body position or size means another person
     // (or a bad detection). Ignore the frame instead of counting from it.
@@ -653,7 +681,7 @@ export class PushupSession {
     }
 
     // Keep framing hints (low light, drifting out of frame) live during the set.
-    this.framing = this.framingGate.check(pose, chain);
+    this.framing = framing;
 
     const usable =
       metrics !== null &&
@@ -667,7 +695,7 @@ export class PushupSession {
     this.identityJumping = false;
     this.acceptIdentity({ t, hip: metrics.hipCenter, torso: metrics.torsoPx });
 
-    if (chain) this.feedContacts(chain, pose);
+    this.feedContacts(chain, pose);
     if (this.reality.issue(t)) {
       this.flagNotReal(t);
       return;
@@ -865,12 +893,16 @@ export class PushupSession {
    * the phone itself is still: hands and feet, or for crunches hips and feet
    * (the hands move with the body).
    */
-  private feedContacts(chain: ReturnType<typeof buildChain>, pose: TrackedPose): void {
+  private feedContacts(chain: ReturnType<typeof buildChain> | null, pose: TrackedPose): void {
     const min = this.cfg.minVisibility;
     const pts: { x: number; y: number }[] = [];
-    const hand = this.exercise === 'crunch' ? { p: chain.hip, v: chain.vis.hip } : { p: chain.wrist, v: chain.vis.wrist };
-    if (hand.v >= min) pts.push({ x: hand.p.x / pose.width, y: hand.p.y / pose.height });
-    if (chain.vis.ankle >= min) pts.push({ x: chain.ankle.x / pose.width, y: chain.ankle.y / pose.height });
+    if (this.front) {
+      if (pose.detected) pts.push(...frontContacts(pose, this.cfg));
+    } else if (chain) {
+      const hand = this.exercise === 'crunch' ? { p: chain.hip, v: chain.vis.hip } : { p: chain.wrist, v: chain.vis.wrist };
+      if (hand.v >= min) pts.push({ x: hand.p.x / pose.width, y: hand.p.y / pose.height });
+      if (chain.vis.ankle >= min) pts.push({ x: chain.ankle.x / pose.width, y: chain.ankle.y / pose.height });
+    } else return;
     const a = this.phoneGate.attitude;
     const fresh = a !== null && pose.t - a.t <= this.cfg.phone.staleMs;
     this.reality.pushContacts(pose.t, pts, fresh ? a.motionDegPerSec < this.cfg.reality.stillPhoneDegPerSec : null);

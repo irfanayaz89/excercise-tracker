@@ -30,7 +30,17 @@ import { MOTION_MS, STILL_P, figureAt } from '@/ui/exerciseMotion';
 import { setupSteps } from '../setupSteps';
 import { TECHNIQUE } from '../technique';
 
-const FAULTS: RepFault[] = ['hips-sagging', 'hips-piking', 'rushed', 'head-dropping', 'sat-up', 'feet-lifting', 'neck-pulling'];
+const FAULTS: RepFault[] = [
+  'hips-sagging',
+  'hips-piking',
+  'rushed',
+  'head-dropping',
+  'sat-up',
+  'feet-lifting',
+  'neck-pulling',
+  'elbows-flaring',
+  'uneven',
+];
 const MISSES: MissReason[] = ['not-deep-enough', 'no-lockout', 'too-slow', 'not-high-enough', 'not-back-down'];
 const filled = (c: { short: string; detail: string } | null | undefined) => !!c && c.short.trim().length > 1 && c.detail.trim().length > 5;
 

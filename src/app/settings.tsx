@@ -35,6 +35,28 @@ export default function SettingsScreen() {
       </View>
 
       <Section title="Your set">
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push({ pathname: '/welcome', params: { redo: '1' } })}
+          style={{ paddingVertical: space.sm }}
+        >
+          <Strong>Redo setup ›</Strong>
+          <Body tone="muted" size={14}>
+            Go through the first-launch questions again: exercises, strictness, daily goal, safety, voice and phone setup.
+          </Body>
+        </Pressable>
+        <ChoiceRow
+          label="Daily goal"
+          hint="Reps count push-ups and crunches; plank time counts both planks. Home shows how far you are."
+          value={s.dailyGoal}
+          options={[
+            ['none', 'None'],
+            ['light', 'Light'],
+            ['regular', 'Regular'],
+            ['serious', 'Serious'],
+          ]}
+          onChange={(v) => update({ dailyGoal: v as Settings['dailyGoal'] })}
+        />
         <ChoiceRow
           label="Help level"
           hint="Guided explains each step, shows a setup guide before every set and speaks full instructions. Quick keeps screens and cues short."

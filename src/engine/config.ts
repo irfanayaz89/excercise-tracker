@@ -6,6 +6,8 @@
  * the replay tests in `src/engine/__tests__/replay.test.ts`.
  */
 export interface EngineConfig {
+  /** Where the camera sees the user from (see `front` for the head-on settings). */
+  view: 'side' | 'front';
   /** A landmark below this visibility is treated as unknown. */
   minVisibility: number;
   /** How long a lost landmark may be held at its last value before it counts as missing. */
@@ -225,6 +227,28 @@ export interface EngineConfig {
   };
 
   /**
+   * Front view (facing the phone: push-ups and the plank). Everything is measured in shoulder widths,
+   * which stay steady head-on at any distance. Starting values from geometry
+   * and the head-on research; tune them with recorded sets.
+   */
+  front: {
+    /** Body size: shoulder width as a share of the frame width. */
+    minShoulderShare: number;
+    maxShoulderShare: number;
+    /** Push-up start: shoulders this many shoulder widths above the hands means straight arms. */
+    straightArmD: number;
+    /** Plank: below this the weight is on the forearms. */
+    forearmMaxD: number;
+    /** Hands this far apart (shoulder widths) are fine. */
+    minHandSpread: number;
+    maxHandSpread: number;
+    /** Push-ups: elbows flaring out past the shoulders by more than this (shoulder widths) at the bottom is a fault. */
+    flareFault: number;
+    /** One shoulder lower by more than this (shoulder widths) through the rep is a fault. */
+    tiltFault: number;
+  };
+
+  /**
    * Real-person check: a video of someone exercising, shown on a screen, must
    * not count. Two independent signals, each needing sustained evidence.
    */
@@ -266,6 +290,7 @@ export interface EngineConfig {
 }
 
 export const DEFAULT_CONFIG: EngineConfig = {
+  view: 'side',
   minVisibility: 0.5,
   landmarkHoldMs: 200,
   maxFrameGapMs: 500,
@@ -384,6 +409,16 @@ export const DEFAULT_CONFIG: EngineConfig = {
     minRepMs: 350,
     rushedRepMs: 800,
     maxRepMs: 10000,
+  },
+  front: {
+    minShoulderShare: 0.1,
+    maxShoulderShare: 0.65,
+    straightArmD: 1.15,
+    forearmMaxD: 1.1,
+    minHandSpread: 0.7,
+    maxHandSpread: 2.3,
+    flareFault: 0.3,
+    tiltFault: 0.15,
   },
   reality: {
     enabled: true,

@@ -9,8 +9,8 @@ import { PushupSession, type SessionEvent, type SessionSummary } from '@/engine/
 import type { Exercise } from '@/engine/types';
 import { DEMO_SCENARIOS, demoFrames, demoProbe, type DemoScenario } from '../useDemoFeed';
 
-function play(exercise: Exercise, scenario: DemoScenario, level: Difficulty, portrait = false) {
-  const session = new PushupSession({ config: difficultyConfig(level, { exercise }), exercise });
+function play(exercise: Exercise, scenario: DemoScenario, level: Difficulty, portrait = false, view: 'side' | 'front' = 'side') {
+  const session = new PushupSession({ config: difficultyConfig(level, { exercise, view }), exercise });
   const events: SessionEvent[] = [];
   const pauses: string[] = [];
   const framing: string[] = [];
@@ -19,7 +19,7 @@ function play(exercise: Exercise, scenario: DemoScenario, level: Difficulty, por
     if (e.type === 'cue' && e.cue.kind === 'paused' && !pauses.includes(e.cue.reason)) pauses.push(e.cue.reason);
     if (e.type === 'cue' && e.cue.kind === 'framing') framing.push(e.cue.issue);
   });
-  const { frames } = demoFrames(exercise, scenario, portrait);
+  const { frames } = demoFrames(exercise, scenario, portrait, view);
   let n = 0;
   for (const f of frames) {
     const t = f.sample.t + 1000;
@@ -106,5 +106,14 @@ describe.each(DIFFICULTIES)('crunch demos at %s', (level) => {
 
   it('knocked: the phone falling over pauses the set', () => {
     expect(play('crunch', 'knocked', level).pauses).toContain('phone-moved');
+  });
+});
+
+describe.each(['pushup', 'plank'] as const)('%s demo seen head-on', (exercise) => {
+  it.each(DIFFICULTIES)('basic at %s counts or times, with no pauses', (level) => {
+    const { summary, reps, pauses, framing } = play(exercise, 'basic', level, true, 'front');
+    expect(summary.hold ? summary.hold.goodMs : reps.length).toBeGreaterThan(0);
+    expect(pauses).toEqual([]);
+    expect(framing).not.toContain('upside-down');
   });
 });

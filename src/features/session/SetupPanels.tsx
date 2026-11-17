@@ -87,6 +87,19 @@ const CRUNCH_CHECKS: { key: string; label: string; issues: PlankIssue[] }[] = [
   { key: 'feet', label: 'Feet flat on the floor', issues: ['feet-on-floor'] },
 ];
 
+/** Front view: what the phone checks head-on before the set starts. */
+const FRONT_CHECKS: Record<'pushup' | 'plank', { key: string; label: string; issues: PlankIssue[] }[]> = {
+  pushup: [
+    { key: 'down', label: 'Push-up position, facing the phone', issues: ['get-down'] },
+    { key: 'arms', label: 'Arms straight', issues: ['straighten-arms'] },
+    { key: 'hands', label: 'Hands shoulder-width apart', issues: ['hands-under-shoulders'] },
+  ],
+  plank: [
+    { key: 'down', label: 'Plank, facing the phone', issues: ['get-down'] },
+    { key: 'arms', label: 'Elbows or hands under your shoulders', issues: ['elbows-under-shoulders', 'hands-under-shoulders'] },
+  ],
+};
+
 /** Plank: arms straight or forearms down both work; hand position is not checked. */
 const PLANK_CHECKS: { key: string; label: string; issues: PlankIssue[] }[] = [
   { key: 'down', label: 'In a plank', issues: ['get-down'] },
@@ -110,7 +123,15 @@ export function BodyPanel({
 }) {
   const plank = isTimed(snap.exercise);
   const list =
-    snap.exercise === 'crunch' ? CRUNCH_CHECKS : snap.exercise === 'sidePlank' ? SIDE_PLANK_CHECKS : plank ? PLANK_CHECKS : CHECKS;
+    snap.view === 'front' && (snap.exercise === 'pushup' || snap.exercise === 'plank')
+      ? FRONT_CHECKS[snap.exercise]
+      : snap.exercise === 'crunch'
+        ? CRUNCH_CHECKS
+        : snap.exercise === 'sidePlank'
+          ? SIDE_PLANK_CHECKS
+          : plank
+            ? PLANK_CHECKS
+            : CHECKS;
   const checks = list.filter(
     (c) =>
       (c.key !== 'line' || config.plank.checkHips) &&
@@ -128,7 +149,7 @@ export function BodyPanel({
     : !framed && f.issue
       ? framingCopy(f.issue, orientation)
       : first
-        ? plankIssueCopy(first, snap.exercise)
+        ? plankIssueCopy(first, snap.exercise, snap.view)
         : snap.exercise === 'crunch'
           ? { short: 'Lie still…', detail: 'Starting as soon as you are still.' }
           : { short: 'Hold it…', detail: 'Starting as soon as you are steady.' };

@@ -8,7 +8,18 @@ export type RepPhase = 'top' | 'descending' | 'bottom' | 'ascending' | 'resting'
  * Push-ups: hips-sagging, hips-piking, rushed, head-dropping (hint).
  * Crunches: sat-up (curled all the way up), feet-lifting, rushed, neck-pulling (hint).
  */
-export type RepFault = 'hips-sagging' | 'hips-piking' | 'rushed' | 'head-dropping' | 'sat-up' | 'feet-lifting' | 'neck-pulling';
+export type RepFault =
+  | 'hips-sagging'
+  | 'hips-piking'
+  | 'rushed'
+  | 'head-dropping'
+  | 'sat-up'
+  | 'feet-lifting'
+  | 'neck-pulling'
+  /** Front view: elbows flared out wide at the bottom. */
+  | 'elbows-flaring'
+  /** Front view: one side lower than the other. */
+  | 'uneven';
 
 /** Small hints: they cost a few points but never make a rep unclean. */
 export const HINT_FAULTS: RepFault[] = ['head-dropping', 'neck-pulling'];
@@ -65,6 +76,8 @@ interface Attempt {
   bodyLines: number[];
   hipOffsets: number[];
   necks: number[];
+  flares: number[];
+  tilts: number[];
   lastDepthOk: boolean;
 }
 
@@ -279,6 +292,13 @@ export class RepCounter {
       faults.push('hips-piking');
     }
     if (f.enabled && durationMs < r.rushedRepMs) faults.push('rushed');
+    // Front view: what head-on shows that side-on can't.
+    if (f.enabled && this.cfg.view === 'front') {
+      const flare = percentile(a.flares, 1 - FORM_PCT);
+      if (flare !== null && flare > this.cfg.front.flareFault) faults.push('elbows-flaring');
+      const tilt = percentile(a.tilts, 1 - FORM_PCT);
+      if (tilt !== null && tilt > this.cfg.front.tiltFault) faults.push('uneven');
+    }
     const hints: RepFault[] = f.enabled && minNeck !== null && minNeck < f.minNeckDeg ? ['head-dropping'] : [];
     const score = Math.max(0, 100 - faults.length * 30 - hints.length * 5);
 
@@ -312,6 +332,8 @@ export class RepCounter {
       bodyLines: [],
       hipOffsets: [],
       necks: [],
+      flares: [],
+      tilts: [],
       lastDepthOk: false,
     };
     this.track(a, m);
@@ -323,6 +345,8 @@ export class RepCounter {
     if (m.bodyLineDeg !== null) a.bodyLines.push(m.bodyLineDeg);
     if (m.hipOffset !== null) a.hipOffsets.push(m.hipOffset);
     if (m.neckDeg !== null) a.necks.push(m.neckDeg);
+    if (m.elbowFlare !== null && m.elbowFlare !== undefined) a.flares.push(m.elbowFlare);
+    if (m.shoulderTilt !== null && m.shoulderTilt !== undefined) a.tilts.push(m.shoulderTilt);
   }
 }
 

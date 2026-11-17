@@ -10,8 +10,9 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
-import type { Exercise, PhoneOrientation } from '@/engine/types';
-import { FLOOR_Y, MOTION_MS, STILL_P, figureAt } from './exerciseMotion';
+import { EXERCISES } from '@/engine/exercises';
+import type { CameraView, Exercise, PhoneOrientation } from '@/engine/types';
+import { FLOOR_Y, MOTION_MS, STILL_P, figureAt, figureFrontAt } from './exerciseMotion';
 import { color, font } from './theme';
 
 const APath = Animated.createAnimatedComponent(Path);
@@ -27,11 +28,15 @@ export function ExerciseAnimation({
   exercise,
   orientation = 'landscape',
   width = 320,
+  view = 'side',
 }: {
   exercise: Exercise;
   orientation?: PhoneOrientation;
   width?: number;
+  /** Front: the phone faces you (the side plank is always shown facing the phone). */
+  view?: CameraView;
 }) {
+  const front = view === 'front' && EXERCISES[exercise].frontView;
   const reduce = useReducedMotion();
   const p = useSharedValue(STILL_P[exercise]);
   const period = MOTION_MS[exercise];
@@ -46,7 +51,7 @@ export function ExerciseAnimation({
     return () => cancelAnimation(p);
   }, [exercise, period, reduce, p]);
 
-  const fig = useDerivedValue(() => figureAt(exercise, p.value));
+  const fig = useDerivedValue(() => (front ? figureFrontAt(exercise, p.value) : figureAt(exercise, p.value)));
   const body = useAnimatedProps(() => ({ d: fig.value.body }));
   const arm = useAnimatedProps(() => ({ d: fig.value.arm }));
   const extra = useAnimatedProps(() => ({ d: fig.value.extra || 'M0 0' }));
@@ -54,19 +59,23 @@ export function ExerciseAnimation({
 
   const counter = useLoopCounter(exercise, period, reduce);
   const portrait = orientation === 'portrait';
-  const distance = portrait ? '2.5–3 m' : '1.5–2 m';
-  const facing = exercise === 'sidePlank';
+  const distance = front ? '1.2–2 m' : portrait ? '2.5–3 m' : '1.5–2 m';
+  const facing = exercise === 'sidePlank' || front;
 
   return (
     <Svg
       width={width}
       height={(width * 116) / 320}
       viewBox="0 44 320 116"
-      accessibilityLabel={`Animation of ${label(exercise)}. The phone stands on the floor ${distance} away, level with your hips and at a right angle to your body, so it sees you ${facing ? 'from the front, lying on your side' : 'side-on'}.`}
+      accessibilityLabel={
+        front
+          ? `Animation of ${label(exercise)}, seen head-on. The phone stands on the floor beyond your hands, ${distance} away, facing you.`
+          : `Animation of ${label(exercise)}. The phone stands on the floor ${distance} away, level with your hips and at a right angle to your body, so it sees you ${exercise === 'sidePlank' ? 'from the front, lying on your side' : 'side-on'}.`
+      }
     >
       {/* ── camera view ── */}
       <SvgText x="10" y="54" fontSize={8} fill={color.vial} fontFamily={font.mono}>
-        {facing ? 'CAMERA VIEW · FACING IT' : 'CAMERA VIEW · SIDE-ON'}
+        {front ? 'CAMERA VIEW · FACING YOU' : facing ? 'CAMERA VIEW · FACING IT' : 'CAMERA VIEW · SIDE-ON'}
       </SvgText>
       <G stroke={color.muted} strokeWidth={1.5} fill="none" strokeLinecap="round">
         <Path d="M8 70 L8 60 L18 60" />
@@ -79,7 +88,7 @@ export function ExerciseAnimation({
         {counter}
       </SvgText>
       <Line x1="12" y1={FLOOR_Y + 1.5} x2="218" y2={FLOOR_Y + 1.5} stroke={color.line} strokeWidth={2} />
-      {exercise === 'plank' && (
+      {exercise === 'plank' && !front && (
         <Line x1="34" y1={FLOOR_Y - 28} x2="208" y2={FLOOR_Y - 3} stroke={color.vial} strokeWidth={1} strokeDasharray="4 4" opacity={0.6} />
       )}
       <G stroke={color.chalk} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" fill="none">
@@ -94,6 +103,15 @@ export function ExerciseAnimation({
       <SvgText x="275" y="54" fontSize={8} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
         FROM ABOVE
       </SvgText>
+      {front ? <FrontMap distance={distance} portrait={portrait} /> : <SideMap distance={distance} portrait={portrait} />}
+    </Svg>
+  );
+}
+
+/** From above, side view: the phone level with your hips, at a right angle to your body. */
+function SideMap({ distance, portrait }: { distance: string; portrait: boolean }) {
+  return (
+    <>
       <Rect x="238" y="72" width="72" height="20" rx="3" fill={color.raised} stroke={color.line} strokeWidth={1} />
       <Line x1="249" y1="82" x2="304" y2="82" stroke={color.chalk} strokeWidth={3} strokeLinecap="round" />
       <Circle cx="245" cy="82" r="4" fill={color.chalk} />
@@ -118,7 +136,33 @@ export function ExerciseAnimation({
       <SvgText x="270" y="148" fontSize={7} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
         PHONE · HIP LEVEL
       </SvgText>
-    </Svg>
+    </>
+  );
+}
+
+/** From above, front view: the phone on the floor at your head end, in line with your body, facing you. */
+function FrontMap({ distance, portrait }: { distance: string; portrait: boolean }) {
+  const headY = 96;
+  const feetY = 132;
+  const phoneY = 70;
+  return (
+    <>
+      <Rect x="262" y={headY - 8} width="16" height={feetY - headY + 16} rx="3" fill={color.raised} stroke={color.line} strokeWidth={1} />
+      <Line x1="270" y1={headY + 5} x2="270" y2={feetY} stroke={color.chalk} strokeWidth={3} strokeLinecap="round" />
+      <Circle cx="270" cy={headY} r="4" fill={color.chalk} />
+      <Line x1="270" y1={phoneY + 5} x2="270" y2={headY - 6} stroke={color.vial} strokeWidth={1.5} strokeDasharray="4 3" />
+      {portrait ? (
+        <Rect x="265.5" y={phoneY - 8} width="9" height="16" rx="2" fill={color.raised} stroke={color.vial} strokeWidth={1.5} />
+      ) : (
+        <Rect x="262" y={phoneY - 4.5} width="16" height="9" rx="2" fill={color.raised} stroke={color.vial} strokeWidth={1.5} />
+      )}
+      <SvgText x="284" y={(phoneY + headY) / 2 + 3} fontSize={8} fill={color.chalk} fontFamily={font.mono}>
+        {distance}
+      </SvgText>
+      <SvgText x="275" y="148" fontSize={7} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        PHONE · AT YOUR HEAD
+      </SvgText>
+    </>
   );
 }
 

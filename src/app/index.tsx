@@ -7,7 +7,7 @@ import type { Exercise } from '@/engine/types';
 import { HistoryList } from '@/features/history/HistoryList';
 import { formatDuration } from '@/session/copy';
 import { dailyTotals, listSessions, listSessionsSince, type SessionRow } from '@/storage/history';
-import { useSettings } from '@/storage/settings';
+import { GOAL_TARGETS, useSettings } from '@/storage/settings';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Body, Chip, Display, Label, Mono, Strong } from '@/ui/primitives';
 import { color, radius, space } from '@/ui/theme';
@@ -50,6 +50,11 @@ export default function Home() {
   const today = week[week.length - 1]?.byExercise;
   const weekTotal = (e: Exercise) => week.reduce((s, d) => s + d.byExercise[e], 0);
   const doneToday = EXERCISE_IDS.filter((e) => (today?.[e] ?? 0) > 0);
+  // Picked exercises first (onboarding), the rest after in the usual order.
+  const order = [...settings.focus, ...EXERCISE_IDS.filter((e) => !settings.focus.includes(e))];
+  const goal = settings.dailyGoal === 'none' ? null : GOAL_TARGETS[settings.dailyGoal];
+  const repsToday = (today?.pushup ?? 0) + (today?.crunch ?? 0);
+  const holdToday = (today?.plank ?? 0) + (today?.sidePlank ?? 0);
   const shown = filter === 'all' ? rows : rows.filter((r) => r.exercise === filter);
 
   if (settings.experience === null) return <Redirect href="/welcome" />;
@@ -89,12 +94,26 @@ export default function Home() {
             ))}
           </View>
         )}
+        {goal && (
+          <View
+            style={styles.goal}
+            accessibilityLabel={`Daily goal: ${repsToday} of ${goal.reps} reps, ${formatDuration(holdToday)} of ${formatDuration(goal.holdMs)} plank`}
+          >
+            <GoalBar label="Reps" value={repsToday} target={goal.reps} text={`${repsToday} / ${goal.reps}`} />
+            <GoalBar
+              label="Plank"
+              value={holdToday}
+              target={goal.holdMs}
+              text={`${formatDuration(holdToday)} / ${formatDuration(goal.holdMs)}`}
+            />
+          </View>
+        )}
       </View>
 
       <View style={{ gap: space.md }}>
         <Label>Exercises</Label>
         <View style={styles.grid}>
-          {EXERCISE_IDS.map((e) => {
+          {order.map((e) => {
             const last = settings.exercise === e;
             return (
               <Pressable
@@ -136,7 +155,9 @@ export default function Home() {
         <HistoryList
           rows={shown.slice(0, 30)}
           guard={guard}
-          empty={rows.length === 0 ? 'No sets yet. Pick an exercise above; each finished set is saved here.' : 'No sets of this exercise yet.'}
+          empty={
+            rows.length === 0 ? 'No sets yet. Pick an exercise above; each finished set is saved here.' : 'No sets of this exercise yet.'
+          }
         />
       </View>
       {rows.length === 0 && (
@@ -148,7 +169,30 @@ export default function Home() {
   );
 }
 
+/** One line of the daily goal: a thin bar that turns green when met. */
+function GoalBar({ label, value, target, text }: { label: string; value: number; target: number; text: string }) {
+  const k = Math.min(1, value / Math.max(1, target));
+  return (
+    <View style={{ gap: 4 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Mono size={12} tone="muted">
+          {label}
+        </Mono>
+        <Mono size={12} tone={k >= 1 ? 'good' : 'chalk'}>
+          {k >= 1 ? `${text} ✓` : text}
+        </Mono>
+      </View>
+      <View style={styles.track}>
+        <View style={[styles.fill, { width: `${Math.round(k * 100)}%`, backgroundColor: k >= 1 ? color.good : color.vial }]} />
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  goal: { gap: space.sm, marginTop: space.xs },
+  track: { height: 6, borderRadius: 3, backgroundColor: color.lineSoft, overflow: 'hidden' },
+  fill: { height: 6, borderRadius: 3 },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   wordmark: { flexDirection: 'row', alignItems: 'center', gap: space.sm },

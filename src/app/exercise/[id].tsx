@@ -3,10 +3,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DIFFICULTIES } from '@/engine/difficulty';
-import { EXERCISES, isExercise, isTimed } from '@/engine/exercises';
+import { EXERCISES, isExercise, isTimed, viewFor } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { setupSteps } from '@/features/exercise/setupSteps';
 import { TechniqueSteps } from '@/features/exercise/TechniqueList';
+import { safetyNotes } from '@/features/onboarding/safety';
 import { HistoryList } from '@/features/history/HistoryList';
 import { difficultyCopy, formatDuration, rotationCopy } from '@/session/copy';
 import { bestFor, dailyTotals, listSessionsFor, listSessionsSince, type SessionRow } from '@/storage/history';
@@ -56,6 +57,8 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
   const guided = settings.experience !== 'quick';
   const levelCopy = difficultyCopy(settings.difficulty, exercise);
   const art = Math.min(width, 560) - space.xl * 4;
+  const view = viewFor(exercise, settings.views);
+  const notes = safetyNotes(settings.safety, exercise);
 
   const go = (demo: boolean) => {
     // The set runs with this exercise; the choice is remembered for next time.
@@ -125,16 +128,48 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
             <Label tone="chalk">Step-by-step guide ›</Label>
           </Pressable>
         </View>
-        <ExerciseAnimation exercise={exercise} orientation={settings.orientation} width={art} />
+        <ExerciseAnimation exercise={exercise} orientation={settings.orientation} width={art} view={view} />
         <TechniqueSteps exercise={exercise} compact={!guided} />
       </View>
+
+      {notes.length > 0 && (
+        <View style={styles.warn}>
+          <Label tone="cue">Take care</Label>
+          {notes.map((n) => (
+            <Body key={n} size={14}>
+              {n}
+            </Body>
+          ))}
+        </View>
+      )}
+
+      {info.frontView && (
+        <View style={{ gap: space.md }}>
+          <Label>Camera view</Label>
+          <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Camera view">
+            <Chip label="Side-on" selected={view === 'side'} onPress={() => update({ views: { ...settings.views, [exercise]: 'side' } })} />
+            <Chip
+              label="Facing the phone"
+              selected={view === 'front'}
+              onPress={() => update({ views: { ...settings.views, [exercise]: 'front' } })}
+            />
+          </View>
+          <Body tone="muted" size={14}>
+            {view === 'side'
+              ? 'The phone beside you sees your whole body line: the strictest form checks.'
+              : exercise === 'plank'
+                ? 'The phone on the floor beyond your hands. Easier to set up; times the hold and checks your arms. Hips are only judged side-on.'
+                : 'The phone on the floor beyond your hands. Easier to set up; counts reps and checks depth, arms and elbows. Hips are only judged side-on.'}
+          </Body>
+        </View>
+      )}
 
       {guided ? (
         <View style={styles.card}>
           <Label tone="vial">Before you start</Label>
           <OrientationPicker value={settings.orientation} onChange={(orientation) => update({ orientation })} />
           <View style={{ gap: space.md }}>
-            {setupSteps(exercise, settings.difficulty, settings.orientation).map((s, i) => (
+            {setupSteps(exercise, settings.difficulty, settings.orientation, view).map((s, i) => (
               <View key={i} style={{ flexDirection: 'row', gap: space.md }}>
                 <Display size={28} tone="vial" style={{ width: 22 }}>
                   {i + 1}
@@ -237,4 +272,12 @@ const styles = StyleSheet.create({
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  warn: {
+    gap: space.sm,
+    padding: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: color.cueSoft,
+    borderWidth: 1,
+    borderColor: color.cue,
+  },
 });
