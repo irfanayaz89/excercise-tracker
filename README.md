@@ -1,9 +1,10 @@
-# Trueline — camera push-up, plank and side plank tracker
+# Trueline — camera push-up, crunch, plank and side plank tracker
 
 Working name. An Expo app that watches you through the phone camera and
-checks your position for three exercises:
+checks your position for four exercises:
 
 - **Push-ups**: counts and grades every rep.
+- **Crunches**: counts every crunch and flags sitting all the way up, feet lifting and rushing.
 - **Plank**: times the hold, and only counts time in good form.
 - **Side plank**: times each side on its own, and compares left and right.
 
@@ -25,10 +26,32 @@ it runs, from a camera frame to a counted rep, file by file.
    exercise and recent sets (filterable by exercise). Each card opens the
    exercise's own screen: this week, personal best, setup, level, target
    (reps, or 0:30 to 2:00; per side for the side plank), Start and its history.
+   Each screen also has **How to do it**: an animated figure doing the
+   exercise as the camera sees it, a top-down map of where the phone goes
+   (level with your hips, at a right angle to your body, at the right
+   distance), and the numbered steps. **Step-by-step guide** opens the full
+   guide to read at any time.
+   - **The guide** comes before every set in Guided mode, and before anyone's
+     first set of an exercise. One step per page: place the phone (with the
+     animation), get in view, how to do it, mistakes to avoid (with breathing,
+     how much to start with, and who should take care), then what counts.
 2. **Place the phone.** Pick **Landscape** (1.5–2 m away) or **Portrait**
    (2.5–3 m away). Stand it on the floor that way, side-on. A spirit-level
    vial (gravity sensor) waits until it is level and still. No sensor or
    permission denied → a "Phone is set" button instead.
+   - **Landscape needs Rotation Lock off** (Auto-rotate on, on Android). The
+     set screen locks itself to landscape; with Rotation Lock on, iOS can keep
+     it on the other landscape side from the way the phone stands, and the
+     camera picture reaches the tracker upside down. So Start asks first
+     ("Don't remind me" turns it off; it is also in Settings), and the guide
+     says it on its first page.
+   - **Upside-down picture check:** if the body shows upside down for a second
+     (shoulders below the feet; for crunches, bent knees pointing down), the
+     set will not start and says to check Rotation Lock. A flipped picture
+     inverts hip sag, push-up depth and crunch lift, so it must never count.
+     With the feet out of view (Easy) it falls back to the hands (push-ups,
+     planks) or a lying body's knees (crunches). The one case it cannot tell
+     is a side plank on Easy with the feet out of view; the reminder covers it.
 3. **Body check.** The body must be in frame, side-on, in a valid starting
    position held for a moment (0.5–1.2 s by level), which also calibrates
    the set.
@@ -57,6 +80,33 @@ it runs, from a camera frame to a counted rep, file by file.
 Standing up, losing tracking, the phone being knocked or the app going to the
 background pauses the set and keeps the count or time; get back into position
 to carry on.
+
+## Crunches
+
+You lie on your back, side-on to the phone, knees bent and feet flat; arms
+across the chest, fingertips by the ears, or reaching to the knees all work
+(only the shoulder, hip and knee are needed, so hands hidden behind the head
+are fine).
+
+- **Lift** is the angle of the hip→shoulder line, measured from your own
+  resting angle (calibrated while you lie still before the set, so a crooked
+  phone or a raised rest does not change what counts).
+- **A crunch counts** when the shoulders lift past the counting line and come
+  back down. Lines by level (degrees above rest): Hard 22, Medium 18, Easy 15.
+  Curl-up tests define the top as about 30° of trunk flexion, and the abs do
+  the first 20–30° (Liang 2010; Juker/McGill 1998).
+- **Not counted:** half crunches (lifted past 11°, 9° on Easy, but not to the line), pulsing
+  at the top without lowering, and holding at the top for over 10 s.
+- **Counted but flagged** (Medium and Hard): sitting all the way up (past
+  50–58°, the hip flexors take over), feet coming off the floor, and rushing.
+  Pulling the chin to the chest is a tip that costs a few points.
+- **Pauses:** sitting or standing up, stretching the legs out flat, or
+  leaving the frame. The count is kept.
+- Counting reads a 5-frame median of the lift: crunches are slow, so the
+  ~70 ms of lag costs nothing, and a single misread shoulder frame cannot
+  tip a crunch over a line.
+- The real-person check watches the hips and feet for a shaking screen (the
+  hands move with the body in a crunch).
 
 ## Side plank
 
@@ -165,14 +215,15 @@ src/engine/__tests__/      edge-case, stress and real-person tests + replay of r
 src/camera/                VisionCamera frame output → native model → PoseSample; depth sampling
 src/sensors/               DeviceMotion → phone attitude
 src/session/               controller hook, voice coach, copy, per-set config, recordings
-src/features/session/      live-screen panels and HUD (rep count, plank clock)
+src/features/session/      live-screen panels and HUD (rep count, plank clock), demo scenarios
+src/features/exercise/     how-to steps, mistakes and safety for each exercise (technique.ts)
 src/ui/                    design tokens and components (exercise picker, level vial, hips gauge,
-                           tally marks, depth gauge, overlay, diagrams)
+                           tally marks, depth gauge, overlay, diagrams, the guide animation)
 src/app/                   routes: home, guide, session, summary/[id], settings
 fixtures/recordings/       real recorded sets used as regression tests
 ```
 
-Key engine files: `exercises.ts` (the exercise registry), `session.ts` (all exercises), `repCounter.ts` (push-ups),
+Key engine files: `exercises.ts` (the exercise registry), `session.ts` (all exercises), `repCounter.ts` (push-ups), `crunchCounter.ts` (crunches),
 `holdTimer.ts` (plank and side plank), `gates.ts` (phone, framing, start position),
 `reality.ts` (real-person check).
 
@@ -188,7 +239,7 @@ npm run typecheck && npm run lint
 Expo Go cannot run this app (custom native code). On a simulator, use
 **Home → Preview a demo set** (dev builds only) to see the live screen driven
 by a synthetic body through the real engine (from an exercise's screen). Every
-edge case has a scenario: `trueline:///session?demo=<basic|nofeet|standup|lost|swap|knocked|shake|tv|faults>&ex=<pushup|plank|sidePlank>&level=<easy|medium|hard>`.
+edge case has a scenario: `trueline:///session?demo=<basic|nofeet|standup|lost|swap|knocked|shake|tv|faults>&ex=<pushup|crunch|plank|sidePlank>&level=<easy|medium|hard>`. Every scenario is also played through the engine in `demoScenarios.test.ts`.
 
 After editing `modules/pose-landmarker/src/PoseLandmarker.nitro.ts`, run
 `npm run codegen` and rebuild.
@@ -226,8 +277,8 @@ After editing `modules/pose-landmarker/src/PoseLandmarker.nitro.ts`, run
 
 **How it is tested**
 
-- Every scenario runs at all three difficulties, in portrait and landscape frames, facing either way (`matrix.test.ts`, `plank.test.ts`, `plankEdge.test.ts`, `sidePlank.test.ts`, `realPerson.test.ts`).
-- Randomised sets: `stress.test.ts` (push-ups) and `plankStress.test.ts` (plank and side plank, with real breaks, near misses, short blips and soft knees). 40 per level by default; `STRESS_TRIALS=400 npx jest stress plankStress` for more. Random noise, misread joints, speeds, body size, frame shape, facing and phone roll, with exact count / break checks.
+- Every scenario runs at all three difficulties, in portrait and landscape frames, facing either way (`matrix.test.ts`, `plank.test.ts`, `plankEdge.test.ts`, `sidePlank.test.ts`, `crunch.test.ts`, `realPerson.test.ts`).
+- Randomised sets: `stress.test.ts` (push-ups), `crunchStress.test.ts` (crunches: full, half and sit-up crunches with misread shoulder and hip frames) and `plankStress.test.ts` (plank and side plank, with real breaks, near misses, short blips and soft knees). 40 per level by default; `STRESS_TRIALS=400 npx jest stress plankStress` for more. Random noise, misread joints, speeds, body size, frame shape, facing and phone roll, with exact count / break checks.
 - The depth sampler is tested against fake depth maps in every buffer rotation, mirrored, and in 16-bit and disparity formats (`src/camera/__tests__/depthProbe.test.ts`).
 
 ## Tuning with real sets (Phase 4)
@@ -250,7 +301,7 @@ local network. Release builds never send anything.
 
 ## Known gaps / to verify on device
 
-- Plank, side plank and the real-person check have only been tested with synthetic bodies and fake depth maps. Still to check on a real phone: plank limits with real body noise, forearm-plank detection, and whether the iPhone's depth reaches 1.5–3 m clearly enough (watch `real=…(standout …m torso …m)` in the diagnostics line). Adding the depth output may also change the video format the pose model gets.
+- Crunches, plank, side plank and the real-person check have only been tested with synthetic bodies and fake depth maps. Still to check on a real phone: plank limits with real body noise, forearm-plank detection, and whether the iPhone's depth reaches 1.5–3 m clearly enough (watch `real=…(standout …m torso …m)` in the diagnostics line). Adding the depth output may also change the video format the pose model gets.
 - The app has not been run on an Android phone with the plank or real-person check yet; the logic is shared and tested, the native camera path is not.
 - iOS: MediaPipe returns landmarks in the un-rotated sensor buffer's coordinates; the native module rotates them upright per `frame.orientation` (fixed after a portrait device test where push-ups read as standing). The rotation direction is confirmed when the diagnostics line shows `sh` (shoulder above wrist) positive in a plank.
 - Frames follow the locked screen (`orientationSource="interface"`) and mirroring is explicit (`mirrorMode` on for the front camera); confirm the skeleton sits on the body on real hardware.
