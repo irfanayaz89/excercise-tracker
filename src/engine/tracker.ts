@@ -293,6 +293,9 @@ export function computeMetrics(chain: SideChain, pose: TrackedPose, horizonRollD
   const otherShoulder = chain.side === 'left' ? LM.rightShoulder : LM.leftShoulder;
   const shoulderStack = ok(pose.vis[otherShoulder]) ? (chain.shoulder.y - pose.points[otherShoulder].y) / torsoPx : null;
   const forearmRise = ok(v.elbow) && ok(v.wrist) ? Math.abs(chain.wrist.y - chain.elbow.y) / torsoPx : null;
+  // Crunch: shoulder lifted above the hip, seen side-on (either way the user lies).
+  const trunkLiftDeg = (Math.atan2(chain.hip.y - chain.shoulder.y, Math.abs(chain.shoulder.x - chain.hip.x)) * 180) / Math.PI;
+  const footRise = hasAnkle ? (chain.hip.y - chain.ankle.y) / torsoPx : null;
 
   const hip = { x: chain.hip.x / pose.width, y: chain.hip.y / pose.height };
 
@@ -310,6 +313,8 @@ export function computeMetrics(chain: SideChain, pose: TrackedPose, horizonRollD
     elbowStack,
     forearmRise,
     shoulderStack,
+    trunkLiftDeg,
+    footRise,
     torsoPx,
     hipCenter: hip,
   };

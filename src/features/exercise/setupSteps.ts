@@ -22,6 +22,10 @@ export function setupSteps(exercise: Exercise, difficulty: Difficulty, orientati
       title: 'Hold a plank to begin',
       body: 'On straight arms or forearms. The clock starts by itself and runs while your body stays in one line.',
     },
+    crunch: {
+      title: 'Lie back to begin',
+      body: 'On your back, knees bent, feet flat. Counting starts once you lie still for a second.',
+    },
     sidePlank: {
       title: 'Lift your hips to begin',
       body: 'Elbow under your shoulder, feet stacked. Each side is timed on its own; a target is per side.',

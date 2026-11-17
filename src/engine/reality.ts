@@ -92,7 +92,7 @@ export class RealityCheck {
   }
 
   /**
-   * Hands and feet (normalized frame positions) for one frame.
+   * Hands and feet (crunches: hips and feet), in normalized frame positions, for one frame.
    * @param phoneStill true when the motion sensor says the phone is not moving; null without a sensor.
    */
   pushContacts(t: number, points: Vec2[], phoneStill: boolean | null): void {

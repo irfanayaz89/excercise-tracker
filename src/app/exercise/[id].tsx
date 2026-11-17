@@ -1,16 +1,18 @@
 import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DIFFICULTIES } from '@/engine/difficulty';
 import { EXERCISES, isExercise, isTimed } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { setupSteps } from '@/features/exercise/setupSteps';
+import { TechniqueSteps } from '@/features/exercise/TechniqueList';
 import { HistoryList } from '@/features/history/HistoryList';
-import { difficultyCopy, formatDuration } from '@/session/copy';
+import { difficultyCopy, formatDuration, rotationCopy } from '@/session/copy';
 import { bestFor, dailyTotals, listSessionsFor, listSessionsSince, type SessionRow } from '@/storage/history';
 import { HOLD_TARGETS, TARGETS, useSettings } from '@/storage/settings';
-import { ExerciseGlyph, SetupDiagram } from '@/ui/Diagrams';
+import { ExerciseGlyph } from '@/ui/Diagrams';
+import { ExerciseAnimation } from '@/ui/ExerciseAnimation';
 import { OrientationPicker } from '@/ui/OrientationPicker';
 import { Body, Button, Chip, Display, Label, Mono, Strong } from '@/ui/primitives';
 import { color, radius, space, type } from '@/ui/theme';
@@ -55,12 +57,33 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
   const levelCopy = difficultyCopy(settings.difficulty, exercise);
   const art = Math.min(width, 560) - space.xl * 4;
 
+  const go = (demo: boolean) => {
+    // The set runs with this exercise; the choice is remembered for next time.
+    update({ exercise });
+    if (demo) router.push({ pathname: '/session', params: { demo: '1', ex: exercise } });
+    // The step-by-step guide comes first in guided mode, and before anyone's first set of an exercise.
+    else if (guided || rows.length === 0) router.push({ pathname: '/guide', params: { ex: exercise } });
+    else router.push('/session');
+  };
+
   const start = (demo = false) =>
     guard(() => {
-      // The set runs with this exercise; the choice is remembered for next time.
-      update({ exercise });
-      if (demo) router.push({ pathname: '/session', params: { demo: '1', ex: exercise } });
-      else router.push(guided ? '/guide' : '/session');
+      // Landscape only tracks well when the picture turns with the phone: ask first.
+      if (demo || settings.orientation !== 'landscape' || !settings.rotationReminder) {
+        go(demo);
+        return;
+      }
+      const c = rotationCopy(Platform.OS);
+      Alert.alert(c.title, c.body, [
+        {
+          text: "Don't remind me",
+          onPress: () => {
+            update({ rotationReminder: false });
+            go(false);
+          },
+        },
+        { text: c.ok, style: 'default', isPreferred: true, onPress: () => go(false) },
+      ]);
     });
 
   return (
@@ -91,11 +114,25 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
         <WeekBars days={week.map((d) => d.day)} values={values} label={`${show(weekTotal)} ${info.unit} in the last 7 days`} height={56} />
       </View>
 
+      <View style={styles.card}>
+        <View style={styles.cardHead}>
+          <Label tone="vial">How to do it</Label>
+          <Pressable
+            accessibilityRole="button"
+            hitSlop={10}
+            onPress={guard(() => router.push({ pathname: '/guide', params: { ex: exercise, view: '1' } }))}
+          >
+            <Label tone="chalk">Step-by-step guide ›</Label>
+          </Pressable>
+        </View>
+        <ExerciseAnimation exercise={exercise} orientation={settings.orientation} width={art} />
+        <TechniqueSteps exercise={exercise} compact={!guided} />
+      </View>
+
       {guided ? (
         <View style={styles.card}>
           <Label tone="vial">Before you start</Label>
           <OrientationPicker value={settings.orientation} onChange={(orientation) => update({ orientation })} />
-          <SetupDiagram width={art} orientation={settings.orientation} exercise={exercise} />
           <View style={{ gap: space.md }}>
             {setupSteps(exercise, settings.difficulty, settings.orientation).map((s, i) => (
               <View key={i} style={{ flexDirection: 'row', gap: space.md }}>
@@ -123,7 +160,12 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
         <Label>Difficulty</Label>
         <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Difficulty">
           {DIFFICULTIES.map((d) => (
-            <Chip key={d} label={difficultyCopy(d, exercise).label} selected={settings.difficulty === d} onPress={() => update({ difficulty: d })} />
+            <Chip
+              key={d}
+              label={difficultyCopy(d, exercise).label}
+              selected={settings.difficulty === d}
+              onPress={() => update({ difficulty: d })}
+            />
           ))}
         </View>
         <View style={{ gap: 2 }}>
@@ -147,7 +189,12 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
                 />
               ))
             : TARGETS.map((t) => (
-                <Chip key={t} label={t === 0 ? 'Open' : String(t)} selected={settings.targetReps === t} onPress={() => update({ targetReps: t })} />
+                <Chip
+                  key={t}
+                  label={t === 0 ? 'Open' : String(t)}
+                  selected={settings.targetReps === t}
+                  onPress={() => update({ targetReps: t })}
+                />
               ))}
         </View>
         <Button label={`Start ${info.label.toLowerCase()}`} size="lg" onPress={start()} />
@@ -160,7 +207,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
 
       <View style={{ gap: space.md }}>
         <Label>History</Label>
-        <HistoryList rows={rows} guard={guard} showExercise={false} empty={`No ${info.unit} sets yet. Each finished set is saved here.`} />
+        <HistoryList rows={rows} guard={guard} showExercise={false} empty="No sets yet. Each finished set is saved here." />
       </View>
     </ScrollView>
   );
@@ -189,4 +236,5 @@ const styles = StyleSheet.create({
     borderColor: color.lineSoft,
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 });

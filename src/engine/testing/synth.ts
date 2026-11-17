@@ -54,6 +54,22 @@ export interface BodyParams {
    * the front-side.
    */
   viewScale?: number;
+  /** Crunch: lying on the back with knees bent. When set, `elbowDeg`, `sag` and `stack` are ignored. */
+  crunch?: CrunchParams;
+}
+
+/** A body on its back, seen side-on, curling up for a crunch. */
+export interface CrunchParams {
+  /** Shoulder lift: hip→shoulder line above the resting angle, in degrees (0 = flat, 90 = sitting up). */
+  liftDeg: number;
+  /** Hip–knee–ankle angle (default 85°). */
+  kneeDeg?: number;
+  /** Where the hands are (default across the chest). */
+  arms?: 'chest' | 'head' | 'reach';
+  /** Feet lifted off the floor, in torso lengths. */
+  feetUp?: number;
+  /** Chin pulled towards the chest, degrees of neck bend beyond neutral. */
+  neckFlexDeg?: number;
 }
 
 export function mulberry32(seed: number): () => number {
@@ -76,8 +92,74 @@ function rotate(p: Vec2, c: Vec2, deg: number): Vec2 {
   return { x: c.x + dx * Math.cos(a) - dy * Math.sin(a), y: c.y + dx * Math.sin(a) + dy * Math.cos(a) };
 }
 
+/**
+ * Crunch body: hip and feet on the floor, knees bent up, the trunk rotating up
+ * about the hip. The upper back curls as it lifts, so the shoulder–hip distance
+ * shortens a little (as it does on camera).
+ */
+function buildCrunchBody(params: BodyParams, c: CrunchParams) {
+  const T = params.torsoPx ?? 200;
+  const width = params.width ?? 1280;
+  const height = params.height ?? 720;
+  const dir = (params.facing ?? 'left') === 'left' ? 1 : -1; // feet direction along x
+  const floorY = params.floorY ?? height * 0.82;
+  const lift = rad(Math.max(-10, Math.min(95, c.liftDeg + 2)));
+  const hip = { x: params.wristX ?? width / 2 - dir * 0.15 * T, y: floorY - 0.2 * T };
+  const curl = 1 - 0.1 * Math.min(1, Math.max(0, c.liftDeg) / 40);
+  const shoulder = { x: hip.x - dir * T * curl * Math.cos(lift), y: hip.y - T * curl * Math.sin(lift) };
+  // Trunk frame: u from shoulder towards the hip, n away from the floor (towards the chest's front).
+  const ux = (hip.x - shoulder.x) / (T * curl);
+  const uy = (hip.y - shoulder.y) / (T * curl);
+  let nx = -uy;
+  let ny = ux;
+  if (ny > 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  const at = (a: number, b: number): Vec2 => ({ x: shoulder.x + (ux * a + nx * b) * T, y: shoulder.y + (uy * a + ny * b) * T });
+  // Head follows the trunk; a pulled chin rotates the ear towards the chest.
+  const flex = rad(c.neckFlexDeg ?? 0);
+  const e0 = { a: -0.38, b: 0.04 };
+  const ear = at(e0.a * Math.cos(flex) - e0.b * Math.sin(flex) * -1, e0.b * Math.cos(flex) + -e0.a * Math.sin(flex));
+  const arms = c.arms ?? 'chest';
+  const elbow = arms === 'head' ? at(-0.2, 0.3) : arms === 'reach' ? at(0.55, 0.16) : at(0.32, 0.3);
+  const wrist = arms === 'head' ? at(-0.36, -0.02) : arms === 'reach' ? at(1.1, 0.22) : at(0.05, 0.36);
+  // Legs: thigh 0.9 T, shin 0.85 T, ankle near the floor (raised by feetUp).
+  const Lt = 0.9 * T;
+  const Ls = 0.85 * T;
+  const K = rad(Math.max(30, Math.min(180, c.kneeDeg ?? 85)));
+  const d = Math.sqrt(Lt * Lt + Ls * Ls - 2 * Lt * Ls * Math.cos(K));
+  const ankleY = floorY - 0.07 * T - (c.feetUp ?? 0) * T;
+  const dy = ankleY - hip.y;
+  const ankle = { x: hip.x + dir * Math.sqrt(Math.max(1, d * d - dy * dy)), y: ankleY };
+  // Knee: circle intersection on the upper side.
+  const a = (Lt * Lt - Ls * Ls + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, Lt * Lt - a * a));
+  const mx = hip.x + (a * (ankle.x - hip.x)) / d;
+  const my = hip.y + (a * (ankle.y - hip.y)) / d;
+  let kx = -(ankle.y - hip.y) / d;
+  let ky = (ankle.x - hip.x) / d;
+  if (ky > 0) {
+    kx = -kx;
+    ky = -ky;
+  }
+  const knee = { x: mx + kx * h, y: my + ky * h };
+  return { pts: { shoulder, elbow, wrist, hip, knee, ankle, ear }, width, height, dir, torsoPx: T };
+}
+
 /** Returns pixel positions of the near-side chain. */
 export function buildBody(params: BodyParams) {
+  if (params.crunch) {
+    const b = buildCrunchBody(params, params.crunch);
+    let pts = b.pts;
+    const tilt = params.bodyTiltDeg ?? 0;
+    if (tilt) pts = mapPts(pts, (p) => rotate(p, b.pts.hip, -b.dir * tilt));
+    const view = params.viewScale ?? 1;
+    if (view !== 1) pts = mapPts(pts, (p) => ({ x: b.width / 2 + (p.x - b.width / 2) * view, y: p.y }));
+    const roll = params.imageRollDeg ?? 0;
+    if (roll) pts = mapPts(pts, (p) => rotate(p, { x: b.width / 2, y: b.height / 2 }, roll));
+    return { ...b, pts };
+  }
   const T = params.torsoPx ?? 240;
   const width = params.width ?? 1280;
   const height = params.height ?? 720;
@@ -297,6 +379,40 @@ export interface TimelineOptions {
   mapFrame?: (s: PoseSample, t: number) => PoseSample;
   seed?: number;
 }
+
+/**
+ * Crunches: rest on the floor, curl up to `peakDeg`, lower back down, with a
+ * cosine profile. `extra` can change other crunch details over the rep.
+ */
+export const crunch = (
+  durationMs: number,
+  peakDeg = 32,
+  extra: Partial<CrunchParams> | ((k: number) => Partial<CrunchParams>) = {},
+  body: Partial<BodyParams> = {},
+): Segment => ({
+  durationMs,
+  at: (k) => {
+    const e = typeof extra === 'function' ? extra(k) : extra;
+    const w = (1 - Math.cos(2 * Math.PI * k)) / 2;
+    return { elbowDeg: 90, ...body, crunch: { liftDeg: peakDeg * w, ...e } };
+  },
+});
+
+/** Lying still on the back, knees bent (the crunch start position). */
+export const crunchRest = (
+  durationMs: number,
+  extra: Partial<CrunchParams> | ((k: number) => Partial<CrunchParams>) = {},
+  body: Partial<BodyParams> = {},
+): Segment => ({
+  durationMs,
+  at: (k) => ({ elbowDeg: 90, ...body, crunch: { liftDeg: 0, ...(typeof extra === 'function' ? extra(k) : extra) } }),
+});
+
+/** Crunch lift moving from one angle to another (for pulses and holds at the top). */
+export const crunchMove = (durationMs: number, fromDeg: number, toDeg: number, extra: Partial<CrunchParams> = {}): Segment => ({
+  durationMs,
+  at: (k) => ({ elbowDeg: 90, crunch: { liftDeg: fromDeg + ((toDeg - fromDeg) * (1 - Math.cos(Math.PI * k))) / 2, ...extra } }),
+});
 
 /** Expands segments into timestamped pose samples. */
 export function timeline(segments: Segment[], opts: TimelineOptions = {}): PoseSample[] {

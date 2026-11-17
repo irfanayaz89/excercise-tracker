@@ -4,10 +4,20 @@ import type { BodyMetrics } from './types';
 
 export type RepPhase = 'top' | 'descending' | 'bottom' | 'ascending' | 'resting';
 
-export type RepFault = 'hips-sagging' | 'hips-piking' | 'rushed' | 'head-dropping';
+/**
+ * Push-ups: hips-sagging, hips-piking, rushed, head-dropping (hint).
+ * Crunches: sat-up (curled all the way up), feet-lifting, rushed, neck-pulling (hint).
+ */
+export type RepFault = 'hips-sagging' | 'hips-piking' | 'rushed' | 'head-dropping' | 'sat-up' | 'feet-lifting' | 'neck-pulling';
 
-/** Why an attempt was not counted. */
-export type MissReason = 'not-deep-enough' | 'no-lockout' | 'too-slow';
+/** Small hints: they cost a few points but never make a rep unclean. */
+export const HINT_FAULTS: RepFault[] = ['head-dropping', 'neck-pulling'];
+
+/**
+ * Why an attempt was not counted. Push-ups: not-deep-enough, no-lockout.
+ * Crunches: not-high-enough, not-back-down. Both: too-slow.
+ */
+export type MissReason = 'not-deep-enough' | 'no-lockout' | 'too-slow' | 'not-high-enough' | 'not-back-down';
 
 export interface RepRecord {
   index: number;
@@ -26,12 +36,16 @@ export interface RepRecord {
   score: number;
   /** True when the rep had no faults (hints like head position do not count). */
   clean: boolean;
+  /** Crunch: highest shoulder lift above rest, in degrees. */
+  peakLiftDeg?: number | null;
 }
 
 export interface MissRecord {
   t: number;
   reason: MissReason;
   minElbowDeg: number | null;
+  /** Crunch: highest shoulder lift reached, in degrees. */
+  peakLiftDeg?: number | null;
 }
 
 export type RepEvent = { type: 'rep'; rep: RepRecord } | { type: 'miss'; miss: MissRecord } | { type: 'noise'; t: number };

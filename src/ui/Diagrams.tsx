@@ -25,7 +25,13 @@ export function SetupDiagram({
       height={h}
       viewBox="0 40 320 96"
       accessibilityLabel={`Stand the phone on the floor in ${orientation}, ${distance} to the side of where you will ${
-        exercise === 'plank' ? 'hold your plank' : exercise === 'sidePlank' ? 'hold your side plank, facing it' : 'do push-ups'
+        exercise === 'plank'
+          ? 'hold your plank'
+          : exercise === 'sidePlank'
+            ? 'hold your side plank, facing it'
+            : exercise === 'crunch'
+              ? 'lie on your back for crunches'
+              : 'do push-ups'
       }`}
     >
       <Line x1="6" y1="116" x2="314" y2="116" stroke={color.line} strokeWidth={2} />
@@ -47,7 +53,16 @@ export function SetupDiagram({
       <SvgText x="94" y="135" fontSize={10} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
         {distance}
       </SvgText>
-      {exercise === 'sidePlank' ? (
+      {exercise === 'crunch' ? (
+        <>
+          {/* crunch start, head left: on the back, knees bent, feet flat, arm reaching towards the knees */}
+          <G stroke={color.chalk} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M174 108 L232 110 L262 84 L290 112 L300 113" />
+            <Path d="M174 108 L206 101" />
+          </G>
+          <Circle cx="161" cy="106" r="8" fill={color.chalk} />
+        </>
+      ) : exercise === 'sidePlank' ? (
         <>
           {/* side plank facing the phone: support forearm under the shoulder, top arm raised */}
           <G stroke={color.chalk} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" fill="none">
@@ -84,7 +99,8 @@ export function SetupDiagram({
 }
 
 /** Top and bottom of a counted rep, side by side. */
-export function RepDiagram({ width = 320 }: { width?: number }) {
+export function RepDiagram({ width = 320, exercise = 'pushup' }: { width?: number; exercise?: Exercise }) {
+  if (exercise === 'crunch') return <CrunchDiagram width={width} />;
   return (
     <Svg
       width={width}
@@ -111,6 +127,42 @@ export function RepDiagram({ width = 320 }: { width?: number }) {
       </SvgText>
       <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
         BOTTOM · ELBOWS ~90°
+      </SvgText>
+    </Svg>
+  );
+}
+
+/** A crunch: shoulders on the floor, then curled up until the shoulder blades leave it (about 30°). */
+function CrunchDiagram({ width }: { width: number }) {
+  return (
+    <Svg
+      width={width}
+      height={width * 0.225}
+      viewBox="0 32 320 72"
+      accessibilityLabel="A crunch counts from lying with your shoulders on the floor, curling up until your shoulder blades leave the floor, about 30 degrees, and lowering back down"
+    >
+      <Line x1="6" y1="78" x2="150" y2="78" stroke={color.line} strokeWidth={2} />
+      <Line x1="170" y1="78" x2="314" y2="78" stroke={color.line} strokeWidth={2} />
+      <G stroke={color.chalk} strokeWidth={4.5} strokeLinecap="round" strokeLinejoin="round" fill="none">
+        {/* down: shoulders on the floor */}
+        <Path d="M36 72 L92 74 L118 52 L142 76 L150 76" />
+        <Path d="M36 72 L66 67" />
+        {/* up: shoulder blades off, lower back down */}
+        <Path d="M208 47 L256 74 L282 52 L306 76 L314 76" />
+        <Path d="M208 47 L238 55" />
+      </G>
+      <Circle cx="24" cy="70" r="7" fill={color.chalk} />
+      <Circle cx="198" cy="40" r="7" fill={color.chalk} />
+      {/* lift angle at the hip */}
+      <Path d="M232 74 A24 24 0 0 1 235 62" stroke={color.vial} strokeWidth={1.5} fill="none" />
+      <SvgText x="229" y="74" fontSize={9} fill={color.vial} fontFamily={font.mono} textAnchor="end">
+        ~30°
+      </SvgText>
+      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        DOWN · SHOULDERS ON FLOOR
+      </SvgText>
+      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        UP · SHOULDER BLADES OFF
       </SvgText>
     </Svg>
   );
@@ -195,7 +247,20 @@ export function ExerciseGlyph({ exercise, active = true, size = 44 }: { exercise
   return (
     <Svg width={size} height={(size * 30) / 44} viewBox="0 0 44 30" accessibilityElementsHidden importantForAccessibility="no">
       <Line x1="1" y1="27.5" x2="43" y2="27.5" stroke={color.line} strokeWidth={1.5} />
-      {exercise === 'sidePlank' ? (
+      {exercise === 'crunch' ? (
+        <>
+          {/* crunch: on the back, knees up, shoulders curled off the floor, with an up-down arrow */}
+          <G stroke={ink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M10 19 L21 25 L28 15 L35 26 L39 26" />
+          </G>
+          <Circle cx="6.5" cy="15.5" r="3" fill={ink} />
+          <G stroke={accent} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M15 2.5 L15 11.5" />
+            <Path d="M12.5 5 L15 2.5 L17.5 5" />
+            <Path d="M12.5 9 L15 11.5 L17.5 9" />
+          </G>
+        </>
+      ) : exercise === 'sidePlank' ? (
         <>
           {/* side plank: forearm down, top arm raised, a left-right arrow for "each side" */}
           <G stroke={ink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" fill="none">
@@ -252,8 +317,8 @@ export function PlankGhost({
   width: number;
   height: number;
   facing: 'left' | 'right';
-  /** Push-ups start from a high plank; the plank shows a forearm plank; 'side' is a side plank. */
-  variant?: PlankVariant | 'side';
+  /** Push-ups start from a high plank; the plank shows a forearm plank; 'side' is a side plank; 'crunch' lies on the back. */
+  variant?: PlankVariant | 'side' | 'crunch';
 }) {
   // Normalized plank pose in a 100×56 box, head on the left.
   const flip = facing === 'right';
@@ -271,6 +336,37 @@ export function PlankGhost({
       }
     : { head: [16, 22], shoulder: [22, 27], elbow: [22.5, 37], wrist: [23, 47], hip: [52, 35], ankle: [86, 46] };
   const P = (k: keyof typeof pts) => `${X(pts[k][0])} ${Y(pts[k][1])}`;
+  if (variant === 'crunch') {
+    // On the back, knees bent, arm reaching towards the knees.
+    const Q = (x: number, y: number) => `${X(x)} ${Y(y)}`;
+    return (
+      <Svg width={width} height={height} pointerEvents="none">
+        <G
+          stroke={color.chalk}
+          strokeOpacity={0.55}
+          strokeWidth={Math.max(3, width / 140)}
+          strokeDasharray="10 9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        >
+          <Path d={`M${Q(20, 45.5)} L${Q(50, 46)} L${Q(66, 31)} L${Q(82, 47)}`} />
+          <Path d={`M${Q(20, 45.5)} L${Q(35, 43)}`} />
+        </G>
+        <Circle
+          cx={X(12)}
+          cy={Y(44)}
+          r={width / 45}
+          stroke={color.chalk}
+          strokeOpacity={0.55}
+          strokeDasharray="6 6"
+          strokeWidth={2}
+          fill="none"
+        />
+        <Line x1={X(4)} y1={Y(48.5)} x2={X(96)} y2={Y(48.5)} stroke={color.chalk} strokeOpacity={0.25} strokeWidth={2} />
+      </Svg>
+    );
+  }
   return (
     <Svg width={width} height={height} pointerEvents="none">
       <G

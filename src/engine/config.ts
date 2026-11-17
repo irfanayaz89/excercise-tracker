@@ -45,6 +45,23 @@ export interface EngineConfig {
     requireFeet: boolean;
     /** Head and shoulders must be clear of the frame edge. */
     requireHead: boolean;
+    /** Counting needs the arm (push-ups). Crunches only need shoulder, hip and knee: hands may hide behind the head. */
+    requireArms: boolean;
+    /**
+     * Measure body size along the body (shoulder→hip→ankle) instead of its
+     * horizontal span. Crunches: the span shrinks as you curl up or sit, but
+     * you have not moved away from the phone.
+     */
+    spanAlongBody: boolean;
+    /**
+     * How to tell the camera picture is upside down (Rotation Lock on, phone in
+     * landscape the other way round): shoulders below the feet, or for crunches
+     * the bent knees pointing down. Angles survive a flip, but which way is up
+     * does not (hip sag, push-up depth and crunch lift all invert).
+     */
+    uprightBy: 'shoulders' | 'knees';
+    /** Upside down for this long before it is reported (single misreads pass). */
+    upsideDownMs: number;
   };
 
   plank: {
@@ -173,6 +190,41 @@ export interface EngineConfig {
   };
 
   /**
+   * Crunch, seen side-on: lying on your back, knees bent, feet flat. A rep is
+   * the shoulders curling up off the floor and coming back down. Lift is the
+   * angle of the hip→shoulder line, measured from the user's own resting angle.
+   */
+  crunch: {
+    /** Start: lying down, shoulders at most this far above the hips (degrees). */
+    maxRestLiftDeg: number;
+    /** Start: knees bent within this range (hip–knee–ankle, degrees). */
+    minKneeDeg: number;
+    maxKneeDeg: number;
+    /** Start: feet on the floor, ankles no higher than this above the hip (torso lengths). */
+    maxFootRise: number;
+    /** Lift above rest that counts as a crunch (shoulder blades off the floor). */
+    upDeg: number;
+    /** Lift above rest that starts an attempt. Must be above `downDeg`. */
+    leaveDeg: number;
+    /** Back down: within this of rest. */
+    downDeg: number;
+    /** Rose this far but turned back before `upDeg`: a half crunch (miss). */
+    partialDeg: number;
+    /** Above this lift the crunch has become a sit-up (hip flexors take over): a fault. */
+    satUpDeg: number;
+    /** Feet rising this far from where they rested (torso lengths): a fault. */
+    feetLiftFault: number;
+    /** Neck angle (ear–shoulder–hip) drop from rest beyond this is a hint: chin pulled to the chest. */
+    neckPullDeg: number;
+    /** Lift above this for a while means sitting or standing up: the set pauses. */
+    outLiftDeg: number;
+    minRepMs: number;
+    /** Faster than this is counted but flagged as rushed (momentum). Measured off the floor, not the whole crunch. */
+    rushedRepMs: number;
+    maxRepMs: number;
+  };
+
+  /**
    * Real-person check: a video of someone exercising, shown on a screen, must
    * not count. Two independent signals, each needing sustained evidence.
    */
@@ -240,6 +292,10 @@ export const DEFAULT_CONFIG: EngineConfig = {
     lowLightMs: 2500,
     requireFeet: true,
     requireHead: true,
+    requireArms: true,
+    spanAlongBody: false,
+    uprightBy: 'shoulders',
+    upsideDownMs: 1000,
   },
   plank: {
     minBodyLineDeg: 160,
@@ -305,6 +361,30 @@ export const DEFAULT_CONFIG: EngineConfig = {
   },
   allowKneeling: false,
   sidePlank: { startStack: 0.4, minStack: 0.28 },
+  // Crunch numbers: curl-up tests define the top as ~30° of trunk flexion and the
+  // abs do the first 20–30° (hip flexors beyond ~45°, Liang 2010, Juker/McGill
+  // 1998). Knee angles in published protocols run from 90° to 140°.
+  crunch: {
+    maxRestLiftDeg: 20,
+    minKneeDeg: 40,
+    maxKneeDeg: 140,
+    maxFootRise: 0.15,
+    // leave > down: the gap is the hysteresis that stops noise at a few degrees
+    // from starting and ending attempts over and over.
+    upDeg: 22,
+    leaveDeg: 9,
+    downDeg: 6,
+    partialDeg: 11,
+    satUpDeg: 50,
+    feetLiftFault: 0.2,
+    neckPullDeg: 35,
+    outLiftDeg: 70,
+    // Rep time runs from leaving the floor to being back down, about 70% of a
+    // whole crunch: 800 ms here is a crunch of roughly 1.1 s (test pace is 3 s).
+    minRepMs: 350,
+    rushedRepMs: 800,
+    maxRepMs: 10000,
+  },
   reality: {
     enabled: true,
     minStandOutM: 0.12,

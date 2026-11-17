@@ -252,11 +252,16 @@ describe('side plank storage', () => {
       ...o,
     });
     const [today] = dailyTotals(
-      [r({ totalReps: 10 }), r({ exercise: 'plank', holdMs: 40000 }), r({ exercise: 'sidePlank', holdMs: 50000 })],
+      [
+        r({ totalReps: 10 }),
+        r({ exercise: 'crunch', totalReps: 15 }),
+        r({ exercise: 'plank', holdMs: 40000 }),
+        r({ exercise: 'sidePlank', holdMs: 50000 }),
+      ],
       1,
       now,
     );
-    expect(today.byExercise).toEqual({ pushup: 10, plank: 40000, sidePlank: 50000 });
+    expect(today.byExercise).toEqual({ pushup: 10, crunch: 15, plank: 40000, sidePlank: 50000 });
     expect(today.reps).toBe(10);
     expect(today.holdMs).toBe(90000);
   });
@@ -269,5 +274,68 @@ describe('side plank storage', () => {
     expect(cueSpeech({ kind: 'hold', state: 'break', fault: 'rolled' }, o)?.text).toBe('Clock stopped. Stack your shoulders');
     expect(cueSpeech({ kind: 'switch-sides', done: 'left' }, o)).toEqual({ text: 'Time. Switch sides', priority: 'queued' });
     expect(cueBanner({ kind: 'switch-sides', done: 'left' }, 'sidePlank')?.detail).toContain('Left side done');
+  });
+});
+
+describe('crunch storage and words', () => {
+  const row = { startedAt: 1000, endedAt: 61000, totalReps: 2, cleanReps: 1, activeMs: 60000, endReason: 'user' };
+  const rep = (i: number, faults: string[], clean?: boolean) => ({
+    index: i,
+    startT: i * 2000,
+    bottomT: i * 2000 + 800,
+    endT: i * 2000 + 1600,
+    durationMs: 1600,
+    faults,
+    score: 70,
+    ...(clean === undefined ? {} : { clean }),
+    peakLiftDeg: 31.5,
+  });
+
+  it('the Rotation Lock reminder is on by default and can be turned off', () => {
+    expect(DEFAULT_SETTINGS.rotationReminder).toBe(true);
+    expect(normalizeSettings({}).rotationReminder).toBe(true);
+    expect(normalizeSettings({ rotationReminder: false }).rotationReminder).toBe(false);
+    expect(normalizeSettings({ rotationReminder: 'no' }).rotationReminder).toBe(true);
+  });
+
+  it('keeps crunches, their faults, misses and peak lift', () => {
+    expect(normalizeSettings({ exercise: 'crunch' }).exercise).toBe('crunch');
+    const s = normalizeSummary(
+      {
+        exercise: 'crunch',
+        reps: [rep(1, ['sat-up', 'neck-pulling']), rep(2, ['neck-pulling'])],
+        faultCounts: { 'sat-up': 1, 'feet-lifting': 2, 'neck-pulling': 2, bogus: 3 },
+        missCounts: { 'not-high-enough': 3, 'not-back-down': 1 },
+        misses: [{ t: 5, reason: 'not-high-enough', minElbowDeg: null }],
+      },
+      { ...row, exercise: 'crunch' },
+    );
+    expect(s.exercise).toBe('crunch');
+    expect(s.hold).toBeUndefined();
+    expect(s.reps[0].faults).toEqual(['sat-up', 'neck-pulling']);
+    // Without a stored flag, a rep with only a neck tip is still clean.
+    expect(s.reps[0].clean).toBe(false);
+    expect(s.reps[1].clean).toBe(true);
+    expect(s.reps[0].peakLiftDeg).toBe(31.5);
+    expect(s.faultCounts).toEqual({ 'sat-up': 1, 'feet-lifting': 2, 'neck-pulling': 2 });
+    expect(s.missCounts).toEqual({ 'not-high-enough': 3, 'not-back-down': 1 });
+    expect(s.misses).toHaveLength(1);
+  });
+
+  it('crunch words: start, faults, misses and pauses are about crunches', () => {
+    const o = { countAloud: true, guided: true, orientation: 'landscape', exercise: 'crunch' } as const;
+    expect(cueSpeech({ kind: 'start' }, o)?.text).toMatch(/shoulder blades/);
+    expect(cueBanner({ kind: 'start' }, 'crunch')?.detail).toMatch(/crunch/i);
+    expect(cueSpeech({ kind: 'fault', fault: 'sat-up' }, o)?.text).toBe('Not so high');
+    expect(cueBanner({ kind: 'fault', fault: 'neck-pulling' }, 'crunch')?.tone).toBe('cue');
+    expect(cueBanner({ kind: 'fault', fault: 'feet-lifting' }, 'crunch')?.tone).toBe('fault');
+    expect(cueBanner({ kind: 'fault', fault: 'rushed' }, 'crunch')?.detail).toMatch(/lower with control/);
+    expect(cueSpeech({ kind: 'miss', reason: 'not-high-enough' }, o)?.text).toBe('A bit higher');
+    expect(cueBanner({ kind: 'miss', reason: 'too-slow' }, 'crunch')?.detail).toMatch(/floor/);
+    expect(cueSpeech({ kind: 'plank', issue: 'bend-knees' }, o)?.text).toMatch(/knees/);
+    expect(cueSpeech({ kind: 'plank', issue: 'hold-still' }, o)?.text).toMatch(/shoulders on the floor/);
+    expect(cueBanner({ kind: 'paused', reason: 'left-position' }, 'crunch')).toBeNull();
+    // Push-up words are unchanged.
+    expect(cueBanner({ kind: 'fault', fault: 'rushed' }, 'pushup')?.detail).toMatch(/way down/);
   });
 });

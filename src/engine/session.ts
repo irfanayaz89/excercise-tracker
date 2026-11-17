@@ -15,7 +15,8 @@ import { median } from './geometry';
 import { HoldTimer, type HoldEvent, type HoldFault, type HoldSnapshot, type HoldSummary } from './holdTimer';
 import { RealityCheck, type DepthProbe, type RealityIssue } from './reality';
 import { MetricMedian } from './smoothing';
-import { RepCounter, type MissRecord, type RepFault, type RepPhase, type RepRecord } from './repCounter';
+import { HINT_FAULTS, RepCounter, type MissRecord, type RepFault, type RepPhase, type RepRecord } from './repCounter';
+import { CrunchCounter, type CrunchPhase } from './crunchCounter';
 import { buildChain, computeMetrics, PoseTracker, SideSelector, SupportSideSelector, type TrackedPose } from './tracker';
 import { LM, type BodyMetrics, type Exercise, type PhoneAttitude, type PlankVariant, type PoseSample, type Side } from './types';
 import { isTimed } from './exercises';
@@ -74,8 +75,8 @@ export interface SessionSnapshot {
   plankProgress: number;
   reps: number;
   cleanReps: number;
-  repPhase: RepPhase | null;
-  /** 0 at lockout, 1 at full depth. */
+  repPhase: RepPhase | CrunchPhase | null;
+  /** Push-ups: 0 at lockout, 1 at full depth. Crunches: 0 resting, 1 curled up high enough. */
   depth: number | null;
   metrics: BodyMetrics | null;
   side: Side | null;
@@ -194,7 +195,7 @@ export class PushupSession {
   private checkSmoother = new MetricMedian();
   /** Same, for the form readings during reps (body line, hips, neck). */
   private formSmoother = new MetricMedian();
-  private counter: RepCounter | null = null;
+  private counter: RepCounter | CrunchCounter | null = null;
   /** The hold clock being timed now (side plank: the active side's). */
   private holdTimer: HoldTimer | null = null;
   /** Side plank: a clock per side, plus its time calls and countdown so far. */
@@ -452,6 +453,11 @@ export class PushupSession {
       return st === 'broken' ? 2 : st === 'warning' ? 1 : 0;
     }
     // Count-only mode (Easy) never colours the body as a fault.
+    if (this.exercise === 'crunch') {
+      if (this.phase === 'body-check') return this.plankIssues.length > 0 ? 1 : 0;
+      const lift = this.counter instanceof CrunchCounter && m.trunkLiftDeg !== null ? m.trunkLiftDeg - this.counter.restDeg : null;
+      return this.cfg.form.enabled && lift !== null && lift > this.cfg.crunch.satUpDeg ? 1 : 0;
+    }
     if (!this.cfg.form.enabled) return this.phase === 'body-check' && this.plankIssues.length > 0 ? 1 : 0;
     if (m.hipOffset !== null && Math.abs(m.hipOffset) > this.cfg.form.hipOffsetFault) return 2;
     if (m.bodyLineDeg !== null && m.bodyLineDeg < this.cfg.form.minBodyLineDeg) return 1;
@@ -612,7 +618,7 @@ export class PushupSession {
       if (this.holdTimer) this.holdTimer.restart(cal);
       else this.holdTimer = new HoldTimer(this.cfg, cal, this.startVariant);
     } else if (this.counter) this.counter.restart(cal);
-    else this.counter = new RepCounter(this.cfg, cal);
+    else this.counter = this.exercise === 'crunch' ? new CrunchCounter(this.cfg, cal) : new RepCounter(this.cfg, cal);
     if (this.startedAt === null) this.startedAt = t;
     this.lostSince = null;
     this.outOfPositionSince = null;
@@ -649,7 +655,9 @@ export class PushupSession {
     // Keep framing hints (low light, drifting out of frame) live during the set.
     this.framing = this.framingGate.check(pose, chain);
 
-    const usable = metrics !== null && (metrics.elbowDeg !== null || metrics.shoulderHeight !== null);
+    const usable =
+      metrics !== null &&
+      (this.exercise === 'crunch' ? metrics.trunkLiftDeg !== null : metrics.elbowDeg !== null || metrics.shoulderHeight !== null);
     if (!usable) {
       this.markLost(t, 'lost-tracking');
       return;
@@ -674,6 +682,10 @@ export class PushupSession {
       this.evaluateHold(metrics, t);
       return;
     }
+    if (this.exercise === 'crunch') {
+      this.evaluateCrunch(metrics, t);
+      return;
+    }
 
     // Out of push-up position (stood up, sat back on knees) for a while → pause.
     const upright = metrics.trunkTiltDeg !== null && metrics.trunkTiltDeg > this.cfg.plank.maxTrunkTiltDeg + 20;
@@ -694,14 +706,45 @@ export class PushupSession {
     // Counting uses the raw elbow and shoulder signals (no lag on fast reps);
     // form is judged on median-smoothed body line, hips and neck.
     const smooth = this.formSmoother.push(metrics);
-    const ev = counter.update({ ...metrics, bodyLineDeg: smooth.bodyLineDeg, hipOffset: smooth.hipOffset, neckDeg: smooth.neckDeg });
+    this.handleRepEvent(
+      counter.update({ ...metrics, bodyLineDeg: smooth.bodyLineDeg, hipOffset: smooth.hipOffset, neckDeg: smooth.neckDeg }),
+      t,
+    );
+  }
+
+  /**
+   * Crunch: everything is read from median-smoothed readings. A crunch is slow
+   * (over a second), so ~70 ms of lag costs nothing, while a single misread
+   * shoulder frame would otherwise jump the lift past a threshold.
+   */
+  private evaluateCrunch(metrics: BodyMetrics, t: number): void {
+    const c = this.cfg.crunch;
+    const smooth = this.formSmoother.push(metrics);
+    // Sat or stood up, or stretched the legs out flat, for a while → pause (a rest).
+    const sat = smooth.trunkLiftDeg !== null && smooth.trunkLiftDeg > c.outLiftDeg;
+    const legsOut = smooth.kneeDeg !== null && smooth.kneeDeg > Math.min(172, c.maxKneeDeg + 25);
+    if (sat || legsOut) {
+      if (this.outOfPositionSince === null) this.outOfPositionSince = t;
+      if (t - this.outOfPositionSince >= this.cfg.session.pauseAfterMs) {
+        this.pause('left-position');
+        return;
+      }
+    } else {
+      this.outOfPositionSince = null;
+    }
+    const counter = this.counter!;
+    this.depth = counter.depthProgress(smooth);
+    this.handleRepEvent(counter.update(smooth), t);
+  }
+
+  private handleRepEvent(ev: ReturnType<RepCounter['update']>, t: number): void {
     if (!ev) return;
     if (ev.type === 'rep') {
       this.reps.push(ev.rep);
       this.idleSince = t;
       this.emit({ type: 'rep', rep: ev.rep });
       this.cue({ kind: 'rep', count: this.reps.length, clean: ev.rep.clean }, true);
-      const fault = ev.rep.faults.find((f) => f !== 'head-dropping') ?? ev.rep.faults[0];
+      const fault = ev.rep.faults.find((f) => !HINT_FAULTS.includes(f)) ?? ev.rep.faults[0];
       if (fault) this.cue({ kind: 'fault', fault });
       if (this.targetReps !== null && this.reps.length >= this.targetReps) {
         this.cue({ kind: 'target-reached' }, true);
@@ -817,11 +860,16 @@ export class PushupSession {
     return false;
   }
 
-  /** Hands and feet for the handheld-screen check, with whether the phone itself is still. */
+  /**
+   * The points planted on the floor, for the handheld-screen check, with whether
+   * the phone itself is still: hands and feet, or for crunches hips and feet
+   * (the hands move with the body).
+   */
   private feedContacts(chain: ReturnType<typeof buildChain>, pose: TrackedPose): void {
     const min = this.cfg.minVisibility;
     const pts: { x: number; y: number }[] = [];
-    if (chain.vis.wrist >= min) pts.push({ x: chain.wrist.x / pose.width, y: chain.wrist.y / pose.height });
+    const hand = this.exercise === 'crunch' ? { p: chain.hip, v: chain.vis.hip } : { p: chain.wrist, v: chain.vis.wrist };
+    if (hand.v >= min) pts.push({ x: hand.p.x / pose.width, y: hand.p.y / pose.height });
     if (chain.vis.ankle >= min) pts.push({ x: chain.ankle.x / pose.width, y: chain.ankle.y / pose.height });
     const a = this.phoneGate.attitude;
     const fresh = a !== null && pose.t - a.t <= this.cfg.phone.staleMs;

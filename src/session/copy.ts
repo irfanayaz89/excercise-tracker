@@ -1,5 +1,5 @@
 import type { FramingIssue, PhoneIssue, PlankIssue } from '@/engine/gates';
-import type { MissReason, RepFault } from '@/engine/repCounter';
+import { HINT_FAULTS, type MissReason, type RepFault } from '@/engine/repCounter';
 import type { HoldFault } from '@/engine/holdTimer';
 import type { RealityIssue } from '@/engine/reality';
 import type { Cue, PauseReason } from '@/engine/session';
@@ -127,7 +127,27 @@ export const PLANK_DIFFICULTY_COPY: Record<Difficulty, { label: string; short: s
   },
 };
 
+/** Crunch levels. */
+export const CRUNCH_DIFFICULTY_COPY: Record<Difficulty, { label: string; short: string; detail: string }> = {
+  easy: {
+    label: 'Easy',
+    short: 'Just count my crunches',
+    detail: 'A small lift counts. No form checks, relaxed phone setup, feet do not need to be in view.',
+  },
+  medium: {
+    label: 'Medium',
+    short: 'Count and check main form',
+    detail: 'Whole body in view. Flags half crunches, sitting all the way up, feet lifting and rushing, with some slack.',
+  },
+  hard: {
+    label: 'Hard',
+    short: 'Strict form',
+    detail: 'Shoulder blades clear of the floor every rep, back down between reps, feet flat, steady pace.',
+  },
+};
+
 export function difficultyCopy(d: Difficulty, exercise: Exercise) {
+  if (exercise === 'crunch') return CRUNCH_DIFFICULTY_COPY[d];
   return isTimed(exercise) ? PLANK_DIFFICULTY_COPY[d] : DIFFICULTY_COPY[d];
 }
 
@@ -156,6 +176,12 @@ export const FRAMING_COPY: Record<FramingIssue, Copy> = {
     short: 'Turn side-on',
     detail: 'Face along the floor, side-on to the phone, not towards it.',
     say: 'Turn side-on to the phone',
+  },
+  'upside-down': {
+    short: 'Picture upside down',
+    detail:
+      'You show upside down, so you cannot be tracked. Turn off Rotation Lock (iPhone) or turn on Auto-rotate (Android) in quick settings, or stand the phone the other way round.',
+    say: 'The picture is upside down. Check rotation lock',
   },
   'low-light': {
     short: 'More light',
@@ -193,11 +219,34 @@ export const PLANK_COPY: Record<PlankIssue, Copy> = {
     detail: 'Lie on one side facing the phone, shoulders stacked one above the other.',
     say: 'Turn onto your side, facing the phone',
   },
+  'lie-on-back': {
+    short: 'Lie on your back',
+    detail: 'Lie down on your back, side-on to the phone, knees bent and feet flat on the floor.',
+    say: 'Lie down on your back',
+  },
+  'bend-knees': {
+    short: 'Bend your knees',
+    detail: 'Bend your knees to about a right angle, feet flat on the floor.',
+    say: 'Bend your knees',
+  },
+  'feet-forward': {
+    short: 'Feet out a little',
+    detail: 'Move your feet a little further from your hips, about a foot away.',
+    say: 'Feet out a little',
+  },
+  'feet-on-floor': {
+    short: 'Feet on the floor',
+    detail: 'Put your feet flat on the floor, hip-width apart.',
+    say: 'Feet on the floor',
+  },
   'hold-still': { short: 'Hold still', detail: 'Hold the plank steady for a second.' },
 };
 
 /** The start-check messages, worded for the exercise being set up. */
 export function plankIssueCopy(issue: PlankIssue, exercise: Exercise): Copy {
+  if (exercise === 'crunch' && issue === 'hold-still') {
+    return { short: 'Lie still', detail: 'Rest your shoulders on the floor and keep still for a second.' };
+  }
   if (!isTimed(exercise)) return PLANK_COPY[issue];
   if (exercise === 'sidePlank') {
     switch (issue) {
@@ -254,13 +303,49 @@ export const FAULT_COPY: Record<RepFault, Copy> = {
   'hips-piking': { short: 'Hips too high', detail: 'Keep a straight line from shoulders to heels.', say: 'Hips down' },
   rushed: { short: 'Slow down', detail: 'Control the way down. Aim for about two seconds a rep.', say: 'Slow it down' },
   'head-dropping': { short: 'Head up', detail: 'Keep your neck in line, look at the floor just ahead of your hands.' },
+  'sat-up': {
+    short: 'Not so high',
+    detail: 'Stop once your shoulder blades are off the floor. Sitting all the way up hands the work to your hip flexors.',
+    say: 'Not so high',
+  },
+  'feet-lifting': {
+    short: 'Feet down',
+    detail: 'Keep your feet flat on the floor. Curl up with your abs instead of swinging up.',
+    say: 'Feet down',
+  },
+  'neck-pulling': {
+    short: 'Relax your neck',
+    detail: 'Keep a fist of space under your chin and lift with your abs, not by pulling on your head.',
+  },
 };
+
+/** Rep faults, worded for the exercise. */
+export function faultCopy(f: RepFault, exercise: Exercise): Copy {
+  if (exercise === 'crunch' && f === 'rushed') {
+    return { short: 'Slow down', detail: 'Curl up over about a second and lower with control. No bouncing.', say: 'Slow it down' };
+  }
+  return FAULT_COPY[f];
+}
 
 export const MISS_COPY: Record<MissReason, Copy> = {
   'not-deep-enough': { short: 'Go lower', detail: 'Bend until your elbows reach about 90°.', say: 'Go lower' },
   'no-lockout': { short: 'Lock out', detail: 'Push all the way up until your arms are straight.', say: 'All the way up' },
   'too-slow': { short: 'Reset', detail: 'That one took too long to count. Push back up to start again.' },
+  'not-high-enough': { short: 'Curl higher', detail: 'Lift until your shoulder blades come off the floor.', say: 'A bit higher' },
+  'not-back-down': {
+    short: 'Lower back down',
+    detail: 'Lower your shoulders back to the floor (or just above it) between crunches.',
+    say: 'All the way down',
+  },
 };
+
+/** Missed reps, worded for the exercise. */
+export function missCopy(m: MissReason, exercise: Exercise): Copy {
+  if (exercise === 'crunch' && m === 'too-slow') {
+    return { short: 'Reset', detail: 'That one took too long to count. Lower your shoulders to the floor to start again.' };
+  }
+  return MISS_COPY[m];
+}
 
 export const PAUSE_COPY: Record<PauseReason, Copy> = {
   'lost-tracking': { short: 'Lost you', detail: 'Get back into view and into a plank to carry on.', say: 'Paused' },
@@ -335,6 +420,20 @@ export const REALITY_COPY: Record<RealityIssue, Copy> = {
 /** Pause messages, worded for the exercise (a plank keeps its time, push-ups their count). */
 export function pauseCopy(reason: PauseReason, exercise: Exercise): Copy {
   const c = PAUSE_COPY[reason];
+  if (exercise === 'crunch') {
+    switch (reason) {
+      case 'lost-tracking':
+        return { ...c, detail: 'Get back into view and lie back down to carry on.' };
+      case 'left-position':
+        return { ...c, detail: 'Lie back down with your knees bent when you are ready. Your count is saved.' };
+      case 'phone-moved':
+        return { ...c, detail: 'The phone was knocked. Level it again, then lie back down.' };
+      case 'interrupted':
+        return { ...c, detail: 'Welcome back. Lie down with your knees bent to continue.' };
+      default:
+        return c;
+    }
+  }
   if (!isTimed(exercise)) return c;
   switch (reason) {
     case 'left-position':
@@ -384,15 +483,22 @@ export function cueSpeech(cue: Cue, o: SpeechOptions): { text: string; priority:
     case 'start':
       // Mid-set cues stay short for everyone: nobody can listen to a sentence mid-rep.
       if (isTimed(exercise)) return { text: guided ? 'Go. The clock runs while your body stays in one line.' : 'Go', priority: 'high' };
+      if (exercise === 'crunch') {
+        return { text: guided ? 'Go. Curl up until your shoulder blades leave the floor, then lower back down.' : 'Go', priority: 'high' };
+      }
       return { text: guided ? 'Go. Reps count when your arms lock out at the top.' : 'Go', priority: 'high' };
     case 'resume':
       return { text: 'Carry on', priority: 'high' };
     case 'rep':
       return countAloud ? { text: cue.count <= 10 ? NUMBERS[cue.count] : String(cue.count), priority: 'high' } : null;
-    case 'fault':
-      return FAULT_COPY[cue.fault].say ? { text: FAULT_COPY[cue.fault].say!, priority: 'normal' } : null;
-    case 'miss':
-      return MISS_COPY[cue.reason].say ? { text: MISS_COPY[cue.reason].say!, priority: 'normal' } : null;
+    case 'fault': {
+      const say = faultCopy(cue.fault, exercise).say;
+      return say ? { text: say, priority: 'normal' } : null;
+    }
+    case 'miss': {
+      const say = missCopy(cue.reason, exercise).say;
+      return say ? { text: say, priority: 'normal' } : null;
+    }
     case 'paused': {
       const c = pauseCopy(cue.reason, exercise);
       return c.say ? { text: c.say, priority: 'normal' } : null;
@@ -437,13 +543,15 @@ export function cueBanner(cue: Cue, exercise: Exercise = 'pushup'): (Copy & { to
         tone: 'good',
       };
     case 'fault':
-      return { ...FAULT_COPY[cue.fault], tone: cue.fault === 'head-dropping' ? 'cue' : 'fault' };
+      return { ...faultCopy(cue.fault, exercise), tone: HINT_FAULTS.includes(cue.fault) ? 'cue' : 'fault' };
     case 'miss':
-      return { ...MISS_COPY[cue.reason], tone: 'cue' };
+      return { ...missCopy(cue.reason, exercise), tone: 'cue' };
     case 'start':
       return isTimed(exercise)
         ? { short: 'Go', detail: 'Timing. The clock runs while your body stays in one line.', tone: 'good' }
-        : { short: 'Go', detail: 'Counting. Push-ups count when you lock out at the top.', tone: 'good' };
+        : exercise === 'crunch'
+          ? { short: 'Go', detail: 'Counting. A crunch counts when you curl up and lower back down.', tone: 'good' }
+          : { short: 'Go', detail: 'Counting. Push-ups count when you lock out at the top.', tone: 'good' };
     case 'resume':
       return { short: 'Carry on', detail: isTimed(exercise) ? 'Timing again.' : 'Counting again.', tone: 'good' };
     default:
@@ -464,6 +572,25 @@ export function formatDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   const m = Math.floor(s / 60);
   return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Asked before a landscape set: the picture must turn with the phone. With
+ * Rotation Lock on (Auto-rotate off on Android), the screen can stay on the
+ * other landscape side, and the camera picture reaches the tracker upside down.
+ */
+export function rotationCopy(os: 'ios' | 'android' | string): { title: string; body: string; ok: string } {
+  return os === 'android'
+    ? {
+        title: 'Turn on Auto-rotate',
+        body: 'In landscape, the camera picture has to turn with the phone, or your body is seen upside down and tracked badly. Swipe down from the top of the screen and make sure Auto-rotate is on.',
+        ok: "It's on, start",
+      }
+    : {
+        title: 'Turn off Rotation Lock',
+        body: 'In landscape, the camera picture has to turn with the phone, or your body is seen upside down and tracked badly. Swipe down from the top-right corner to open Control Center and make sure the lock icon is off.',
+        ok: "It's off, start",
+      };
 }
 
 /** Shown when the user has been stuck for a while because the whole body does not fit. */

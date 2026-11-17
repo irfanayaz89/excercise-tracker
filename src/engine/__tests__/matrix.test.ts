@@ -309,6 +309,8 @@ describe('medium and hard keep their standards', () => {
       elbowStack: null,
       forearmRise: null,
       shoulderStack: null,
+      trunkLiftDeg: null,
+      footRise: null,
       torsoPx: 240,
       hipCenter: { x: 0.5, y: 0.6 },
     };
@@ -332,6 +334,8 @@ describe('medium and hard keep their standards', () => {
       elbowStack: null,
       forearmRise: null,
       shoulderStack: null,
+      trunkLiftDeg: null,
+      footRise: null,
       torsoPx: 240,
       hipCenter: { x: 0.5, y: 0.6 },
     };

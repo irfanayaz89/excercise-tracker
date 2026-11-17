@@ -80,6 +80,12 @@ export default function SettingsScreen() {
           onChange={(v) => update({ camera: v as Settings['camera'] })}
         />
         <ToggleRow
+          label="Rotation lock reminder"
+          hint="Before a landscape set, reminds you to turn off Rotation Lock (iPhone) or turn on Auto-rotate (Android). With it on, the camera picture can arrive upside down and tracking suffers."
+          value={s.rotationReminder}
+          onChange={(v) => update({ rotationReminder: v })}
+        />
+        <ToggleRow
           label="Real-person check"
           hint="Pauses the set when the camera seems to be watching a video on a screen instead of you, and does not count those seconds. Uses depth on iPhones that have it; on other phones it catches a screen held up to the camera."
           value={s.realPersonCheck}

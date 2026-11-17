@@ -129,8 +129,14 @@ export function CueBanner({ banner, detailed = true }: { banner: Banner | null; 
 export function DepthColumn({ snap }: { snap: SessionSnapshot }) {
   return (
     <View style={styles.depthCol}>
-      <DepthGauge depth={snap.phase === 'counting' ? snap.depth : null} height={200} />
-      {snap.metrics?.elbowDeg != null && <Mono tone="muted">{`${Math.round(snap.metrics.elbowDeg)}°`}</Mono>}
+      {snap.exercise === 'crunch' ? (
+        <DepthGauge depth={snap.phase === 'counting' ? snap.depth : null} height={200} label="Lift" rising />
+      ) : (
+        <>
+          <DepthGauge depth={snap.phase === 'counting' ? snap.depth : null} height={200} />
+          {snap.metrics?.elbowDeg != null && <Mono tone="muted">{`${Math.round(snap.metrics.elbowDeg)}°`}</Mono>}
+        </>
+      )}
     </View>
   );
 }
@@ -175,6 +181,11 @@ export function TrackingDebug({
       <Mono size={11} tone="muted">
         {`elbow ${f(m?.elbowDeg)} line ${f(m?.bodyLineDeg)} hip ${f(m?.hipOffset, 2)} knee ${f(m?.kneeDeg)} tilt ${f(m?.trunkTiltDeg)} sh ${f(m?.shoulderHeight, 2)} vis ${snap.framing.meanVisibility.toFixed(2)}`}
       </Mono>
+      {snap.exercise === 'crunch' && (
+        <Mono size={11} tone="muted">
+          {`lift ${f(m?.trunkLiftDeg)} foot ${f(m?.footRise, 2)} neck ${f(m?.neckDeg)}`}
+        </Mono>
+      )}
       {snap.hold && (
         <Mono size={11} tone="muted">
           {`hold ${(snap.hold.goodMs / 1000).toFixed(1)}/${(snap.hold.totalMs / 1000).toFixed(1)}s ${snap.hold.state}${snap.hold.fault ? ` (${snap.hold.fault})` : ''} ${snap.hold.variant} stack ${f(m?.elbowStack, 2)} rise ${f(m?.forearmRise, 2)}`}

@@ -50,6 +50,8 @@ const METRICS: BodyMetrics = {
   elbowStack: 0.02,
   forearmRise: 0.02,
   shoulderStack: 0.7,
+  trunkLiftDeg: null,
+  footRise: null,
   torsoPx: 240,
   hipCenter: { x: 0.5, y: 0.6 },
 };

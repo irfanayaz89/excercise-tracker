@@ -359,7 +359,9 @@ function StageDecor({
             width={width * 0.78}
             height={width * 0.78 * 0.56}
             facing={snap.side === 'right' ? 'right' : 'left'}
-            variant={snap.exercise === 'sidePlank' ? 'side' : isTimed(snap.exercise) ? 'forearm' : 'high'}
+            variant={
+              snap.exercise === 'crunch' ? 'crunch' : snap.exercise === 'sidePlank' ? 'side' : isTimed(snap.exercise) ? 'forearm' : 'high'
+            }
           />
         </View>
       )}

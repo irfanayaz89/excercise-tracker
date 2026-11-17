@@ -101,7 +101,16 @@ export class PhoneGate {
 
 // ─── Gate 2: whole body in frame ────────────────────────────────────────────
 
-export type FramingIssue = 'no-person' | 'move-back' | 'move-closer' | 'show-feet' | 'show-head' | 'turn-sideways' | 'low-light';
+export type FramingIssue =
+  | 'no-person'
+  | 'move-back'
+  | 'move-closer'
+  | 'show-feet'
+  | 'show-head'
+  | 'turn-sideways'
+  | 'low-light'
+  /** The camera picture is upside down (usually Rotation Lock on with the phone in landscape). */
+  | 'upside-down';
 
 export interface FramingCheck {
   ok: boolean;
@@ -113,11 +122,40 @@ export interface FramingCheck {
 
 export class FramingGate {
   private lowVisSince: number | null = null;
+  private flippedSince: number | null = null;
 
   constructor(private cfg: EngineConfig) {}
 
   reset(): void {
     this.lowVisSince = null;
+    this.flippedSince = null;
+  }
+
+  /**
+   * Is the body shown upside down? Push-ups and planks: the shoulders sit
+   * clearly below the feet. Crunches: the bent knees point down instead of up.
+   * Unknown (joints hidden) is never upside down.
+   */
+  private upsideDown(chain: SideChain): boolean {
+    const min = this.cfg.minVisibility;
+    const v = chain.vis;
+    const torso = Math.hypot(chain.shoulder.x - chain.hip.x, chain.shoulder.y - chain.hip.y);
+    if (!(torso > 0) || v.shoulder < min || v.hip < min) return false;
+    // Lying down (trunk roughly level), as in every exercise here: standing or
+    // kneeling with the arms up must never read as upside down.
+    const lying = Math.abs(chain.shoulder.y - chain.hip.y) < 0.6 * torso;
+    if (this.cfg.framing.uprightBy === 'knees') {
+      if (v.knee < min) return false;
+      const kneeDown = chain.knee.y - chain.hip.y > 0.35 * torso;
+      // The knee must be the lowest point (below hip and ankle): legs stretched
+      // out flat say nothing about which way is up. Feet out of view (Easy):
+      // the knee hanging below the hips of a lying body.
+      if (v.ankle >= min) return kneeDown && chain.knee.y - chain.ankle.y > 0.2 * torso;
+      return kneeDown && lying;
+    }
+    if (v.ankle >= min) return chain.shoulder.y - chain.ankle.y > 0.25 * torso;
+    // Feet out of view (Easy): the shoulders below the hands of a lying body.
+    return v.wrist >= min && lying && chain.shoulder.y - chain.wrist.y > 0.25 * torso;
   }
 
   check(pose: TrackedPose | null, chain: SideChain | null): FramingCheck {
@@ -128,6 +166,14 @@ export class FramingGate {
     }
     const meanVis = sideScore(pose, chain.side);
     const t = pose.t;
+    if (this.upsideDown(chain)) {
+      if (this.flippedSince === null) this.flippedSince = t;
+      if (t - this.flippedSince >= f.upsideDownMs) return { ok: false, issue: 'upside-down', hint: null, meanVisibility: meanVis };
+      // Not confirmed yet, but not usable either: a start or resume hold must not
+      // complete on a flipped picture before the flip is confirmed (resuming
+      // needs a shorter hold than this). A single odd frame is ridden out.
+      return { ok: false, issue: null, hint: null, meanVisibility: meanVis };
+    } else this.flippedSince = null;
     if (meanVis < f.lowLightVisibility) {
       if (this.lowVisSince === null) this.lowVisSince = t;
     } else this.lowVisSince = null;
@@ -142,8 +188,8 @@ export class FramingGate {
 
     const headOk = v.shoulder >= min && !nearEdge(chain.shoulder);
     const feetOk = v.ankle >= min && !nearEdge(chain.ankle);
-    // Counting itself only needs the arm and torso.
-    const coreOk = v.shoulder >= min && v.hip >= min && v.elbow >= min && v.wrist >= min;
+    // Counting itself only needs the torso, plus the arm for push-ups and planks.
+    const coreOk = v.shoulder >= min && v.hip >= min && (!f.requireArms || (v.elbow >= min && v.wrist >= min));
 
     if (f.requireHead && f.requireFeet && !headOk && !feetOk) {
       return { ok: false, issue: v.hip >= min ? 'move-back' : 'no-person', hint: null, meanVisibility: meanVis };
@@ -172,8 +218,12 @@ export class FramingGate {
     // horizontal; a standing person has a tiny horizontal span and would
     // wrongly be told to come closer.
     if (feetOk) {
-      const span = Math.abs(chain.ankle.x - chain.shoulder.x) / W;
-      const horizontal = Math.abs(chain.ankle.y - chain.shoulder.y) < Math.abs(chain.ankle.x - chain.shoulder.x);
+      const span = f.spanAlongBody
+        ? (Math.hypot(chain.shoulder.x - chain.hip.x, chain.shoulder.y - chain.hip.y) +
+            Math.hypot(chain.hip.x - chain.ankle.x, chain.hip.y - chain.ankle.y)) /
+          W
+        : Math.abs(chain.ankle.x - chain.shoulder.x) / W;
+      const horizontal = f.spanAlongBody || Math.abs(chain.ankle.y - chain.shoulder.y) < Math.abs(chain.ankle.x - chain.shoulder.x);
       if (horizontal && span > f.maxBodySpan) return { ok: false, issue: 'move-back', hint: null, meanVisibility: meanVis };
       if (horizontal && span < f.minBodySpan) return { ok: false, issue: 'move-closer', hint: null, meanVisibility: meanVis };
     }
@@ -194,6 +244,14 @@ export type PlankIssue =
   | 'elbows-under-shoulders'
   /** Side plank: lying face down or on the back instead of on one side. */
   | 'roll-onto-side'
+  /** Crunch: sitting or standing instead of lying on your back. */
+  | 'lie-on-back'
+  /** Crunch: legs too straight. */
+  | 'bend-knees'
+  /** Crunch: heels pulled in too close to the hips. */
+  | 'feet-forward'
+  /** Crunch: feet up in the air instead of flat on the floor. */
+  | 'feet-on-floor'
   | 'hold-still';
 
 export interface PlankCheck {
@@ -235,6 +293,7 @@ export function isForearmSidePlank(m: BodyMetrics, cfg: EngineConfig): boolean {
  * the hold limits so a timed hold never starts already broken.
  */
 export function checkPlank(m: BodyMetrics, cfg: EngineConfig, exercise: Exercise = 'pushup'): PlankCheck {
+  if (exercise === 'crunch') return checkCrunchStart(m, cfg);
   const p = cfg.plank;
   const issues: PlankIssue[] = [];
   const variant: PlankVariant =
@@ -263,6 +322,20 @@ export function checkPlank(m: BodyMetrics, cfg: EngineConfig, exercise: Exercise
 }
 
 /**
+ * Crunch start: lying on your back, knees bent, feet flat on the floor. The
+ * arms may be anywhere (across the chest, hands by the ears, reaching forward).
+ */
+export function checkCrunchStart(m: BodyMetrics, cfg: EngineConfig): PlankCheck {
+  const c = cfg.crunch;
+  const issues: PlankIssue[] = [];
+  if (m.trunkLiftDeg === null || m.trunkLiftDeg > c.maxRestLiftDeg) issues.push('lie-on-back');
+  if (m.kneeDeg !== null && m.kneeDeg > c.maxKneeDeg) issues.push('bend-knees');
+  else if (m.kneeDeg !== null && m.kneeDeg < c.minKneeDeg) issues.push('feet-forward');
+  if (m.footRise !== null && m.footRise > c.maxFootRise) issues.push('feet-on-floor');
+  return { ok: issues.length === 0, issues, variant: 'high' };
+}
+
+/**
  * Times how long a valid plank has been held, and rejects wobbly holds so a
  * user swinging into position does not trigger the start.
  */
@@ -274,6 +347,9 @@ export class PlankHold {
   private elbows: number[] = [];
   private lines: number[] = [];
   private hips: number[] = [];
+  private lifts: number[] = [];
+  private feet: number[] = [];
+  private necks: number[] = [];
   private lastT: number | null = null;
   /** Start of a run of failing frames inside an otherwise good hold. */
   private badSince: number | null = null;
@@ -295,6 +371,9 @@ export class PlankHold {
     this.elbows = [];
     this.lines = [];
     this.hips = [];
+    this.lifts = [];
+    this.feet = [];
+    this.necks = [];
   }
 
   /** @returns progress 0..1, and calibration once complete. */
@@ -334,6 +413,9 @@ export class PlankHold {
       this.elbows = [];
       this.lines = [];
       this.hips = [];
+      this.lifts = [];
+      this.feet = [];
+      this.necks = [];
       this.lastProgress = 0;
       return { progress: 0, wobbly: true, calibration: null, riding: false };
     }
@@ -342,6 +424,9 @@ export class PlankHold {
     if (m.elbowDeg !== null) this.elbows.push(m.elbowDeg);
     if (m.bodyLineDeg !== null) this.lines.push(m.bodyLineDeg);
     if (m.hipOffset !== null) this.hips.push(m.hipOffset);
+    if (m.trunkLiftDeg !== null) this.lifts.push(m.trunkLiftDeg);
+    if (m.footRise !== null) this.feet.push(m.footRise);
+    if (m.neckDeg !== null) this.necks.push(m.neckDeg);
     const progress = Math.min(1, (m.t - this.since) / holdMs);
     this.lastProgress = progress;
     if (progress < 1) return { progress, wobbly: false, calibration: null, riding: false };
@@ -351,6 +436,9 @@ export class PlankHold {
       topElbowDeg: this.elbows.length ? avg(this.elbows) : null,
       bodyLineDeg: this.lines.length ? avg(this.lines) : null,
       hipOffset: this.hips.length ? avg(this.hips) : null,
+      trunkLiftDeg: this.lifts.length ? avg(this.lifts) : null,
+      footRise: this.feet.length ? avg(this.feet) : null,
+      neckDeg: this.necks.length ? avg(this.necks) : null,
       side: m.side,
     };
     return { progress: 1, wobbly: false, calibration: cal, riding: false };
@@ -366,6 +454,10 @@ export interface Calibration {
   /** Body line and hip offset held during the start plank: the plank's own baseline. */
   bodyLineDeg?: number | null;
   hipOffset?: number | null;
+  /** Crunch: the resting position the lift, feet and neck are measured from. */
+  trunkLiftDeg?: number | null;
+  footRise?: number | null;
+  neckDeg?: number | null;
   side: BodyMetrics['side'];
 }
 

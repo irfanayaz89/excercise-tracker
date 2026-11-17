@@ -80,6 +80,13 @@ const SIDE_PLANK_CHECKS: { key: string; label: string; issues: PlankIssue[] }[] 
   { key: 'legs', label: 'Legs straight', issues: ['straighten-legs'] },
 ];
 
+/** Crunch: on the back, knees bent, feet flat. The arms may be anywhere. */
+const CRUNCH_CHECKS: { key: string; label: string; issues: PlankIssue[] }[] = [
+  { key: 'back', label: 'Lying on your back', issues: ['lie-on-back'] },
+  { key: 'knees', label: 'Knees bent', issues: ['bend-knees', 'feet-forward'] },
+  { key: 'feet', label: 'Feet flat on the floor', issues: ['feet-on-floor'] },
+];
+
 /** Plank: arms straight or forearms down both work; hand position is not checked. */
 const PLANK_CHECKS: { key: string; label: string; issues: PlankIssue[] }[] = [
   { key: 'down', label: 'In a plank', issues: ['get-down'] },
@@ -102,7 +109,9 @@ export function BodyPanel({
   config: EngineConfig;
 }) {
   const plank = isTimed(snap.exercise);
-  const checks = (snap.exercise === 'sidePlank' ? SIDE_PLANK_CHECKS : plank ? PLANK_CHECKS : CHECKS).filter(
+  const list =
+    snap.exercise === 'crunch' ? CRUNCH_CHECKS : snap.exercise === 'sidePlank' ? SIDE_PLANK_CHECKS : plank ? PLANK_CHECKS : CHECKS;
+  const checks = list.filter(
     (c) =>
       (c.key !== 'line' || config.plank.checkHips) &&
       (c.key !== 'hands' || config.plank.checkHands) &&
@@ -120,7 +129,9 @@ export function BodyPanel({
       ? framingCopy(f.issue, orientation)
       : first
         ? plankIssueCopy(first, snap.exercise)
-        : { short: 'Hold it…', detail: 'Starting as soon as you are steady.' };
+        : snap.exercise === 'crunch'
+          ? { short: 'Lie still…', detail: 'Starting as soon as you are still.' }
+          : { short: 'Hold it…', detail: 'Starting as soon as you are steady.' };
   return (
     <View style={styles.panel}>
       <StepTag n={2} of={3} label={framed ? 'Get into position' : 'Get in frame'} />

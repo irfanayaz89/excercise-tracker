@@ -6,9 +6,20 @@ import { color, radius } from './theme';
 
 /**
  * Vertical depth meter: empty at lockout, full at the bottom of the rep. The
- * notch marks the depth a rep needs to count.
+ * notch marks the depth a rep needs to count. `rising` fills from the bottom
+ * instead (crunches: how high the shoulders lift).
  */
-export function DepthGauge({ depth, height = 220 }: { depth: number | null; height?: number }) {
+export function DepthGauge({
+  depth,
+  height = 220,
+  label = 'Depth',
+  rising = false,
+}: {
+  depth: number | null;
+  height?: number;
+  label?: string;
+  rising?: boolean;
+}) {
   const v = useSharedValue(0);
   useEffect(() => {
     v.value = withTiming(depth ?? 0, { duration: 90 });
@@ -19,11 +30,11 @@ export function DepthGauge({ depth, height = 220 }: { depth: number | null; heig
   }));
   return (
     <View style={{ alignItems: 'center', gap: 8 }}>
-      <View style={[styles.track, { height, opacity: depth === null ? 0.35 : 1 }]}>
+      <View style={[styles.track, { height, opacity: depth === null ? 0.35 : 1 }, rising && { justifyContent: 'flex-end' }]}>
         <Animated.View style={[styles.fill, fill]} />
-        <View style={[styles.notch, { top: 0.97 * height - 1.5 }]} />
+        <View style={[styles.notch, { top: (rising ? 0.03 : 0.97) * height - 1.5 }]} />
       </View>
-      <Label>Depth</Label>
+      <Label>{label}</Label>
     </View>
   );
 }

@@ -83,6 +83,24 @@ const PLANK_PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
   },
 };
 
+/**
+ * Crunch changes on top of the level above. A crunch body is shorter than a
+ * plank (knees bent), so it may fill less of the frame; the arm is not needed.
+ */
+const CRUNCH_PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
+  easy: {
+    framing: { requireArms: false, spanAlongBody: true, uprightBy: 'knees' },
+    crunch: { upDeg: 15, leaveDeg: 7, downDeg: 5, partialDeg: 9, maxKneeDeg: 155, maxFootRise: 0.35 },
+  },
+  medium: {
+    framing: { requireArms: false, spanAlongBody: true, uprightBy: 'knees', minBodySpan: 0.26 },
+    crunch: { upDeg: 18, satUpDeg: 58, feetLiftFault: 0.28, neckPullDeg: 45, maxKneeDeg: 145, rushedRepMs: 650 },
+  },
+  hard: {
+    framing: { requireArms: false, spanAlongBody: true, uprightBy: 'knees', minBodySpan: 0.28 },
+  },
+};
+
 /** Section-by-section merge of two partial configs (the second wins). */
 function combine(a: DeepPartial<EngineConfig>, b: DeepPartial<EngineConfig>): DeepPartial<EngineConfig> {
   const out: Record<string, unknown> = { ...a };
@@ -108,5 +126,6 @@ export function difficultyConfig(d: Difficulty, opts: DifficultyOptions = {}): E
 export function difficultyOverrides(d: Difficulty, opts: DifficultyOptions = {}): DeepPartial<EngineConfig> {
   let base = opts.exercise && isTimed(opts.exercise) ? combine(PRESETS[d], PLANK_PRESETS[d]) : PRESETS[d];
   if (opts.exercise === 'sidePlank') base = combine(base, SIDE_PLANK_PRESETS[d]);
+  if (opts.exercise === 'crunch') base = combine(base, CRUNCH_PRESETS[d]);
   return { ...base, allowKneeling: d === 'easy' ? true : (opts.allowKneeling ?? false) };
 }

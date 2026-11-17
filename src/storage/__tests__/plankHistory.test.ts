@@ -4,7 +4,7 @@
  * adds the plank columns to an old database, and what is (and is not) kept.
  */
 import type { SessionSummary } from '@/engine/session';
-import { saveSession } from '../history';
+import { bestFor, saveSession } from '../history';
 
 // A database created by the first release: no plank columns yet.
 const mockDb = {
@@ -93,5 +93,33 @@ describe('side plank history', () => {
     mockDb.rows = [];
     expect(saveSession({ ...base, exercise: 'sidePlank', hold: hold(45000) }, 1000)).not.toBeNull();
     expect(mockDb.rows[0].slice(-2)).toEqual(['sidePlank', 45000]);
+  });
+});
+
+describe('crunch history', () => {
+  it('saves a crunch set with its reps and no hold time; an empty one is not kept', () => {
+    mockDb.rows = [];
+    expect(saveSession({ ...base, exercise: 'crunch', totalReps: 0 }, 1000)).toBeNull();
+    expect(saveSession({ ...base, exercise: 'crunch', totalReps: 15, cleanReps: 12 }, 1000)).not.toBeNull();
+    const row = mockDb.rows[0];
+    expect(row.slice(-2)).toEqual(['crunch', 0]);
+    expect(row[3]).toBe(15);
+    expect(row[4]).toBe(12);
+    expect(JSON.parse(row[7] as string).exercise).toBe('crunch');
+  });
+
+  it('best set for crunches is the most reps among crunch sets only', () => {
+    const asked: unknown[][] = [];
+    const first = mockDb.getFirstSync;
+    mockDb.getFirstSync = ((sql: string, ...args: unknown[]) => {
+      asked.push([sql, ...args]);
+      return { best: 22 };
+    }) as unknown as typeof mockDb.getFirstSync;
+    expect(bestFor('crunch')).toBe(22);
+    expect(asked[0][0]).toMatch(/MAX\(total_reps\).*WHERE exercise = \?/);
+    expect(asked[0][1]).toBe('crunch');
+    bestFor('plank');
+    expect(asked[1][0]).toMatch(/MAX\(hold_ms\)/);
+    mockDb.getFirstSync = first;
   });
 });

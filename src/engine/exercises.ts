@@ -21,12 +21,13 @@ export interface ExerciseInfo {
 
 export const EXERCISES: Record<Exercise, ExerciseInfo> = {
   pushup: { id: 'pushup', label: 'Push-ups', unit: 'push-ups', kind: 'reps', perSide: false, tagline: 'Counted reps' },
+  crunch: { id: 'crunch', label: 'Crunches', unit: 'crunches', kind: 'reps', perSide: false, tagline: 'Counted reps' },
   plank: { id: 'plank', label: 'Plank', unit: 'plank', kind: 'hold', perSide: false, tagline: 'Timed hold' },
   sidePlank: { id: 'sidePlank', label: 'Side plank', unit: 'side plank', kind: 'hold', perSide: true, tagline: 'Timed, each side' },
 };
 
 /** Display order. */
-export const EXERCISE_IDS: Exercise[] = ['pushup', 'plank', 'sidePlank'];
+export const EXERCISE_IDS: Exercise[] = ['pushup', 'crunch', 'plank', 'sidePlank'];
 
 export function isExercise(v: unknown): v is Exercise {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(EXERCISES, v);

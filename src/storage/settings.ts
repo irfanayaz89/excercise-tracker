@@ -32,6 +32,8 @@ export interface Settings {
   experience: Experience | null;
   /** How strict counting and form checks are. */
   difficulty: Difficulty;
+  /** Before a landscape set, remind the user to turn off Rotation Lock (Auto-rotate on, on Android). */
+  rotationReminder: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   orientation: 'landscape',
   experience: null,
   difficulty: 'easy',
+  rotationReminder: true,
 };
 
 const KEY = 'settings.v1';
@@ -96,6 +99,7 @@ export function normalizeSettings(raw: unknown): Settings {
     orientation: oneOf(o.orientation, ['landscape', 'portrait'] as const, d.orientation),
     experience: oneOf(o.experience, ['guided', 'quick', null] as const, null),
     difficulty: oneOf(o.difficulty, ['easy', 'medium', 'hard'] as const, d.difficulty),
+    rotationReminder: bool(o.rotationReminder, d.rotationReminder),
   };
 }
 

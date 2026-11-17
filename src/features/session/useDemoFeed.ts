@@ -1,6 +1,18 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { DepthProbe } from '@/engine/reality';
-import { emptySample, hold, plank, rep, sidePlank, timeline, type BodyParams, type Segment } from '@/engine/testing/synth';
+import {
+  crunch,
+  crunchMove,
+  crunchRest,
+  emptySample,
+  hold,
+  plank,
+  rep,
+  sidePlank,
+  timeline,
+  type BodyParams,
+  type Segment,
+} from '@/engine/testing/synth';
 import type { Exercise, PhoneAttitude, PoseSample } from '@/engine/types';
 import { isTimed } from '@/engine/exercises';
 
@@ -45,8 +57,65 @@ interface Part {
 }
 
 const holdOf = (ex: Exercise) => (ex === 'sidePlank' ? sidePlank : plank);
-const work = (ex: Exercise, n: number): Segment[] => (isTimed(ex) ? [holdOf(ex)(n * 1600)] : Array.from({ length: n }, () => rep(1600)));
-const start = (ex: Exercise, ms = 3000): Segment[] => (isTimed(ex) ? [holdOf(ex)(ms)] : [hold(ms)]);
+const work = (ex: Exercise, n: number): Segment[] =>
+  isTimed(ex) ? [holdOf(ex)(n * 1600)] : Array.from({ length: n }, () => (ex === 'crunch' ? crunch(2000, 32) : rep(1600)));
+const start = (ex: Exercise, ms = 3000): Segment[] => (isTimed(ex) ? [holdOf(ex)(ms)] : ex === 'crunch' ? [crunchRest(ms)] : [hold(ms)]);
+
+/** Crunches: a normal set, sitting up to rest, and every fault. */
+function crunchScript(s: DemoScenario): Part[] | null {
+  if (s === 'basic')
+    return [
+      {
+        segs: [
+          crunchRest(3000),
+          crunch(2200, 32),
+          crunch(2200, 32),
+          crunch(2200, 34, (k) => ({ feetUp: 0.4 * Math.sin(Math.PI * k) })), // feet lifting: flagged
+          crunch(2000, 32),
+          crunch(1800, 13), // half crunch: not counted
+          crunch(2200, 32),
+          crunch(2200, 32),
+          crunchRest(1500),
+        ],
+      },
+    ];
+  if (s === 'standup')
+    return [
+      { segs: [...start('crunch'), ...work('crunch', 4)] },
+      { segs: [crunchMove(1500, 0, 85), crunchMove(3500, 85, 85), crunchMove(1500, 85, 0)] }, // sits up to rest: paused
+      { segs: [...start('crunch', 2500), ...work('crunch', 5)] },
+    ];
+  if (s === 'swap')
+    // Someone else, smaller, lying further along the mat (a crunch body is placed by its hips).
+    return [
+      { segs: [...start('crunch'), ...work('crunch', 4)] },
+      { segs: work('crunch', 3), body: { torsoPx: 150, wristX: 330 } },
+      { segs: [...start('crunch', 2500), ...work('crunch', 4)] },
+    ];
+  if (s === 'faults')
+    return [
+      {
+        segs: [
+          crunchRest(3000),
+          crunch(2200, 32),
+          crunch(1800, 13), // half crunch: not counted
+          crunch(2800, 75), // sat all the way up: flagged
+          crunch(2200, 34, (k) => ({ feetUp: 0.4 * Math.sin(Math.PI * k) })), // feet lifting: flagged
+          crunch(650, 32), // rushed: flagged
+          crunch(650, 32),
+          crunchRest(800),
+          crunch(2400, 32, (k) => ({ neckFlexDeg: 55 * Math.sin(Math.PI * k) })), // pulling the neck: a tip
+          crunchMove(900, 0, 32),
+          crunchMove(700, 32, 8),
+          crunchMove(700, 8, 32), // pulsing without lowering to the floor: not counted twice
+          crunchMove(900, 32, 0),
+          crunch(2200, 32),
+          crunchRest(1500),
+        ],
+      },
+    ];
+  return null;
+}
 
 /** Side plank: left side with a hip drop, get up, turn around, right side; then the faults. */
 function sidePlankScript(s: DemoScenario): Part[] | null {
@@ -81,6 +150,10 @@ function sidePlankScript(s: DemoScenario): Part[] | null {
 }
 
 function script(ex: Exercise, s: DemoScenario): Part[] {
+  if (ex === 'crunch') {
+    const own = crunchScript(s);
+    if (own) return own;
+  }
   if (ex === 'sidePlank') {
     const own = sidePlankScript(s);
     if (own) return own;
@@ -192,11 +265,44 @@ function probe(t: number, kind: 'real' | 'flat'): DepthProbe {
     : { t, body: [2, 2, 2, 2, 2, 2].map((d) => d + j(0.02)), around: [2, 2, 2, 2].map((d) => d + j(0.02)), torsoM: 0.5 + j(0.03) };
 }
 
-interface DemoFrame {
+export interface DemoFrame {
   sample: PoseSample;
   roll: number;
   depth?: 'real' | 'flat';
 }
+
+/** Every frame of a scenario, with its phone roll and depth kind. Also used by tests. */
+export function demoFrames(exercise: Exercise, scenario: DemoScenario, portrait: boolean): { frames: DemoFrame[]; length: number } {
+  // Portrait frames are tall and narrow, like a real upright camera.
+  const size: Partial<BodyParams> = portrait ? { noisePx: 3, width: 720, height: 1280, torsoPx: 190 } : { noisePx: 3 };
+  const frames: DemoFrame[] = [];
+  let t = 0;
+  for (const part of script(exercise, scenario)) {
+    const base = { ...size, ...part.body };
+    const samples = timeline(part.segs, {
+      startT: t,
+      base,
+      mapFrame: part.shake
+        ? (s, ft) => ({
+            ...s,
+            landmarks: s.landmarks.map((l) => ({
+              ...l,
+              x: l.x + 0.012 * Math.sin((2 * Math.PI * 3 * ft) / 1000),
+              y: l.y + 0.008 * Math.cos((2 * Math.PI * 2.3 * ft) / 1000),
+            })),
+          })
+        : undefined,
+    });
+    for (const s of samples) {
+      frames.push({ sample: part.nobody ? emptySample(s.t, s.width, s.height) : s, roll: part.roll ?? 0, depth: part.depth });
+    }
+    t = samples[samples.length - 1].t + 33;
+  }
+  return { frames, length: t };
+}
+
+/** Depth readings for a demo frame, as the camera would give them. */
+export const demoProbe = probe;
 
 export function useDemoFeed(
   enabled: boolean,
@@ -218,32 +324,7 @@ export function useDemoFeed(
 
   useEffect(() => {
     if (!enabled) return;
-    // Portrait frames are tall and narrow, like a real upright camera.
-    const size: Partial<BodyParams> = portrait ? { noisePx: 3, width: 720, height: 1280, torsoPx: 190 } : { noisePx: 3 };
-    const frames: DemoFrame[] = [];
-    let t = 0;
-    for (const part of script(exercise, scenario)) {
-      const base = { ...size, ...part.body };
-      const samples = timeline(part.segs, {
-        startT: t,
-        base,
-        mapFrame: part.shake
-          ? (s, ft) => ({
-              ...s,
-              landmarks: s.landmarks.map((l) => ({
-                ...l,
-                x: l.x + 0.012 * Math.sin((2 * Math.PI * 3 * ft) / 1000),
-                y: l.y + 0.008 * Math.cos((2 * Math.PI * 2.3 * ft) / 1000),
-              })),
-            })
-          : undefined,
-      });
-      for (const s of samples) {
-        frames.push({ sample: part.nobody ? emptySample(s.t, s.width, s.height) : s, roll: part.roll ?? 0, depth: part.depth });
-      }
-      t = samples[samples.length - 1].t + 33;
-    }
-    const length = t;
+    const { frames, length } = demoFrames(exercise, scenario, portrait);
     const t0 = performance.now();
     let i = 0;
     let loop = 0;

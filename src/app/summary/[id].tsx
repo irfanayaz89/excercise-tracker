@@ -2,10 +2,11 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { MissReason, RepFault, RepRecord } from '@/engine/repCounter';
+import { HINT_FAULTS, type MissReason, type RepFault, type RepRecord } from '@/engine/repCounter';
+import type { Exercise } from '@/engine/types';
 import type { SessionSummary } from '@/engine/session';
 import type { HoldFault, HoldSummary } from '@/engine/holdTimer';
-import { DIFFICULTY_COPY, FAULT_COPY, HOLD_COPY, MISS_COPY, formatDuration } from '@/session/copy';
+import { DIFFICULTY_COPY, FAULT_COPY, HOLD_COPY, faultCopy, formatDuration, missCopy } from '@/session/copy';
 import { getLastSummary } from '@/session/lastSummary';
 import { getSession } from '@/storage/history';
 import { useSettings } from '@/storage/settings';
@@ -57,6 +58,8 @@ export default function SummaryScreen() {
   const faults = (Object.entries(s.faultCounts) as [RepFault, number][]).sort((a, b) => b[1] - a[1]);
   const misses = (Object.entries(s.missCounts) as [MissReason, number][]).sort((a, b) => b[1] - a[1]);
   const missTotal = misses.reduce((n, [, c]) => n + c, 0);
+  const ex: Exercise = s.exercise ?? 'pushup';
+  const crunch = ex === 'crunch';
   const flagged = s.totalReps - s.cleanReps;
   const note = END_NOTE[s.endReason];
   const level = s.difficulty === 'easy' || s.difficulty === 'medium' || s.difficulty === 'hard' ? s.difficulty : null;
@@ -100,17 +103,21 @@ export default function SummaryScreen() {
       contentContainerStyle={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.huge }]}
     >
       <View style={styles.headRow}>
-        <ExerciseGlyph exercise="pushup" size={36} />
+        <ExerciseGlyph exercise={ex} size={36} />
         <Label style={{ flexShrink: 1 }}>{header}</Label>
       </View>
 
       {s.totalReps === 0 ? (
         <View style={{ gap: space.md }}>
-          <Display size={type.headline}>No push-ups counted</Display>
+          <Display size={type.headline}>{`No ${EXERCISES[ex].unit} counted`}</Display>
           <Body tone="muted">
-            {missTotal > 0
-              ? 'Reps were seen but did not reach the full range. Go down until your elbows reach about 90° and push all the way back up.'
-              : 'Make sure your whole body is in view, side-on to the phone, and that you start from a straight-arm plank.'}
+            {crunch
+              ? missTotal > 0
+                ? 'Crunches were seen but did not lift far enough. Curl up until your shoulder blades leave the floor, then lower back down.'
+                : 'Make sure your whole body is in view, side-on to the phone, and that you start lying still on your back with your knees bent.'
+              : missTotal > 0
+                ? 'Reps were seen but did not reach the full range. Go down until your elbows reach about 90° and push all the way back up.'
+                : 'Make sure your whole body is in view, side-on to the phone, and that you start from a straight-arm plank.'}
           </Body>
         </View>
       ) : (
@@ -120,7 +127,7 @@ export default function SummaryScreen() {
               {s.totalReps}
             </Display>
             <Body tone="muted" style={{ marginBottom: 18 }}>
-              push-ups
+              {EXERCISES[ex].unit}
             </Body>
           </View>
           <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />
@@ -146,10 +153,14 @@ export default function SummaryScreen() {
       {guided && s.totalReps > 0 && level === 'easy' && (
         <View style={styles.tip}>
           <Label tone="vial">Next time</Label>
-          <Body>Counted in Easy mode, without form checks. When setup feels easy, try Medium to get feedback on your hips and depth.</Body>
+          <Body>
+            {`Counted in Easy mode, without form checks. When setup feels easy, try Medium to get feedback on your ${crunch ? 'lift, feet and pace' : 'hips and depth'}.`}
+          </Body>
         </View>
       )}
-      {guided && s.totalReps > 0 && level !== 'easy' && <NextTime faults={faults} misses={misses} cleanShare={s.cleanReps / s.totalReps} />}
+      {guided && s.totalReps > 0 && level !== 'easy' && (
+        <NextTime faults={faults} misses={misses} cleanShare={s.cleanReps / s.totalReps} exercise={ex} />
+      )}
 
       {faults.length > 0 && (
         <View style={{ gap: space.md }}>
@@ -159,14 +170,14 @@ export default function SummaryScreen() {
               <View key={f}>
                 {i > 0 && <Rule />}
                 <View style={styles.item}>
-                  <Display size={32} tone={f === 'head-dropping' ? 'muted' : 'cue'} style={{ minWidth: 40 }}>
+                  <Display size={32} tone={HINT_FAULTS.includes(f) ? 'muted' : 'cue'} style={{ minWidth: 40 }}>
                     {n}
                   </Display>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{FAULT_COPY[f]?.short ?? f}</Strong>
+                    <Strong>{faultCopy(f, ex)?.short ?? f}</Strong>
                     {guided && (
                       <Body tone="muted" size={14}>
-                        {FAULT_COPY[f]?.detail}
+                        {faultCopy(f, ex)?.detail}
                       </Body>
                     )}
                   </View>
@@ -189,10 +200,10 @@ export default function SummaryScreen() {
                     {n}
                   </Display>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{MISS_COPY[m]?.short ?? m}</Strong>
+                    <Strong>{missCopy(m, ex)?.short ?? m}</Strong>
                     {guided && (
                       <Body tone="muted" size={14}>
-                        {MISS_COPY[m]?.detail}
+                        {missCopy(m, ex)?.detail}
                       </Body>
                     )}
                   </View>
@@ -338,15 +349,30 @@ function PlankResult({
 }
 
 /** Guided mode: one plain-language thing to focus on next set. */
-function NextTime({ faults, misses, cleanShare }: { faults: [RepFault, number][]; misses: [MissReason, number][]; cleanShare: number }) {
-  const topFault = faults.find(([f]) => f !== 'head-dropping');
+function NextTime({
+  faults,
+  misses,
+  cleanShare,
+  exercise,
+}: {
+  faults: [RepFault, number][];
+  misses: [MissReason, number][];
+  cleanShare: number;
+  exercise: Exercise;
+}) {
+  const topFault = faults.find(([f]) => !HINT_FAULTS.includes(f));
+  const crunch = exercise === 'crunch';
   const tip = topFault
-    ? `Most flagged reps were "${FAULT_COPY[topFault[0]].short.toLowerCase()}". ${FAULT_COPY[topFault[0]].detail}`
+    ? `Most flagged reps were "${faultCopy(topFault[0], exercise).short.toLowerCase()}". ${faultCopy(topFault[0], exercise).detail}`
     : misses[0]
-      ? `${MISS_COPY[misses[0][0]].detail} Those reps were not counted.`
+      ? `${missCopy(misses[0][0], exercise).detail} Those reps were not counted.`
       : cleanShare === 1
-        ? 'Every rep was clean. Next time, try a few more or slow the way down to about two seconds.'
-        : 'Solid set. Keep your body in one straight line from shoulders to heels.';
+        ? crunch
+          ? 'Every crunch was clean. Next time, try a few more, or pause a moment at the top of each one.'
+          : 'Every rep was clean. Next time, try a few more or slow the way down to about two seconds.'
+        : crunch
+          ? 'Solid set. Curl up with your stomach, keep your feet down, and lower slowly.'
+          : 'Solid set. Keep your body in one straight line from shoulders to heels.';
   return (
     <View style={styles.tip}>
       <Label tone="vial">Next time</Label>

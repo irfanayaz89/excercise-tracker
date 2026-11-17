@@ -1,11 +1,11 @@
 import type { HoldFault, HoldSummary } from '@/engine/holdTimer';
 import type { EndReason, SessionSummary } from '@/engine/session';
-import type { MissReason, RepFault, RepRecord } from '@/engine/repCounter';
+import { HINT_FAULTS, type MissReason, type RepFault, type RepRecord } from '@/engine/repCounter';
 import { isExercise, isTimed } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 
-const FAULTS: RepFault[] = ['hips-sagging', 'hips-piking', 'rushed', 'head-dropping'];
-const MISSES: MissReason[] = ['not-deep-enough', 'no-lockout', 'too-slow'];
+const FAULTS: RepFault[] = ['hips-sagging', 'hips-piking', 'rushed', 'head-dropping', 'sat-up', 'feet-lifting', 'neck-pulling'];
+const MISSES: MissReason[] = ['not-deep-enough', 'no-lockout', 'too-slow', 'not-high-enough', 'not-back-down'];
 const HOLD_FAULTS: HoldFault[] = [
   'hips-sagging',
   'hips-piking',
@@ -73,7 +73,8 @@ export function normalizeSummary(
             maxPike: num(r.maxPike, 0),
             faults,
             score: num(r.score, 100),
-            clean: typeof r.clean === 'boolean' ? r.clean : faults.every((f) => f === 'head-dropping'),
+            clean: typeof r.clean === 'boolean' ? r.clean : faults.every((f) => HINT_FAULTS.includes(f)),
+            peakLiftDeg: numOrNull(r.peakLiftDeg),
           };
         })
     : [];

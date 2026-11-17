@@ -125,6 +125,14 @@ export interface BodyMetrics {
    * the ceiling shrinks it. Null when the other shoulder is not clearly visible.
    */
   shoulderStack: number | null;
+  /**
+   * Crunch: how far the shoulders are lifted, as the angle of the hip→shoulder
+   * line above horizontal (0 = lying flat, 90 = sitting up straight). Not roll
+   * corrected; the crunch counter measures it from the user's own resting angle.
+   */
+  trunkLiftDeg: number | null;
+  /** Ankle height above the hip, in torso lengths (crunch: feet lifting off the floor). */
+  footRise: number | null;
   /** Shoulder-to-hip distance in pixels. */
   torsoPx: number;
   /** Hip centre in normalized coordinates, for identity tracking. */
@@ -134,8 +142,8 @@ export interface BodyMetrics {
 /** How the phone stands during a set; picked by the user. */
 export type PhoneOrientation = 'landscape' | 'portrait';
 
-/** What the set is: push-ups are counted, a plank is timed. */
-export type Exercise = 'pushup' | 'plank' | 'sidePlank';
+/** What the set is: push-ups and crunches are counted, planks are timed. */
+export type Exercise = 'pushup' | 'crunch' | 'plank' | 'sidePlank';
 
 /** High plank on straight arms, or forearm plank with the forearms on the floor. */
 export type PlankVariant = 'high' | 'forearm';
