@@ -17,6 +17,20 @@ import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 import { EXERCISES, isTimed } from '@/engine/exercises';
 
+/** "+18 min screen time" after a set that earned some (plan §4). */
+function EarnedNote({ earned }: { earned: { minutes: number; capped: boolean } | null }) {
+  if (!earned) return null;
+  const text =
+    earned.minutes > 0
+      ? `+${earned.minutes} min screen time${earned.capped ? ' · today’s earning limit reached' : ''}`
+      : 'Today’s earning limit is reached: this set earned no screen time.';
+  return (
+    <View style={styles.earned} accessible accessibilityLabel={text}>
+      <Mono tone={earned.minutes > 0 ? 'good' : 'muted'}>{text}</Mono>
+    </View>
+  );
+}
+
 const END_NOTE: Record<SessionSummary['endReason'], string | null> = {
   user: null,
   target: 'Target reached.',
@@ -38,10 +52,12 @@ export default function SummaryScreen() {
   const data = useMemo(() => {
     const last = getLastSummary();
     if (id === 'last' || (last && last.savedId === id)) {
-      return last ? { summary: last.summary, wallStart: last.wallStart, saved: last.savedId !== null, demo: !!last.demo } : null;
+      return last
+        ? { summary: last.summary, wallStart: last.wallStart, saved: last.savedId !== null, demo: !!last.demo, earned: last.earned ?? null }
+        : null;
     }
     const stored = id ? getSession(id) : null;
-    return stored ? { summary: stored.summary, wallStart: stored.row.startedAt, saved: true, demo: false } : null;
+    return stored ? { summary: stored.summary, wallStart: stored.row.startedAt, saved: true, demo: false, earned: null } : null;
   }, [id]);
 
   if (!data) {
@@ -54,7 +70,7 @@ export default function SummaryScreen() {
     );
   }
 
-  const { summary: s, wallStart, saved, demo } = data;
+  const { summary: s, wallStart, saved, demo, earned } = data;
   const faults = (Object.entries(s.faultCounts) as [RepFault, number][]).sort((a, b) => b[1] - a[1]);
   const misses = (Object.entries(s.missCounts) as [MissReason, number][]).sort((a, b) => b[1] - a[1]);
   const missTotal = misses.reduce((n, [, c]) => n + c, 0);
@@ -76,6 +92,7 @@ export default function SummaryScreen() {
           <ExerciseGlyph exercise={s.exercise ?? 'plank'} size={36} />
           <Label style={{ flexShrink: 1 }}>{header}</Label>
         </View>
+        <EarnedNote earned={earned} />
         <PlankResult
           hold={s.hold}
           sides={s.exercise === 'sidePlank' ? (s.holdSides ?? {}) : null}
@@ -106,6 +123,7 @@ export default function SummaryScreen() {
         <ExerciseGlyph exercise={ex} size={36} />
         <Label style={{ flexShrink: 1 }}>{header}</Label>
       </View>
+      <EarnedNote earned={earned} />
 
       {s.totalReps === 0 ? (
         <View style={{ gap: space.md }}>
@@ -426,6 +444,7 @@ function TempoChart({ reps }: { reps: RepRecord[] }) {
 }
 
 const styles = StyleSheet.create({
+  earned: { alignSelf: 'flex-start', paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.md, backgroundColor: color.goodSoft },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
   empty: { flex: 1, backgroundColor: color.ground, padding: space.xl, gap: space.lg },
   stats: { flexDirection: 'row', flexWrap: 'wrap', rowGap: space.lg },
