@@ -1,5 +1,6 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { router, useFocusEffect, useLocalSearchParams, usePreventRemove } from 'expo-router';
+import { creditSet } from '@/screentime/store';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
@@ -199,7 +200,15 @@ function LiveSession({
       const wallStart = c.wallStart();
       // A demo set is synthetic: show its summary but keep it out of your history.
       const id = demo ? null : saveSession(summary, wallStart);
-      setLastSummary({ summary, wallStart, savedId: id, demo });
+      // Only a saved, real set earns screen time (and only once: the id is its key).
+      let earned: { minutes: number; capped: boolean } | null = null;
+      try {
+        const res = id ? creditSet(summary, id, demo) : null;
+        if (res && (res.minutes > 0 || res.reason === 'cap-reached')) earned = { minutes: res.minutes, capped: res.capped };
+      } catch {
+        // Screen time must never get in the way of saving a set.
+      }
+      setLastSummary({ summary, wallStart, savedId: id, demo, earned });
       void c.saveTuningRecording(modelRef.current);
       allowLeaveRef.current?.();
       router.replace({ pathname: '/summary/[id]', params: { id: id ?? 'last' } });

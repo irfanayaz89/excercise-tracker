@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EXERCISE_IDS, EXERCISES, isTimed } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { HistoryList } from '@/features/history/HistoryList';
+import { ScreenTimeCard } from '@/features/screentime/ScreenTimeCard';
 import { formatDuration } from '@/session/copy';
 import { dailyTotals, listSessions, listSessionsSince, type SessionRow } from '@/storage/history';
 import { GOAL_TARGETS, useSettings } from '@/storage/settings';
@@ -109,6 +110,8 @@ export default function Home() {
           </View>
         )}
       </View>
+
+      <ScreenTimeCard guard={guard} />
 
       <View style={{ gap: space.md }}>
         <Label>Exercises</Label>

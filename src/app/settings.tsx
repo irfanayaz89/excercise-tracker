@@ -1,18 +1,21 @@
 import { router, useFocusEffect } from 'expo-router';
 import type { File } from 'expo-file-system';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { deleteRecording, listRecordings, shareRecording } from '@/session/recordings';
 import type { Difficulty } from '@/engine/difficulty';
 import type { PhoneOrientation } from '@/engine/types';
 import { useSettings, type Experience, type Settings } from '@/storage/settings';
-import { Body, Chip, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
+import { Body, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
+import { ChoiceRow, LinkRow, Section, ToggleRow } from '@/ui/rows';
+import { useScreenTime } from '@/screentime/store';
 import { color, radius, space } from '@/ui/theme';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [s, update] = useSettings();
+  const screenTime = useScreenTime();
   const [recs, setRecs] = useState<File[]>([]);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
@@ -89,6 +92,17 @@ export default function SettingsScreen() {
           onChange={(v) => update({ orientation: v as PhoneOrientation })}
         />
       </Section>
+
+      {screenTime.availability !== 'unsupported' || screenTime.meta.setUp ? (
+        <Section title="Screen time">
+          <LinkRow
+            label="Screen time"
+            hint="Block apps during lock times and after a daily limit; earn time back with exercise."
+            value={screenTime.meta.setUp ? 'On' : 'Off'}
+            onPress={() => router.push(screenTime.meta.setUp ? '/screen-time' : '/screen-time/setup')}
+          />
+        </Section>
+      ) : null}
 
       <Section title="Camera">
         <ChoiceRow
@@ -217,88 +231,9 @@ export default function SettingsScreen() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View style={{ gap: space.md }}>
-      <Label tone="vial">{title}</Label>
-      <View style={styles.section}>{children}</View>
-    </View>
-  );
-}
-
-function ToggleRow({
-  label,
-  hint,
-  value,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  hint: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <View style={[styles.row, disabled && { opacity: 0.45 }]}>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Strong>{label}</Strong>
-        <Body tone="muted" size={13}>
-          {hint}
-        </Body>
-      </View>
-      <Switch
-        value={value}
-        disabled={disabled}
-        onValueChange={onChange}
-        trackColor={{ false: color.raised, true: color.vial }}
-        thumbColor={value ? color.vialInk : color.chalk2}
-        accessibilityLabel={label}
-      />
-    </View>
-  );
-}
-
-function ChoiceRow({
-  label,
-  hint,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  value: string;
-  options: [string, string][];
-  onChange: (v: string) => void;
-}) {
-  return (
-    <View style={[styles.row, { flexDirection: 'column', alignItems: 'stretch' }]}>
-      <Strong>{label}</Strong>
-      <Body tone="muted" size={13}>
-        {hint}
-      </Body>
-      <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm, flexWrap: 'wrap' }}>
-        {options.map(([v, l]) => (
-          <Chip key={v} label={l} selected={value === v} onPress={() => onChange(v)} />
-        ))}
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  section: { borderRadius: radius.lg, borderWidth: 1, borderColor: color.lineSoft, backgroundColor: color.surface, overflow: 'hidden' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.lg,
-    padding: space.lg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: color.line,
-  },
   recs: { margin: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: color.line },
   recRow: { flexDirection: 'row', alignItems: 'center', gap: space.lg, paddingHorizontal: space.md, paddingVertical: space.sm },
 });

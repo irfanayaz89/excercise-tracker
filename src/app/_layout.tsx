@@ -15,6 +15,7 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useScreenTimeSync } from '@/screentime/useScreenTimeSync';
 import { color } from '@/ui/theme';
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -34,6 +35,8 @@ export default function RootLayout() {
     JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
   });
+
+  useScreenTimeSync();
 
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(color.ground).catch(() => {});
@@ -66,6 +69,11 @@ export default function RootLayout() {
           <Stack.Screen name="session" options={{ gestureEnabled: false, animation: 'fade_from_bottom' }} />
           <Stack.Screen name="summary/[id]" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="settings" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="screen-time/index" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="screen-time/setup" options={{ animation: 'slide_from_right', gestureEnabled: false }} />
+          <Stack.Screen name="screen-time/lock/[id]" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="screen-time/apps" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="earn" options={{ animation: 'slide_from_bottom' }} />
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>
