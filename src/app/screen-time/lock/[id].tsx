@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { changeRules, countLabel, describeChange, pickApps } from '@/screentime/edit';
+import { changeRules, countLabel, describeChange, pickApps, selectionProblem } from '@/screentime/edit';
 import { coreOf, describeLock, EMPTY_SELECTION, LOCK_PRESETS, lockProblem, MAX_LOCK_TIMES } from '@/screentime/rules';
 import { getScreenTime } from '@/screentime/store';
 import { lockLengthMin, parseHHMM } from '@/screentime/time';
@@ -148,7 +148,10 @@ export default function LockEditor() {
               label="Pick apps for this lock time"
               onPress={guard(async () => {
                 const picked = await pickApps(lock.name || 'Lock time', lock.apps === 'main' ? EMPTY_SELECTION : lock.apps);
-                if (picked) set({ apps: picked });
+                if (!picked) return;
+                const bad = selectionProblem(picked);
+                if (bad) setMessage(bad);
+                else set({ apps: picked });
               })}
             />
           </View>

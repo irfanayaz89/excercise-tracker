@@ -34,6 +34,12 @@ class ShieldActionExtension: ShieldActionDelegate {
         // Extensions can't open apps before iOS 26.5: a notification takes the user there.
         notifyEarn { done(.close) }
       }
+    case .workout:
+      if #available(iOS 26.5, *) {
+        done(.openParentalControlsApp)
+      } else {
+        done(.close)
+      }
     case .emergency:
       STShared.takeUnlock(kind: "emergency", minutes: STShared.plan?.emergencyMin ?? 10)
       done(.defer)

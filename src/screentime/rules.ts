@@ -3,8 +3,11 @@ import type { Exercise } from '@/engine/types';
 import { activeOccurrence, addDays, lockLengthMin, nextMidnight, occurrences, parseHHMM, type Zone } from './time';
 import type { EarningRules, LockTime, Rate, RulesCore, ScreenTimeRules, Selection, Strictness } from './types';
 
-/** Apple watches about 20 schedules per app; lock times may use 8 of them (plan §2). */
-export const MAX_LOCK_TIMES = 8;
+/**
+ * Apple monitors at most 20 schedules per app. Lock times use 2 each (start and end);
+ * the day, daily limit, earned time, unlocks and workout focus use one each: 5 + 7 × 2 = 19.
+ */
+export const MAX_LOCK_TIMES = 7;
 /** Apple's shortest schedule. */
 export const MIN_LOCK_MIN = 15;
 /** Apple shields at most 50 individual apps at once (categories cover more). */

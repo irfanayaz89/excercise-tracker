@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Platform } from 'react-native';
 import { ScreenTime } from '../../modules/screen-time/src';
-import { requestChange, type ChangeResult, type RefusalReason } from './rules';
+import { MAX_APPS, requestChange, type ChangeResult, type RefusalReason } from './rules';
 import { getScreenTime, saveRules } from './store';
 import { deviceZone } from './time';
 import type { RulesCore, Selection } from './types';
@@ -59,6 +59,16 @@ export function finishPick(s: Selection | null) {
   const p = pending;
   pending = null;
   p?.(s);
+}
+
+/**
+ * iPhone shields at most 50 single apps per list; beyond that it reportedly
+ * shields nothing at all (research guide, Appendix A F4). Categories have no limit.
+ */
+export function selectionProblem(s: Selection, os: string = Platform.OS): string | null {
+  if (os === 'ios' && s.apps.length > MAX_APPS)
+    return `iPhone can block at most ${MAX_APPS} single apps in one list (you picked ${s.apps.length}). Pick whole categories, like Social or Games, for the rest.`;
+  return null;
 }
 
 /** "12 apps, 2 categories" for a list. */

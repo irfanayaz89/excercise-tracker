@@ -4,7 +4,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EXERCISE_IDS, EXERCISES } from '@/engine/exercises';
 import { DayTimeline } from '@/features/screentime/DayTimeline';
-import { changeRules, countLabel, describeChange, pickApps } from '@/screentime/edit';
+import { changeRules, countLabel, describeChange, pickApps, selectionProblem } from '@/screentime/edit';
 import {
   cancelPending,
   coreOf,
@@ -19,7 +19,16 @@ import {
   STRICT_WAIT_MS,
   strictActive,
 } from '@/screentime/rules';
-import { getScreenTime, saveRules, turnOff, unlockNow, useScreenTimeTick, type ScreenTimeState } from '@/screentime/store';
+import {
+  clearTokensExpired,
+  endFocusNow,
+  getScreenTime,
+  saveRules,
+  turnOff,
+  unlockNow,
+  useScreenTimeTick,
+  type ScreenTimeState,
+} from '@/screentime/store';
 import { formatClock, formatMin, summarizeDays } from '@/screentime/summary';
 import { deviceZone } from '@/screentime/time';
 import type { ChangeResult } from '@/screentime/rules';
@@ -92,6 +101,23 @@ export default function ScreenTimeScreen() {
           </Body>
         </Pressable>
       )}
+      {st.meta.tokensExpired && (
+        <View style={styles.alert}>
+          <Strong tone="cue">Pick your apps again</Strong>
+          <Body size={14}>iPhone reset the app lists Trueline uses. Until you pick them again, they may not be blocked.</Body>
+          <Button
+            size="sm"
+            label="Pick blocked apps"
+            onPress={guard(async () => {
+              const picked = await pickApps('Blocked apps', getScreenTime().rules.blocked);
+              if (picked) {
+                change({ blocked: picked });
+                clearTokensExpired();
+              }
+            })}
+          />
+        </View>
+      )}
       {st.problems.length > 0 && (
         <View style={styles.alert}>
           <Strong tone="cue">Some schedules couldn&apos;t start</Strong>
@@ -110,9 +136,11 @@ export default function ScreenTimeScreen() {
         <Label>Today</Label>
         <Display size={34}>
           {d.blocked
-            ? d.reason === 'lock' && d.lock
-              ? `${d.lock.name} until ${formatClock(deviceZone, d.lock.until, now)}`
-              : 'Time is up for today'
+            ? d.reason === 'focus' && d.focus
+              ? `Workout focus until ${formatClock(deviceZone, d.focus.until, now)}`
+              : d.reason === 'lock' && d.lock
+                ? `${d.lock.name} until ${formatClock(deviceZone, d.lock.until, now)}`
+                : 'Time is up for today'
             : d.usingEarned
               ? `Earned time: ${formatMin(d.earnedLeftMin)} left`
               : d.unlockedUntil
@@ -121,6 +149,28 @@ export default function ScreenTimeScreen() {
                   ? `${formatMin(d.limitLeftMin)} left`
                   : 'Apps are open'}
         </Display>
+        {d.focus && (
+          <View style={styles.note}>
+            <Body size={14}>
+              {d.focus.strict
+                ? 'Strict: the workout focus runs until its end.'
+                : d.focus.kind === 'timed'
+                  ? 'A timed workout focus keeps your apps closed until it ends.'
+                  : 'The workout focus ends when the set ends.'}
+            </Body>
+            {!d.focus.strict && (
+              <Button
+                size="sm"
+                variant="ghost"
+                label="End focus now"
+                onPress={() => {
+                  const res = endFocusNow('manual');
+                  if (!res.ended) setMessage('This focus can\'t be ended early.');
+                }}
+              />
+            )}
+          </View>
+        )}
         <DayTimeline rules={rules} now={now} />
         <View style={styles.stats}>
           <Stat label="Used" value={limit === null ? formatMin(today.usedMin) : `${formatMin(Math.min(today.usedMin, limit))} / ${formatMin(limit)}`} />
@@ -165,7 +215,13 @@ export default function ScreenTimeScreen() {
           value={countLabel(rules.blocked)}
           onPress={guard(async () => {
             const picked = await pickApps('Blocked apps', getScreenTime().rules.blocked);
-            if (picked) change({ blocked: picked });
+            if (!picked) return;
+            const bad = selectionProblem(picked);
+            if (bad) setMessage(bad);
+            else {
+              change({ blocked: picked });
+              clearTokensExpired();
+            }
           })}
         />
         <LinkRow
@@ -174,7 +230,10 @@ export default function ScreenTimeScreen() {
           value={countLabel(rules.allowed)}
           onPress={guard(async () => {
             const picked = await pickApps('Always allowed', getScreenTime().rules.allowed);
-            if (picked) change({ allowed: picked });
+            if (!picked) return;
+            const bad = selectionProblem(picked);
+            if (bad) setMessage(bad);
+            else change({ allowed: picked });
           })}
         />
       </Section>
@@ -423,6 +482,16 @@ function HistorySection({ st }: { st: ScreenTimeState }) {
             {d.unlocks > 0 && (
               <Mono size={12} tone="muted">
                 {` · ${d.unlocks} unlock${d.unlocks > 1 ? 's' : ''}`}
+              </Mono>
+            )}
+            {d.focusMin > 0 && (
+              <Mono size={12} tone="vial">
+                {` · focus ${formatMin(d.focusMin)}`}
+              </Mono>
+            )}
+            {d.offMin > 0 && (
+              <Mono size={12} tone="fault">
+                {` · off ${formatMin(d.offMin)}`}
               </Mono>
             )}
           </View>

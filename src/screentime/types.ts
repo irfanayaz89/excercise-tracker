@@ -88,6 +88,35 @@ export interface Unlock {
   until: number;
 }
 
+/**
+ * Workout Focus Mode: the blocked apps stay closed during a set or a timed
+ * challenge. Every focus has an end the phone knows about, so a crash or an
+ * abandoned workout can never leave someone locked out.
+ */
+export interface Focus {
+  /** "set": ends when the set ends. "timed": stays for the chosen minutes. */
+  kind: 'set' | 'timed';
+  startedAt: number;
+  /** Planned end (epoch ms). For "set", a safety cap. */
+  until: number;
+  /** Started in Strict mode: can't be ended early by backing out or by hand. */
+  strict: boolean;
+}
+
+/** A finished focus, for history and the summary. */
+export interface FocusRecord {
+  from: number;
+  to: number;
+  outcome: 'completed' | 'abandoned' | 'expired' | 'ended';
+}
+
+/** A stretch when protection wasn't running: access revoked, or the app was stopped. */
+export interface Gap {
+  from: number;
+  to: number;
+  kind: 'permission' | 'stopped' | 'killed';
+}
+
 /** Everything that happened today; a new day starts a fresh log (earned time expires). */
 export interface DayLog {
   /** Local date "YYYY-MM-DD". */
@@ -99,10 +128,14 @@ export interface DayLog {
   earnedUsedMin: number;
   grants: Grant[];
   unlocks: Unlock[];
+  /** Focus sessions that ended today (optional: older logs don't have it). */
+  focuses?: FocusRecord[];
+  /** Times protection was off today. */
+  gaps?: Gap[];
 }
 
 /** Why the blocked apps are closed right now. */
-export type BlockReason = 'lock' | 'limit';
+export type BlockReason = 'focus' | 'lock' | 'limit';
 
 /** What the platform should do right now (plan §5). */
 export interface Decision {
@@ -125,6 +158,8 @@ export interface Decision {
   oneMore: { available: boolean; left: number };
   /** Lock times with their own app selection that are blocking right now. */
   ownLocks: { id: string; name: string; until: number; apps: Selection }[];
+  /** A workout focus is running (it blocks the main apps, earned time doesn't open them). */
+  focus: { kind: Focus['kind']; until: number; strict: boolean } | null;
   /** The next moment the decision may change on its own (lock start/end, unlock end, midnight). */
   nextChange: number;
 }

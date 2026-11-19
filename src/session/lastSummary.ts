@@ -9,6 +9,8 @@ let last: {
   demo?: boolean;
   /** Screen time earned by this set (minutes), and whether today's cap cut it short. */
   earned?: { minutes: number; capped: boolean } | null;
+  /** Workout focus: minutes it held (ended with the set), or when a timed focus still ends. */
+  focus?: { heldMin: number; continuesUntil: number | null } | null;
 } | null = null;
 
 export function setLastSummary(v: typeof last) {

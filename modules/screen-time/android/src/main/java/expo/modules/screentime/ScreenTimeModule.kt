@@ -39,16 +39,17 @@ class ScreenTimeModule : Module() {
       if (hasAccess(ctx)) "approved" else "notDetermined"
     }
 
+    /** Battery optimisation is already off for Trueline (so phone battery savers leave the service alone). */
+    Function("batteryUnrestricted") {
+      ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(ctx.packageName)
+    }
+
     Function("openSettings") { which: String ->
       when (which) {
         "usage" -> open(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         "overlay" -> open(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")))
-        "battery" -> {
-          val pm = ctx.getSystemService(PowerManager::class.java)
-          if (!pm.isIgnoringBatteryOptimizations(ctx.packageName)) {
-            open(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")))
-          }
-        }
+        // The general battery page: Play limits the direct "allow" prompt to certain app types.
+        "battery" -> open(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
       }
     }
 
@@ -77,6 +78,8 @@ class ScreenTimeModule : Module() {
         problems.add("plan: ${it.message}")
         return@Function problems
       }
+      // Before (re)starting the service: did it stop while it should have been running?
+      runCatching { STCore.checkGap(ctx) }
       STCore.prefs(ctx).edit().putString("plan", planJson).apply()
       val anything = !plan.blocked.isEmpty || plan.locks.any { it.enabled && (it.apps == null || !it.apps.isEmpty) }
       if (!anything) {
@@ -96,6 +99,7 @@ class ScreenTimeModule : Module() {
       val handed = (st.earnedSpentSec / 60) * 60
       st.earnedSpentSec -= handed
       st.unlocks.clear()
+      st.gaps.clear()
       st.openEarn = false
       STCore.saveState(ctx, st)
       out.toString()

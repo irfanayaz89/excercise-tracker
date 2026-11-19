@@ -102,7 +102,16 @@ describe('reading what the phone reports', () => {
         openEarn: true,
       }),
     );
-    expect(r).toEqual({ day: '2026-11-18', usedMin: 0, earnedSpentMin: 0, limitReached: false, unlocks: [{ kind: 'emergency', from: 1, until: 2 }], openEarn: true });
+    expect(r).toEqual({
+      day: '2026-11-18',
+      usedMin: 0,
+      earnedSpentMin: 0,
+      limitReached: false,
+      unlocks: [{ kind: 'emergency', from: 1, until: 2 }],
+      openEarn: true,
+      gaps: [],
+      tokensExpired: false,
+    });
   });
 
   it('keeps extra fields out (the iPhone also reports its own bookkeeping)', () => {

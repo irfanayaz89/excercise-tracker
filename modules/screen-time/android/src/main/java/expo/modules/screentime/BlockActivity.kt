@@ -63,6 +63,12 @@ class BlockActivity : Activity() {
     if (s.reason == "limit") {
       title = "Today's time is up"
       lines.add("$app is past your daily limit.")
+    } else if (s.reason == "focus") {
+      title = "Workout in progress"
+      s.until?.let {
+        val mins = maxOf(1L, (it - now + 59_999) / 60_000)
+        lines.add(if (p?.focusKind == "set") "$app opens again when the set is done (at most $mins min)." else "$app opens again in $mins min.")
+      }
     } else {
       val lock = s.lockName ?: s.ownBlocked.firstOrNull()?.name
       title = lock?.let { "$it is on" } ?: "$app is locked"
@@ -84,10 +90,19 @@ class BlockActivity : Activity() {
       s.oneMore -> (if ((p?.oneMoreMin ?: 1) == 1) "1 more minute" else "${p?.oneMoreMin} more minutes") to { unlock("one-more", p?.oneMoreMin ?: 1) }
       else -> null
     }
+    if (s.reason == "focus") root.addView(button("Back to workout", primary = true) { openTrueline() })
     if (s.canEarn) root.addView(button("Earn time", primary = true) { earn() })
-    escape?.let { (label, act) -> root.addView(button(label, primary = !s.canEarn) { act() }) }
-    root.addView(button("Close", primary = !s.canEarn && escape == null) { goHome() })
+    val mainShown = s.canEarn || s.reason == "focus"
+    escape?.let { (label, act) -> root.addView(button(label, primary = !mainShown) { act() }) }
+    root.addView(button("Close", primary = !mainShown && escape == null) { goHome() })
     setContentView(root)
+  }
+
+  private fun openTrueline() {
+    packageManager.getLaunchIntentForPackage(packageName)?.let {
+      startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
+    }
+    finish()
   }
 
   private fun earn() {

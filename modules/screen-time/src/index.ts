@@ -42,6 +42,8 @@ interface ScreenTimeNative {
   takeUnlock(kind: 'emergency' | 'one-more', minutes: number): void;
   stopAll(): void;
   requestNotifications(): Promise<boolean>;
+  /** Android: battery optimisation is already off for Trueline. */
+  batteryUnrestricted?(): boolean;
   /** Android: open the settings screen for a permission. */
   openSettings?(which: 'usage' | 'overlay' | 'battery'): void;
 }

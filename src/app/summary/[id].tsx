@@ -17,16 +17,30 @@ import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 import { EXERCISES, isTimed } from '@/engine/exercises';
 
-/** "+18 min screen time" after a set that earned some (plan §4). */
-function EarnedNote({ earned }: { earned: { minutes: number; capped: boolean } | null }) {
-  if (!earned) return null;
-  const text =
-    earned.minutes > 0
-      ? `+${earned.minutes} min screen time${earned.capped ? ' · today’s earning limit reached' : ''}`
-      : 'Today’s earning limit is reached: this set earned no screen time.';
+/** "+18 min screen time" after a set that earned some (plan §4), and how the workout focus went. */
+function EarnedNote({
+  earned,
+  focus,
+}: {
+  earned: { minutes: number; capped: boolean } | null;
+  focus?: { heldMin: number; continuesUntil: number | null } | null;
+}) {
+  if (!earned && !focus) return null;
+  const parts: string[] = [];
+  if (earned)
+    parts.push(
+      earned.minutes > 0
+        ? `+${earned.minutes} min screen time${earned.capped ? ' · today’s earning limit reached' : ''}`
+        : 'Today’s earning limit is reached: this set earned no screen time.',
+    );
+  if (focus?.continuesUntil)
+    parts.push(`Focus continues until ${new Date(focus.continuesUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+  else if (focus && focus.heldMin > 0) parts.push(`Focus held ${focus.heldMin} min`);
+  if (!parts.length) return null;
+  const text = parts.join(' · ');
   return (
     <View style={styles.earned} accessible accessibilityLabel={text}>
-      <Mono tone={earned.minutes > 0 ? 'good' : 'muted'}>{text}</Mono>
+      <Mono tone={earned && earned.minutes === 0 && !focus ? 'muted' : 'good'}>{text}</Mono>
     </View>
   );
 }
@@ -53,11 +67,18 @@ export default function SummaryScreen() {
     const last = getLastSummary();
     if (id === 'last' || (last && last.savedId === id)) {
       return last
-        ? { summary: last.summary, wallStart: last.wallStart, saved: last.savedId !== null, demo: !!last.demo, earned: last.earned ?? null }
+        ? {
+            summary: last.summary,
+            wallStart: last.wallStart,
+            saved: last.savedId !== null,
+            demo: !!last.demo,
+            earned: last.earned ?? null,
+            focus: last.focus ?? null,
+          }
         : null;
     }
     const stored = id ? getSession(id) : null;
-    return stored ? { summary: stored.summary, wallStart: stored.row.startedAt, saved: true, demo: false, earned: null } : null;
+    return stored ? { summary: stored.summary, wallStart: stored.row.startedAt, saved: true, demo: false, earned: null, focus: null } : null;
   }, [id]);
 
   if (!data) {
@@ -70,7 +91,7 @@ export default function SummaryScreen() {
     );
   }
 
-  const { summary: s, wallStart, saved, demo, earned } = data;
+  const { summary: s, wallStart, saved, demo, earned, focus } = data;
   const faults = (Object.entries(s.faultCounts) as [RepFault, number][]).sort((a, b) => b[1] - a[1]);
   const misses = (Object.entries(s.missCounts) as [MissReason, number][]).sort((a, b) => b[1] - a[1]);
   const missTotal = misses.reduce((n, [, c]) => n + c, 0);
@@ -92,7 +113,7 @@ export default function SummaryScreen() {
           <ExerciseGlyph exercise={s.exercise ?? 'plank'} size={36} />
           <Label style={{ flexShrink: 1 }}>{header}</Label>
         </View>
-        <EarnedNote earned={earned} />
+        <EarnedNote earned={earned} focus={focus} />
         <PlankResult
           hold={s.hold}
           sides={s.exercise === 'sidePlank' ? (s.holdSides ?? {}) : null}
@@ -123,7 +144,7 @@ export default function SummaryScreen() {
         <ExerciseGlyph exercise={ex} size={36} />
         <Label style={{ flexShrink: 1 }}>{header}</Label>
       </View>
-      <EarnedNote earned={earned} />
+      <EarnedNote earned={earned} focus={focus} />
 
       {s.totalReps === 0 ? (
         <View style={{ gap: space.md }}>

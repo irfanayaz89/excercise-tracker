@@ -66,6 +66,10 @@ export interface DaySummary {
   sets: number;
   unlocks: number;
   overLimit: boolean;
+  /** Minutes in completed or expired workout focus. */
+  focusMin: number;
+  /** Minutes protection was off (access revoked, or the app stopped). */
+  offMin: number;
 }
 
 export function summarizeDays(rules: ScreenTimeRules, days: DayLog[]): DaySummary[] {
@@ -76,5 +80,7 @@ export function summarizeDays(rules: ScreenTimeRules, days: DayLog[]): DaySummar
     sets: d.grants.length,
     unlocks: d.unlocks.length,
     overLimit: rules.dailyLimitMin !== null && d.usedMin >= rules.dailyLimitMin,
+    focusMin: Math.round((d.focuses ?? []).reduce((n, f) => n + Math.max(0, f.to - f.from), 0) / 60_000),
+    offMin: Math.round((d.gaps ?? []).reduce((n, g) => n + Math.max(0, g.to - g.from), 0) / 60_000),
   }));
 }

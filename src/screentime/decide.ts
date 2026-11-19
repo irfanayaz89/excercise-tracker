@@ -1,6 +1,6 @@
 import { effectiveStrictness, strictActive } from './rules';
 import { dayKey, nextMidnight, occurrences, type Zone } from './time';
-import type { Decision, DayLog, LockTime, ScreenTimeRules, Unlock } from './types';
+import type { Decision, DayLog, Focus, LockTime, ScreenTimeRules, Unlock } from './types';
 
 /** Standard: one emergency unlock a day, this long. */
 export const EMERGENCY_MIN = 10;
@@ -48,8 +48,13 @@ function activeLocks(zone: Zone, rules: ScreenTimeRules, now: number): ActiveLoc
   return out;
 }
 
-/** What should happen right now (plan §5). Pure: the platform applies it and calls again at `nextChange`. */
-export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: number): Decision {
+/**
+ * What should happen right now (plan §5). Pure: the platform applies it and calls again at `nextChange`.
+ * A running workout focus blocks the main apps whatever else applies; earned time doesn't open them
+ * during it, but the strictness level's unlock still does (the safety valve).
+ */
+export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: number, focusIn: Focus | null = null): Decision {
+  const focus = focusIn && focusIn.startedAt <= now && now < focusIn.until ? focusIn : null;
   const log = rollDay(zone, logIn, now);
   const mode = effectiveStrictness(rules, now);
   const left = rules.earning.enabled ? earnedLeft(log) : 0;
@@ -73,6 +78,10 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
     if (left > 0) usingEarned = true;
     else reason = 'limit';
   }
+  if (focus) {
+    reason = 'focus';
+    usingEarned = false;
+  }
   if (unlock) {
     reason = null;
     usingEarned = false;
@@ -83,7 +92,7 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   const emergenciesUsed = log.unlocks.filter((u) => u.kind === 'emergency').length;
   const oneMoresUsed = log.unlocks.filter((u) => u.kind === 'one-more').length;
   const capLeft = Math.max(0, rules.earning.dailyCapMin - log.earnedMin);
-  const canEarn = reason !== null && rules.earning.enabled && capLeft > 0 && (reason === 'limit' || blocking.every((a) => a.lock.earnable));
+  const canEarn = reason !== null && reason !== 'focus' && rules.earning.enabled && capLeft > 0 && (reason === 'limit' || blocking.every((a) => a.lock.earnable));
 
   const ownLocks = own
     .filter((a) => !unlock && !(a.lock.earnable && left > 0))
@@ -92,6 +101,7 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   // Next moment the answer may change on its own.
   const candidates = [nextMidnight(zone, now)];
   if (unlock) candidates.push(unlock.until);
+  if (focus) candidates.push(focus.until);
   for (const lock of rules.lockTimes)
     for (const o of occurrences(zone, lock, now, 1)) for (const t of [o.start, o.end]) if (t > now) candidates.push(t);
   if (strictActive(rules, now)) candidates.push(rules.strictUntil!);
@@ -116,6 +126,7 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
       left: Math.max(0, ONE_MORE_PER_DAY - oneMoresUsed),
     },
     ownLocks,
+    focus: focus ? { kind: focus.kind, until: focus.until, strict: focus.strict } : null,
     nextChange: Math.min(...candidates),
   };
 }
@@ -124,9 +135,16 @@ export type UnlockResult =
   { ok: true; log: DayLog; until: number } | { ok: false; log: DayLog; reason: 'not-blocked' | 'not-allowed' | 'used-up' };
 
 /** Use the strictness level's way out: "1 more minute" (Nudge) or the daily emergency unlock (Standard). */
-export function takeUnlock(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, kind: Unlock['kind'], now: number): UnlockResult {
+export function takeUnlock(
+  zone: Zone,
+  rules: ScreenTimeRules,
+  logIn: DayLog,
+  kind: Unlock['kind'],
+  now: number,
+  focus: Focus | null = null,
+): UnlockResult {
   const log = rollDay(zone, logIn, now);
-  const d = decide(zone, rules, log, now);
+  const d = decide(zone, rules, log, now, focus);
   if (!d.blocked && d.ownLocks.length === 0) return { ok: false, log, reason: 'not-blocked' };
   const option = kind === 'emergency' ? d.emergency : d.oneMore;
   const mode = effectiveStrictness(rules, now);

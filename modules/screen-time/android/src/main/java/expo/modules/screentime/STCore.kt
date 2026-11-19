@@ -1,7 +1,13 @@
 package expo.modules.screentime
 
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
+import android.os.PowerManager
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -61,6 +67,10 @@ object STCore {
     val emergenciesLeft: Int,
     val oneMoresLeft: Int,
     val unlockUntil: Double?,
+    /** A workout focus blocks the main apps until then (epoch ms). */
+    val focusUntil: Double?,
+    /** "set" or "timed" (wording only). */
+    val focusKind: String?,
     val locks: List<Lock>,
     val blocked: Sel,
     val allowed: Sel,
@@ -102,6 +112,8 @@ object STCore {
       emergenciesLeft = o.optInt("emergenciesLeft"),
       oneMoresLeft = o.optInt("oneMoresLeft"),
       unlockUntil = if (o.isNull("unlockUntil")) null else o.optDouble("unlockUntil"),
+      focusUntil = if (!o.has("focusUntil") || o.isNull("focusUntil")) null else o.optDouble("focusUntil"),
+      focusKind = if (!o.has("focusKind") || o.isNull("focusKind")) null else o.optString("focusKind"),
       locks = locks,
       blocked = Sel.from(o.optJSONObject("blocked")),
       allowed = Sel.from(o.optJSONObject("allowed")),
@@ -114,6 +126,9 @@ object STCore {
 
   data class Unlock(val kind: String, val from: Double, val until: Double)
 
+  /** A stretch when blocking wasn't running: "stopped" (force stop, Task Manager) or "killed" (e.g. a battery saver). */
+  data class Gap(val from: Long, val to: Long, val kind: String)
+
   data class State(
     var day: String = "",
     /** Seconds the blocked apps were in front today. */
@@ -123,11 +138,15 @@ object STCore {
     var earnedSpentSec: Long = 0,
     val unlocks: MutableList<Unlock> = mutableListOf(),
     var openEarn: Boolean = false,
+    val gaps: MutableList<Gap> = mutableListOf(),
   ) {
     fun toJson(): JSONObject {
       val u = JSONArray()
       for (x in unlocks) u.put(JSONObject().put("kind", x.kind).put("from", x.from).put("until", x.until))
+      val g = JSONArray()
+      for (x in gaps) g.put(JSONObject().put("from", x.from).put("to", x.to).put("kind", x.kind))
       return JSONObject()
+        .put("gaps", g)
         .put("day", day)
         .put("usedMin", usedSec / 60)
         .put("usedSec", usedSec)
@@ -155,12 +174,17 @@ object STCore {
           val x = u.getJSONObject(i)
           s.unlocks.add(Unlock(x.optString("kind"), x.optDouble("from"), x.optDouble("until")))
         }
+        val g = o.optJSONArray("gaps") ?: JSONArray()
+        for (i in 0 until g.length()) {
+          val x = g.getJSONObject(i)
+          s.gaps.add(Gap(x.optLong("from"), x.optLong("to"), x.optString("kind")))
+        }
       }
     }
     val today = dayKey(now)
     if (s.day != today) {
       // A new day: usage and earned time start over (unlocks and an "earn" tap wait for the app).
-      return State(day = today, unlocks = s.unlocks, openEarn = s.openEarn)
+      return State(day = today, unlocks = s.unlocks, openEarn = s.openEarn, gaps = s.gaps)
     }
     return s
   }
@@ -244,6 +268,12 @@ object STCore {
     } else if (limitReached) {
       if (earnedLeftSec > 0) usingEarned = true else reason = "limit"
     }
+    val focusing = (p.focusUntil ?: 0.0) > now
+    if (focusing) {
+      // A workout is running: the main apps stay closed and earned time doesn't open them.
+      reason = "focus"
+      usingEarned = false
+    }
     if (unlocked) {
       reason = null
       usingEarned = false
@@ -252,15 +282,15 @@ object STCore {
     val last = blocking.maxByOrNull { it.second.second }
     val ownBlocked = running.filter { it.first.apps != null && !unlocked && !(it.first.earnable && earnedLeftSec > 0) }.map { it.first }
     val blocked = reason != null
-    val canEarn = blocked && p.earningEnabled && p.earnCapLeftMin > 0 && (reason == "limit" || blocking.all { it.first.earnable })
+    val canEarn = blocked && reason != "focus" && p.earningEnabled && p.earnCapLeftMin > 0 && (reason == "limit" || blocking.all { it.first.earnable })
     val any = blocked || ownBlocked.isNotEmpty()
     val usedEmergencies = st.unlocks.count { it.kind == "emergency" }
     val usedOneMores = st.unlocks.count { it.kind == "one-more" }
     return Status(
       blocked = blocked,
       reason = reason,
-      lockName = last?.first?.name,
-      until = last?.second?.second,
+      lockName = if (reason == "focus") "Workout focus" else last?.first?.name,
+      until = if (reason == "focus") p.focusUntil?.toLong() else last?.second?.second,
       usingEarned = usingEarned,
       earnedLeftSec = earnedLeftSec,
       canEarn = canEarn,
@@ -280,6 +310,79 @@ object STCore {
   /** Counts against the daily limit (the main blocked list, minus allowed apps). */
   fun counts(p: Plan, pkg: String, category: String, self: String) =
     pkg != self && pkg !in p.allowed.apps && p.blocked.contains(pkg, category)
+
+  // ── Was blocking stopped? (research guide, Appendix A F5) ─────────────────
+
+  /** The service writes this every few seconds while it runs. */
+  fun heartbeat(ctx: Context, now: Long = System.currentTimeMillis()) {
+    prefs(ctx).edit().putLong("hb", now).putBoolean("svc", true).apply()
+  }
+
+  /** The service stopped on purpose (no more plan, or turned off): not a gap. */
+  fun stoppedCleanly(ctx: Context) {
+    prefs(ctx).edit().putBoolean("svc", false).apply()
+  }
+
+  /**
+   * Called when Trueline or the service starts. If the service should have been running but its
+   * heartbeat is old, and the phone was in use meanwhile, record the gap: "stopped" when Android
+   * says the user stopped the app (Force stop, Task Manager), otherwise "killed".
+   * The screen-on check avoids counting the phone sleeping as a gap.
+   */
+  fun checkGap(ctx: Context, now: Long = System.currentTimeMillis()) {
+    val pr = prefs(ctx)
+    val hb = pr.getLong("hb", 0L)
+    if (hb == 0L || !pr.getBoolean("svc", false) || now - hb < 60_000) return
+    if (interactiveMs(ctx, hb, now) < 60_000) {
+      heartbeat(ctx, now)
+      return
+    }
+    val kind = if (userStoppedSince(ctx, hb)) "stopped" else "killed"
+    val st = state(ctx, now)
+    if (st.gaps.none { it.from == hb }) st.gaps.add(Gap(hb, now, kind))
+    saveState(ctx, st)
+    heartbeat(ctx, now)
+  }
+
+  /** Milliseconds the screen was on between two moments (from usage events). */
+  private fun interactiveMs(ctx: Context, from: Long, to: Long): Long {
+    val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+    val events = runCatching { usm.queryEvents(from, to) }.getOrNull() ?: return 0L
+    val e = UsageEvents.Event()
+    var on: Long? = null
+    var total = 0L
+    var first = true
+    while (events.hasNextEvent()) {
+      events.getNextEvent(e)
+      when (e.eventType) {
+        UsageEvents.Event.SCREEN_INTERACTIVE -> { if (on == null) on = e.timeStamp; first = false }
+        UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+          // The screen was already on when the gap began.
+          if (first && on == null) on = from
+          on?.let { total += e.timeStamp - it }
+          on = null
+          first = false
+        }
+      }
+    }
+    if (first) {
+      // No screen changes at all: on (or off) the whole time.
+      return if (ctx.getSystemService(PowerManager::class.java).isInteractive) to - from else 0L
+    }
+    on?.let { total += to - it }
+    return total
+  }
+
+  /** Android recorded that the user stopped Trueline (Force stop or Task Manager) after `since`. */
+  private fun userStoppedSince(ctx: Context, since: Long): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+    val am = ctx.getSystemService(ActivityManager::class.java)
+    return runCatching {
+      am.getHistoricalProcessExitReasons(ctx.packageName, 0, 5).any {
+        it.timestamp >= since && it.reason == ApplicationExitInfo.REASON_USER_REQUESTED
+      }
+    }.getOrDefault(false)
+  }
 
   fun takeUnlock(ctx: Context, kind: String, minutes: Int, now: Long = System.currentTimeMillis()) {
     val st = state(ctx, now)

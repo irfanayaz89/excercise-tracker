@@ -233,3 +233,73 @@ describe('screen time store', () => {
     expect(s.days).toHaveLength(1);
   });
 });
+
+describe('workout focus and protection gaps', () => {
+  it('a focus blocks at once, travels to the phone, and finishing the set ends it', () => {
+    const st = setUp();
+    const now = Date.now();
+    expect(st.startFocusNow('set', now)).not.toBeNull();
+    expect(st.getScreenTime().decision).toMatchObject({ blocked: true, reason: 'focus' });
+    expect(mockPhone.plans.at(-1)!.focusUntil).toBe(now + 60 * 60_000);
+    const res = st.endFocusNow('completed', now + 12 * 60_000);
+    expect(res.ended).toBe(true);
+    expect(st.getScreenTime().focus).toBeNull();
+    expect(st.getScreenTime().today.focuses).toEqual([{ from: now, to: now + 12 * 60_000, outcome: 'completed' }]);
+    expect(mockPhone.plans.at(-1)!.focusUntil).toBeNull();
+  });
+
+  it('no focus before screen time is set up', () => {
+    const st = load();
+    expect(st.startFocusNow(30)).toBeNull();
+    expect(mockPhone.plans).toHaveLength(0);
+  });
+
+  it('Strict: leaving the set does not end the focus, and it survives a restart', () => {
+    const st = setUp();
+    const now = Date.now();
+    const r = st.getScreenTime().rules;
+    st.saveRules({ ...r, strictness: 'strict', strictUntil: now + 7 * 24 * 3_600_000 });
+    st.startFocusNow('set', now);
+    expect(st.endFocusNow('abandoned', now + 60_000)).toMatchObject({ ended: false, why: 'strict' });
+    expect(load().getScreenTime().focus).toMatchObject({ kind: 'set', strict: true });
+  });
+
+  it('a focus whose time ran out is settled into history on the next sync', () => {
+    const st = setUp();
+    const now = Date.now();
+    st.startFocusNow(15, now - 20 * 60_000);
+    st.syncScreenTime(now);
+    expect(st.getScreenTime().focus).toBeNull();
+    expect(st.getScreenTime().today.focuses?.[0]).toMatchObject({ outcome: 'expired' });
+  });
+
+  it('access switched off and back on is kept as a gap in history', () => {
+    const st = setUp();
+    const t0 = Date.now();
+    mockPhone.auth = 'denied';
+    st.syncScreenTime(t0);
+    st.syncScreenTime(t0 + 60_000);
+    mockPhone.auth = 'approved';
+    st.syncScreenTime(t0 + 30 * 60_000);
+    expect(st.getScreenTime().today.gaps).toEqual([{ from: t0, to: t0 + 30 * 60_000, kind: 'permission' }]);
+    expect(st.getScreenTime().meta.lostSince).toBeNull();
+  });
+
+  it('stop gaps and token expiry reported by the phone are taken in', () => {
+    const st = setUp();
+    const now = Date.now();
+    const gap = { from: now - 3_600_000, to: now - 1_800_000, kind: 'stopped' as const };
+    mockPhone.report = { ...emptyReport(now), gaps: [gap], tokensExpired: true };
+    st.syncScreenTime(now);
+    expect(st.getScreenTime().today.gaps).toEqual([gap]);
+    expect(st.getScreenTime().meta.tokensExpired).toBe(true);
+    st.clearTokensExpired();
+    expect(st.getScreenTime().meta.tokensExpired).toBe(false);
+  });
+
+  it('the focus choice on the exercise screen is remembered', () => {
+    const st = setUp();
+    st.setFocusChoice(30);
+    expect(load().getScreenTime().meta.focusChoice).toBe(30);
+  });
+});

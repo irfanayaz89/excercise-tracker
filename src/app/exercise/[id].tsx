@@ -9,6 +9,9 @@ import { setupSteps } from '@/features/exercise/setupSteps';
 import { TechniqueSteps } from '@/features/exercise/TechniqueList';
 import { safetyNotes } from '@/features/onboarding/safety';
 import { HistoryList } from '@/features/history/HistoryList';
+import { FOCUS_CHOICES, type FocusChoice } from '@/screentime/focus';
+import { effectiveStrictness } from '@/screentime/rules';
+import { setFocusChoice, useScreenTime } from '@/screentime/store';
 import { difficultyCopy, formatDuration, rotationCopy } from '@/session/copy';
 import { bestFor, dailyTotals, listSessionsFor, listSessionsSince, type SessionRow } from '@/storage/history';
 import { HOLD_TARGETS, TARGETS, useSettings } from '@/storage/settings';
@@ -232,6 +235,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
                 />
               ))}
         </View>
+        <FocusChooser />
         <Button label={`Start ${info.label.toLowerCase()}`} size="lg" onPress={start()} />
         {__DEV__ && (
           <Pressable accessibilityRole="button" onPress={start(true)} hitSlop={8} style={{ alignSelf: 'center' }}>
@@ -253,6 +257,35 @@ function Stat({ label, value }: { label: string; value: string }) {
     <View style={{ flex: 1, gap: 2 }}>
       <Label>{label}</Label>
       <Display size={type.title * 1.4}>{value}</Display>
+    </View>
+  );
+}
+
+/**
+ * Workout focus: block the Screen Time apps while this set runs (research guide §10.4).
+ * Only shown once screen time is set up on a phone that supports it.
+ */
+function FocusChooser() {
+  const st = useScreenTime();
+  if (!st.meta.setUp || st.availability === 'unsupported') return null;
+  const choice = st.meta.focusChoice;
+  const strict = effectiveStrictness(st.rules, st.now) === 'strict';
+  const options: [FocusChoice | null, string][] = [[null, 'Off'], ['set', 'This set'], ...FOCUS_CHOICES.map((m) => [m, `${m} min`] as [FocusChoice, string])];
+  return (
+    <View style={{ gap: space.sm }}>
+      <Label>Focus</Label>
+      <View style={styles.chips}>
+        {options.map(([v, l]) => (
+          <Chip key={l} label={l} selected={choice === v} onPress={() => setFocusChoice(v)} />
+        ))}
+      </View>
+      <Body tone="muted" size={13}>
+        {choice === null
+          ? 'Block your Screen Time apps while you train.'
+          : choice === 'set'
+            ? `Your blocked apps stay closed until the set ends (at most 1 hour)${strict ? '. Strict: leaving early doesn\u2019t end it' : ''}.`
+            : `Your blocked apps stay closed for ${choice} minutes, even after the set${strict ? '. Strict: it can\u2019t be ended early' : ''}.`}
+      </Body>
     </View>
   );
 }

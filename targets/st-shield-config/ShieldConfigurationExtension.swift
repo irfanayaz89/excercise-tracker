@@ -35,6 +35,13 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
     if s.reason == "limit" {
       title = "Today's time is up"
       lines.append("\(app) is past your daily limit.")
+    } else if s.reason == "focus" {
+      title = "Workout in progress"
+      if let until = s.until {
+        let mins = max(1, Int(ceil(until.timeIntervalSinceNow / 60)))
+        let setOnly = STShared.plan?.focusKind == "set"
+        lines.append(setOnly ? "\(app) opens again when the set is done (at most \(mins) min)." : "\(app) opens again in \(mins) min.")
+      }
     } else {
       title = s.lockName.map { "\($0) is on" } ?? "\(app) is locked"
       if let until = s.until {
@@ -60,6 +67,7 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
   private func label(_ b: STShared.ShieldButton, _ s: STShared.Status) -> String {
     switch b {
     case .earn: return "Earn time"
+    case .workout: return "Back to workout"
     case .emergency: return "Emergency: \(STShared.plan?.emergencyMin ?? 10) min"
     case .oneMore: return (STShared.plan?.oneMoreMin ?? 1) == 1 ? "1 more minute" : "\(STShared.plan?.oneMoreMin ?? 1) more minutes"
     case .close: return "Close"

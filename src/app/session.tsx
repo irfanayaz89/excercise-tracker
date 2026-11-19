@@ -1,6 +1,7 @@
 import { useKeepAwake } from 'expo-keep-awake';
 import { router, useFocusEffect, useLocalSearchParams, usePreventRemove } from 'expo-router';
-import { creditSet } from '@/screentime/store';
+import { creditSet, endFocusNow, getScreenTime, startFocusNow } from '@/screentime/store';
+import { focusMinutes } from '@/screentime/focus';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
@@ -158,6 +159,8 @@ function LiveSession({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraKey, setCameraKey] = useState(0);
   const endedRef = useRef(false);
+  /** The set reached its end (summary shown); otherwise leaving the screen abandons any workout focus. */
+  const completedRef = useRef(false);
   const modelRef = useRef('full');
   const ctrlRef = useRef<Controller | null>(null);
   /** The HUD's finish logic (confirm, then save), reused for the Android back button. */
@@ -208,7 +211,17 @@ function LiveSession({
       } catch {
         // Screen time must never get in the way of saving a set.
       }
-      setLastSummary({ summary, wallStart, savedId: id, demo, earned });
+      completedRef.current = true;
+      let focus: { heldMin: number; continuesUntil: number | null } | null = null;
+      try {
+        if (!demo && getScreenTime().focus) {
+          const res = endFocusNow('completed');
+          focus = res.ended ? { heldMin: focusMinutes(res.record), continuesUntil: null } : res.focus ? { heldMin: 0, continuesUntil: res.focus.until } : null;
+        }
+      } catch {
+        // Never let screen time get in the way of the summary.
+      }
+      setLastSummary({ summary, wallStart, savedId: id, demo, earned, focus });
       void c.saveTuningRecording(modelRef.current);
       allowLeaveRef.current?.();
       router.replace({ pathname: '/summary/[id]', params: { id: id ?? 'last' } });
@@ -238,6 +251,27 @@ function LiveSession({
     const sub = AppState.addEventListener('change', (s) => setAppActive(s === 'active'));
     return () => sub.remove();
   }, []);
+
+  // Workout focus: block the user's distracting apps while this set runs (if they turned it on).
+  useEffect(() => {
+    if (demo) return;
+    try {
+      const choice = getScreenTime().meta.focusChoice;
+      if (choice !== null) startFocusNow(choice);
+    } catch {
+      // A set must start even if screen time can't.
+    }
+    return () => {
+      // Left without finishing: a "for this set" focus ends (except in Strict); a timed one keeps going.
+      if (!completedRef.current) {
+        try {
+          endFocusNow('abandoned');
+        } catch {
+          // Ignore: the phone still lifts the block at the focus end.
+        }
+      }
+    };
+  }, [demo]);
 
   const constraints = useMemo(() => [{ fps: 30 }], []);
   const onCameraError = useCallback(

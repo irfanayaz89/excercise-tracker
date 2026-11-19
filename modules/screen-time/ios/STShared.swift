@@ -81,6 +81,12 @@ enum STShared {
     var oneMoresLeft: Int
     /// An unlock already granted in the app (epoch ms).
     var unlockUntil: Double?
+    /// A workout focus blocks the main apps until then (epoch ms).
+    var focusUntil: Double?
+    /// "set" or "timed" (wording only).
+    var focusKind: String?
+    /// Minutes the app knows were used today; the limit is measured on from here.
+    var usedMin: Int?
     var locks: [LockPlan]
     var blocked: Sel
     var allowed: Sel
@@ -103,6 +109,10 @@ enum STShared {
     var earnedArmed: Bool = false
     /// Earned minutes already spent when the current monitoring started.
     var earnedBase: Int = 0
+    /// When earned-time monitoring started (epoch s), to tell real events from early misfires.
+    var earnedArmedAt: Double = 0
+    /// Re-arms after early misfires since earned monitoring last started normally (capped at 3).
+    var earnedRearms: Int = 0
     /// Unlocks taken on the blocked screen since the app last read this state.
     var unlocks: [Unlock] = []
     /// The user tapped "Earn time" on the blocked screen: open the earn screen.
@@ -217,6 +227,12 @@ enum STShared {
     } else if limitReached {
       if earnedLeft > 0 { s.usingEarned = true } else { s.reason = "limit" }
     }
+    let focusing = (p.focusUntil ?? 0) > nowMs
+    if focusing {
+      // A workout is running: the main apps stay closed and earned time doesn't open them.
+      s.reason = "focus"
+      s.usingEarned = false
+    }
     if unlocked {
       s.reason = nil
       s.usingEarned = false
@@ -226,9 +242,13 @@ enum STShared {
       s.lockName = last.0.name
       s.until = last.1.end
     }
+    if s.reason == "focus", let f = p.focusUntil {
+      s.lockName = "Workout focus"
+      s.until = Date(timeIntervalSince1970: f / 1000)
+    }
     s.blocked = s.reason != nil
     s.ownBlocked = running.filter { $0.0.ownApps && !unlocked && !($0.0.earnable && earnedLeft > 0) }.map { $0.0.id }
-    s.canEarn = s.blocked && p.earningEnabled && p.earnCapLeftMin > 0 && (s.reason == "limit" || blocking.allSatisfy { $0.0.earnable })
+    s.canEarn = s.blocked && s.reason != "focus" && p.earningEnabled && p.earnCapLeftMin > 0 && (s.reason == "limit" || blocking.allSatisfy { $0.0.earnable })
     let any = s.blocked || !s.ownBlocked.isEmpty
     let usedEmergencies = st.unlocks.filter { $0.kind == "emergency" }.count
     let usedOneMores = st.unlocks.filter { $0.kind == "one-more" }.count
@@ -239,11 +259,13 @@ enum STShared {
 
   // MARK: Blocked-screen buttons (shared by the shield's text and its actions)
 
-  enum ShieldButton { case earn, emergency, oneMore, close }
+  enum ShieldButton { case earn, workout, emergency, oneMore, close }
 
   /// The blocked screen has a main button and at most one more.
   static func buttons(_ s: Status) -> (primary: ShieldButton, secondary: ShieldButton?) {
     let escape: ShieldButton? = s.emergency ? .emergency : s.oneMore ? .oneMore : nil
+    // During a workout the main button takes the user back to it (it opens Trueline on iOS 26.5+).
+    if s.reason == "focus" { return (.workout, escape ?? .close) }
     if s.canEarn { return (.earn, escape ?? .close) }
     return (.close, escape)
   }
@@ -330,38 +352,32 @@ enum STShared {
     while m <= upTo {
       out[DeviceActivityEvent.Name("\(prefix)\(m)")] = DeviceActivityEvent(
         applications: sel.applicationTokens, categories: sel.categoryTokens, webDomains: sel.webDomainTokens,
-        threshold: DateComponents(minute: m), includesPastActivity: prefix == "u")
+        threshold: DateComponents(minute: m), includesPastActivity: false)
       m += step
     }
     if let f = final, f > 0 {
       out[DeviceActivityEvent.Name("\(prefix)end")] = DeviceActivityEvent(
         applications: sel.applicationTokens, categories: sel.categoryTokens, webDomains: sel.webDomainTokens,
-        threshold: DateComponents(minute: f), includesPastActivity: prefix == "u")
+        threshold: DateComponents(minute: f), includesPastActivity: false)
     }
     return out
   }
 
-  /// (Re)start every schedule: the day (usage and the daily limit) and each lock time's boundaries.
-  /// About 20 schedules are allowed per app: 1 day + up to 8 lock times × 2 + earned + unlock.
+  /// (Re)start every schedule. Apple allows 20 per app:
+  /// day + limit + earned + unlock + focus (5) + 2 per lock time (at most 7) = 19.
   static func scheduleAll() -> [String] {
     var errors: [String] = []
     let center = DeviceActivityCenter()
     center.stopMonitoring(center.activities.filter { $0.rawValue.hasPrefix("st.") && $0.rawValue != "st.earned" && $0.rawValue != "st.unlock" })
     guard #available(iOS 17.4, *) else { return ["Screen Time needs iOS 17.4 or later"] }
-    guard let p = plan, let main = selection("main") else { return errors }
-    let limit = p.dailyLimitMin ?? 0
-    var dayEvents = events(for: main, prefix: "u", upTo: min(600, max(limit, 240)), step: 15, final: nil)
-    if let l = p.dailyLimitMin, l > 0 {
-      dayEvents[DeviceActivityEvent.Name("limit")] = DeviceActivityEvent(
-        applications: main.applicationTokens, categories: main.categoryTokens, webDomains: main.webDomainTokens,
-        threshold: DateComponents(minute: l), includesPastActivity: true)
-    }
+    guard let p = plan else { return errors }
+    // The day schedule has no events: it only wakes the monitor at midnight to start the new day.
     do {
       try center.startMonitoring(
         DeviceActivityName("st.day"),
-        during: DeviceActivitySchedule(intervalStart: comps(0), intervalEnd: comps(23 * 60 + 59, second: 59), repeats: true),
-        events: dayEvents)
+        during: DeviceActivitySchedule(intervalStart: comps(0), intervalEnd: comps(23 * 60 + 59, second: 59), repeats: true))
     } catch { errors.append("day: \(error)") }
+    if let e = armLimit(used: p.usedMin ?? 0, rearms: 0) { errors.append(e) }
     // Lock times only need to wake the extension at their start and end; reapply() decides
     // what's blocked. Each edge gets a 15-minute schedule (Apple's minimum) that begins
     // at the edge, or ends at it when that would run past midnight, so no schedule ever
@@ -376,11 +392,84 @@ enum STShared {
         } catch { errors.append("lock \(l.name) \(i): \(error)") }
       }
     }
+    // A workout focus: wake up when it ends so the block lifts even if Trueline is closed.
+    if let f = p.focusUntil, f > Date().timeIntervalSince1970 * 1000 {
+      if let e = wakeAt(Date(timeIntervalSince1970: f / 1000), name: "st.focus") { errors.append("focus: \(e)") }
+    }
     return errors
   }
 
+  // MARK: Daily limit, with a guard against early events (research guide, Appendix A F1)
+
+  /// What the current limit monitoring was armed with.
+  struct LimitArm: Codable {
+    var day: String
+    /// When it was armed (epoch s); usage can't grow faster than the clock from here.
+    var at: Double
+    /// Minutes already used when armed.
+    var used: Int
+    /// The "limit" threshold: minutes left when armed.
+    var left: Int
+    /// Times it was re-armed after a misfire today.
+    var rearms: Int
+  }
+
+  static var limitArm: LimitArm? {
+    get { load("st.limitArm", LimitArm.self) }
+    set { if let v = newValue { save("st.limitArm", v) } else { defaults?.removeObject(forKey: "st.limitArm") } }
+  }
+
+  /// Watch the blocked apps' usage for the rest of today, counted from now (iOS 26 thresholds
+  /// can fire at once when they include earlier activity, so nothing here does).
+  /// Events: "uM" every 15 minutes of use, and "limit" when the minutes left run out.
+  @discardableResult
+  static func armLimit(used: Int, rearms: Int) -> String? {
+    guard #available(iOS 17.4, *), let p = plan, let main = selection("main") else { return nil }
+    let center = DeviceActivityCenter()
+    center.stopMonitoring([DeviceActivityName("st.limit")])
+    let now = Date()
+    let left = p.dailyLimitMin.map { max(0, $0 - used) } ?? 0
+    var evs = events(for: main, prefix: "u", upTo: 600, step: 15, final: nil)
+    if p.dailyLimitMin != nil, !p.limitReached, left > 0 {
+      evs[DeviceActivityEvent.Name("limit")] = DeviceActivityEvent(
+        applications: main.applicationTokens, categories: main.categoryTokens, webDomains: main.webDomainTokens,
+        threshold: DateComponents(minute: left), includesPastActivity: false)
+    }
+    limitArm = LimitArm(day: dayKey(now), at: now.timeIntervalSince1970, used: used, left: left, rearms: rearms)
+    // Until the end of today; a schedule must last 15 minutes, so late at night it starts a little in the past.
+    let cal = Calendar.current
+    guard let endOfDay = cal.date(bySettingHour: 23, minute: 59, second: 59, of: now) else { return nil }
+    let start = min(now, endOfDay.addingTimeInterval(-16 * 60))
+    let parts: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
+    do {
+      try center.startMonitoring(
+        DeviceActivityName("st.limit"),
+        during: DeviceActivitySchedule(intervalStart: cal.dateComponents(parts, from: start), intervalEnd: cal.dateComponents(parts, from: endOfDay), repeats: false),
+        events: evs)
+      return nil
+    } catch { return "limit: \(error)" }
+  }
+
+  /// A one-off 15-minute schedule that ends at `at` (Apple's minimum length), to wake the monitor then.
+  @discardableResult
+  static func wakeAt(_ at: Date, name: String) -> String? {
+    let cal = Calendar.current
+    let parts: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
+    let center = DeviceActivityCenter()
+    center.stopMonitoring([DeviceActivityName(name)])
+    do {
+      try center.startMonitoring(
+        DeviceActivityName(name),
+        during: DeviceActivitySchedule(
+          intervalStart: cal.dateComponents(parts, from: at.addingTimeInterval(-15 * 60)),
+          intervalEnd: cal.dateComponents(parts, from: at),
+          repeats: false))
+      return nil
+    } catch { return "\(error)" }
+  }
+
   /// Watch earned minutes being spent on the blocked apps, in 5-minute steps and the exact end.
-  static func armEarned(minutes: Int) {
+  static func armEarned(minutes: Int, rearm: Bool = false) {
     guard #available(iOS 17.4, *), minutes > 0, let main = selection("main") else { return }
     let cal = Calendar.current
     let now = Date()
@@ -389,6 +478,10 @@ enum STShared {
     end.hour = 23
     end.minute = 59
     end.second = 59
+    var st = state(now: now)
+    st.earnedArmedAt = now.timeIntervalSince1970
+    st.earnedRearms = rearm ? st.earnedRearms + 1 : 0
+    saveState(st)
     let center = DeviceActivityCenter()
     center.stopMonitoring([DeviceActivityName("st.earned")])
     try? center.startMonitoring(
@@ -404,16 +497,7 @@ enum STShared {
     var st = state(now: now)
     st.unlocks.append(Unlock(kind: kind, from: now.timeIntervalSince1970 * 1000, until: until.timeIntervalSince1970 * 1000))
     saveState(st)
-    let cal = Calendar.current
-    let parts: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
-    let center = DeviceActivityCenter()
-    center.stopMonitoring([DeviceActivityName("st.unlock")])
-    try? center.startMonitoring(
-      DeviceActivityName("st.unlock"),
-      during: DeviceActivitySchedule(
-        intervalStart: cal.dateComponents(parts, from: until.addingTimeInterval(-15 * 60)),
-        intervalEnd: cal.dateComponents(parts, from: until),
-        repeats: false))
+    wakeAt(until, name: "st.unlock")
     reapply(at: now)
   }
 
@@ -427,10 +511,11 @@ enum STShared {
 
   static func onIntervalStart(_ activity: String) {
     if activity == "st.day" {
-      // A new day: usage and earned time start over.
+      // A new day (this also fires when monitoring starts mid-day, so only act on a real new day).
       var st = state()
       st.unlocks = st.unlocks.filter { $0.until > Date().timeIntervalSince1970 * 1000 }
       saveState(st)
+      if limitArm?.day != dayKey(Date()) { armLimit(used: 0, rearms: 0) }
     }
     reapply(lean: 30)
   }
@@ -444,22 +529,46 @@ enum STShared {
     reapply(lean: 30)
   }
 
+  /// Usage can't be more than the time that has passed since monitoring started (plus a minute
+  /// of slack). An event claiming more is one of iOS 26's early misfires.
+  static func plausible(_ minutes: Int, since armedAt: Double, now: Date = Date()) -> Bool {
+    Double(minutes) <= (now.timeIntervalSince1970 - armedAt) / 60 + 1
+  }
+
   static func onEvent(_ event: String, activity: String) {
     var st = state()
-    if activity == "st.day" {
+    let now = Date()
+    if activity == "st.limit", let arm = limitArm, arm.day == dayKey(now) {
       if event == "limit" {
-        st.limitReached = true
-        st.usedMin = max(st.usedMin, plan?.dailyLimitMin ?? 0)
-      } else if event.hasPrefix("u"), let m = Int(event.dropFirst()) {
-        st.usedMin = max(st.usedMin, m)
+        if plausible(arm.left, since: arm.at, now: now) {
+          st.limitReached = true
+          st.usedMin = max(st.usedMin, arm.used + arm.left)
+        } else if arm.rearms < 3 {
+          // Misfire: start measuring again from the usage we know about.
+          saveState(st)
+          armLimit(used: max(arm.used, st.usedMin), rearms: arm.rearms + 1)
+          reapply()
+          return
+        }
+      } else if event.hasPrefix("u"), let m = Int(event.dropFirst()), plausible(m, since: arm.at, now: now) {
+        st.usedMin = max(st.usedMin, arm.used + m)
       }
     } else if activity == "st.earned" {
       let total = max(0, plan?.earnedLeftMin ?? 0)
+      let base = st.earnedBase
       if event == "eend" {
-        st.earnedSpentMin = total
-        st.earnedArmed = false
-      } else if event.hasPrefix("e"), let m = Int(event.dropFirst()) {
-        st.earnedSpentMin = max(st.earnedSpentMin, min(st.earnedBase + m, total))
+        let need = max(0, total - base)
+        if plausible(need, since: st.earnedArmedAt, now: now) {
+          st.earnedSpentMin = total
+          st.earnedArmed = false
+        } else if st.earnedRearms < 3 {
+          // Misfire: watch the same minutes again.
+          saveState(st)
+          armEarned(minutes: need, rearm: true)
+          return
+        }
+      } else if event.hasPrefix("e"), let m = Int(event.dropFirst()), plausible(m, since: st.earnedArmedAt, now: now) {
+        st.earnedSpentMin = max(st.earnedSpentMin, min(base + m, total))
       }
     }
     saveState(st)

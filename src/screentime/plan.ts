@@ -1,7 +1,7 @@
 import { decide, EMERGENCIES_PER_DAY, EMERGENCY_MIN, ONE_MORE_MIN, ONE_MORE_PER_DAY, rollDay } from './decide';
 import { effectiveStrictness } from './rules';
 import { parseHHMM, type Zone } from './time';
-import type { DayLog, ScreenTimeRules, Selection, Unlock } from './types';
+import type { DayLog, Focus, Gap, ScreenTimeRules, Selection, Unlock } from './types';
 
 /**
  * The bridge between the rules engine and the phone's own blocking. The app
@@ -32,6 +32,8 @@ export interface NativePlan {
   day: string;
   dailyLimitMin: number | null;
   limitReached: boolean;
+  /** Minutes already used today, as far as the app knows. iOS measures the rest of the limit from here. */
+  usedMin: number;
   earningEnabled: boolean;
   earnedLeftMin: number;
   earnCapLeftMin: number;
@@ -43,20 +45,25 @@ export interface NativePlan {
   oneMoresLeft: number;
   /** An unlock already taken in the app (epoch ms). */
   unlockUntil: number | null;
+  /** A workout focus blocks the main apps until then (epoch ms). */
+  focusUntil: number | null;
+  /** "set" ends when the set ends; "timed" runs to focusUntil (for the block-screen wording). */
+  focusKind: 'set' | 'timed' | null;
   locks: NativeLock[];
   /** The app lists travel in the plan, so a change to them follows the same strictness rules as any other. */
   blocked: Selection;
   allowed: Selection;
 }
 
-export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: number): NativePlan {
+export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: number, focus: Focus | null = null): NativePlan {
   const log = rollDay(zone, logIn, now);
-  const d = decide(zone, rules, log, now);
+  const d = decide(zone, rules, log, now, focus);
   const used = (kind: Unlock['kind']) => log.unlocks.filter((u) => u.kind === kind).length;
   return {
     day: log.day,
     dailyLimitMin: rules.dailyLimitMin,
     limitReached: d.limitLeftMin !== null && d.limitLeftMin <= 0,
+    usedMin: Math.round(log.usedMin),
     earningEnabled: rules.earning.enabled,
     earnedLeftMin: d.earnedLeftMin,
     earnCapLeftMin: Math.max(0, rules.earning.dailyCapMin - log.earnedMin),
@@ -66,6 +73,8 @@ export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, 
     emergenciesLeft: Math.max(0, EMERGENCIES_PER_DAY - used('emergency')),
     oneMoresLeft: Math.max(0, ONE_MORE_PER_DAY - used('one-more')),
     unlockUntil: d.unlockedUntil,
+    focusUntil: d.focus ? d.focus.until : null,
+    focusKind: d.focus ? d.focus.kind : null,
     locks: rules.lockTimes.map((l) => ({
       id: l.id,
       name: l.name,
@@ -94,6 +103,10 @@ export interface NativeReport {
   unlocks: Unlock[];
   /** "Earn time" was tapped on the blocked screen. */
   openEarn: boolean;
+  /** Android: times the blocking service wasn't running (force stop, Task Manager, killed). */
+  gaps?: Gap[];
+  /** iOS 26.5+: the system said stored app tokens expired, so the lists must be picked again. */
+  tokensExpired?: boolean;
 }
 
 export function parseReport(json: string): NativeReport | null {
@@ -111,13 +124,25 @@ export function parseReport(json: string): NativeReport | null {
             u.until > u.from,
         )
       : [];
+    const gaps = Array.isArray(o.gaps)
+      ? o.gaps.filter(
+          (g): g is Gap =>
+            !!g &&
+            (g.kind === 'stopped' || g.kind === 'killed' || g.kind === 'permission') &&
+            typeof g.from === 'number' &&
+            typeof g.to === 'number' &&
+            g.to > g.from,
+        )
+      : [];
     return {
       day: o.day,
+      gaps,
       usedMin: n(o.usedMin),
       limitReached: o.limitReached === true,
       earnedSpentMin: n(o.earnedSpentMin),
       unlocks,
       openEarn: o.openEarn === true,
+      tokensExpired: o.tokensExpired === true,
     };
   } catch {
     return null;
@@ -142,9 +167,17 @@ export function mergeReport(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, r
       seen.add(`${u.kind}:${u.from}`);
     }
   }
-  if (report.day !== log.day) return { ...log, unlocks };
+  const gaps = mergeGaps(log.gaps ?? [], report.gaps ?? []);
+  if (report.day !== log.day) return { ...log, unlocks, ...(gaps.length ? { gaps } : {}) };
   let usedMin = Math.max(log.usedMin, report.usedMin);
   if (report.limitReached && rules.dailyLimitMin !== null) usedMin = Math.max(usedMin, rules.dailyLimitMin);
   const earnedUsedMin = Math.min(log.earnedMin, log.earnedUsedMin + report.earnedSpentMin);
-  return { ...log, usedMin, earnedUsedMin, unlocks };
+  return { ...log, usedMin, earnedUsedMin, unlocks, ...(gaps.length ? { gaps } : {}) };
+}
+
+/** Add gaps, once each (a gap is identified by its start). */
+export function mergeGaps(have: Gap[], add: Gap[]): Gap[] {
+  const out = [...have];
+  for (const g of add) if (!out.some((x) => x.from === g.from)) out.push(g);
+  return out.sort((a, b) => a.from - b.from);
 }

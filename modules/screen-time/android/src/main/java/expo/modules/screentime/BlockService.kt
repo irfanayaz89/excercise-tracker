@@ -13,8 +13,8 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
-import android.os.Looper
 import android.os.PowerManager
 import java.text.DateFormat
 import java.util.Date
@@ -26,13 +26,16 @@ import java.util.Date
  * A foreground service (with its ongoing notification) so Android keeps it alive.
  */
 class BlockService : Service() {
-  private val handler = Handler(Looper.getMainLooper())
+  /** The once-a-second check runs off the main thread, so it never competes with Trueline's UI. */
+  private val thread = HandlerThread("trueline-block").apply { start() }
+  private val handler = Handler(thread.looper)
   private var running = false
   private var lastTick = 0L
   private var lastPkg: String? = null
   private var lastShown = 0L
   private var unsaved = 0
   private var lastNote: String? = null
+  private var lastBeat = 0L
   private val categories = mutableMapOf<String, String>()
 
   private val tick = object : Runnable {
@@ -50,6 +53,11 @@ class BlockService : Service() {
     nm.createNotificationChannel(NotificationChannel(CHANNEL, "Screen time", NotificationManager.IMPORTANCE_LOW))
     val n = note("Screen time is on")
     if (Build.VERSION.SDK_INT >= 34) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(ID, n)
+    // Restarted (after a reboot, or Trueline opened after a force stop): note any gap, then beat again.
+    handler.post {
+      runCatching { STCore.checkGap(this) }
+      STCore.heartbeat(this)
+    }
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -61,8 +69,11 @@ class BlockService : Service() {
   }
 
   override fun onDestroy() {
+    // Only a deliberate stop gets here; a force stop or Task Manager stop kills the process instead.
+    STCore.stoppedCleanly(this)
     running = false
     handler.removeCallbacks(tick)
+    thread.quitSafely()
     super.onDestroy()
   }
 
@@ -75,6 +86,10 @@ class BlockService : Service() {
     val interactive = getSystemService(PowerManager::class.java).isInteractive
     val dt = if (lastTick == 0L) 0L else ((now - lastTick) / 1000).coerceIn(0L, 5L)
     lastTick = now
+    if (now - lastBeat >= 5_000) {
+      lastBeat = now
+      STCore.heartbeat(this, now)
+    }
     if (!interactive) return
     val pkg = foreground(now) ?: lastPkg
     lastPkg = pkg

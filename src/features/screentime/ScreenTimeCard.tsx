@@ -39,9 +39,11 @@ export function ScreenTimeCard({ guard }: { guard: (fn: () => void) => () => voi
   const status = lost
     ? null
     : d.blocked
-      ? d.reason === 'lock' && d.lock
-        ? `Locked: ${d.lock.name} until ${formatClock(deviceZone, d.lock.until, now)}`
-        : "Today's time is used up"
+      ? d.reason === 'focus' && d.focus
+        ? `Workout focus until ${formatClock(deviceZone, d.focus.until, now)}`
+        : d.reason === 'lock' && d.lock
+          ? `Locked: ${d.lock.name} until ${formatClock(deviceZone, d.lock.until, now)}`
+          : "Today's time is used up"
       : d.usingEarned
         ? `Open on earned time: ${formatMin(d.earnedLeftMin)} left`
         : d.unlockedUntil

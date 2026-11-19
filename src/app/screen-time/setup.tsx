@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { AppState, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenTime } from '../../../modules/screen-time/src';
-import { countLabel, pickApps } from '@/screentime/edit';
+import { countLabel, pickApps, selectionProblem } from '@/screentime/edit';
 import { DEFAULT_STRICT_DAYS, describeLock, LOCK_PRESETS, startStrict } from '@/screentime/rules';
 import { availability, getScreenTime, markSetUp, saveRules, syncScreenTime } from '@/screentime/store';
 import { formatMin } from '@/screentime/summary';
@@ -41,15 +41,24 @@ export default function ScreenTimeSetup() {
   }));
   const [access, setAccess] = useState(availability());
   const [busy, setBusy] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+  const [batteryOk, setBatteryOk] = useState(() => ScreenTime?.batteryUnrestricted?.() ?? false);
   const [asked, setAsked] = useState(false);
   // Android grants access in Settings screens: check again when the user comes back.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') setAccess(availability());
+      if (s === 'active') {
+        setAccess(availability());
+        setBatteryOk(ScreenTime?.batteryUnrestricted?.() ?? false);
+      }
     });
     return () => sub.remove();
   }, []);
-  const next = () => setStep(STEPS[Math.min(STEPS.length - 1, STEPS.indexOf(step) + 1)]);
+  const next = () => {
+    setPickError(null);
+    goStep();
+  };
+  const goStep = () => setStep(STEPS[Math.min(STEPS.length - 1, STEPS.indexOf(step) + 1)]);
   const back = () => (STEPS.indexOf(step) === 0 || reconnect ? router.back() : setStep(STEPS[STEPS.indexOf(step) - 1]));
   const set = (patch: Partial<ScreenTimeRules>) => setRules((r) => ({ ...r, ...patch }));
 
@@ -143,9 +152,13 @@ export default function ScreenTimeSetup() {
           {access === 'ready' && Platform.OS === 'android' && (
             <>
               <Body tone="muted" size={14}>
-                Some phones stop apps running in the background to save battery, which would stop blocking. Let Trueline keep running:
+                {batteryOk
+                  ? 'Background running is allowed: battery savers will leave blocking alone.'
+                  : "Some phones stop apps in the background to save battery, which would stop blocking. In the list that opens, find Trueline and choose \u201cDon't optimise\u201d (or \u201cUnrestricted\u201d)."}
               </Body>
-              <Button variant="ghost" size="sm" label="Allow background running" onPress={() => ScreenTime?.openSettings?.('battery')} />
+              {!batteryOk && (
+                <Button variant="ghost" size="sm" label="Open battery settings" onPress={() => ScreenTime?.openSettings?.('battery')} />
+              )}
             </>
           )}
           {access === 'ready' && !reconnect && <Button variant="ghost" label="Next" onPress={next} />}
@@ -161,9 +174,17 @@ export default function ScreenTimeSetup() {
             label="Pick apps"
             onPress={guard(async () => {
               const picked = await pickApps('Blocked apps', rules.blocked);
-              if (picked) set({ blocked: picked });
+              if (!picked) return;
+              const bad = selectionProblem(picked);
+              setPickError(bad);
+              if (!bad) set({ blocked: picked });
             })}
           />
+          {pickError && (
+            <Body tone="cue" size={14}>
+              {pickError}
+            </Body>
+          )}
           <Button label="Next" disabled={countLabel(rules.blocked) === 'None picked'} onPress={next} />
         </Block>
       )}
@@ -179,9 +200,17 @@ export default function ScreenTimeSetup() {
             label="Pick apps"
             onPress={guard(async () => {
               const picked = await pickApps('Always allowed', rules.allowed);
-              if (picked) set({ allowed: picked });
+              if (!picked) return;
+              const bad = selectionProblem(picked);
+              setPickError(bad);
+              if (!bad) set({ allowed: picked });
             })}
           />
+          {pickError && (
+            <Body tone="cue" size={14}>
+              {pickError}
+            </Body>
+          )}
           <Button label="Next" onPress={next} />
         </Block>
       )}

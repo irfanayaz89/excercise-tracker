@@ -9,8 +9,19 @@ import UserNotifications
 /// decides; this module stores the plan where the extensions can read it,
 /// applies blocks, and (re)starts the schedules. See STShared.swift.
 public class ScreenTimeModule: Module {
+  private var expiryObserver: Any?
+
   public func definition() -> ModuleDefinition {
     Name("ScreenTime")
+
+    // iOS 26.5+: stored app tokens can expire. Remember it, so the app asks the user to pick again.
+    OnCreate {
+      if #available(iOS 26.5, *) {
+        self.expiryObserver = NotificationCenter.default.addObserver(of: ManagedSettingsStore.self, for: .tokensDidExpire) { _ in
+          STShared.defaults?.set(true, forKey: "st.tokensExpired")
+        }
+      }
+    }
 
     /// Only builds made with SCREEN_TIME=1 carry the Family Controls entitlement (see app.config.js).
     Function("isSupported") { () -> Bool in
@@ -79,7 +90,12 @@ public class ScreenTimeModule: Module {
     /// blocked-screen unlocks and "earn time" taps). Clears the one-off parts.
     Function("takeState") { () -> String in
       let st = STShared.state()
-      let out = (try? JSONEncoder().encode(st)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+      var dict = (try? JSONEncoder().encode(st)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+      if STShared.defaults?.bool(forKey: "st.tokensExpired") == true {
+        dict["tokensExpired"] = true
+        STShared.defaults?.removeObject(forKey: "st.tokensExpired")
+      }
+      let out = (try? JSONSerialization.data(withJSONObject: dict)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
       var cleared = st
       cleared.unlocks = []
       cleared.openEarn = false
