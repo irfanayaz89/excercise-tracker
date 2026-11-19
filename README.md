@@ -277,6 +277,10 @@ Time features). Full design: [docs/SCREEN_TIME_PLAN.md](docs/SCREEN_TIME_PLAN.md
 - **Lock times** (custom schedules such as Sleep 22:00–07:00 or Work Mon–Fri): the apps
   don't open at all. Each one can use its own app list and can allow earned time or not.
   "Skip next" skips one night or day.
+- **Workout Focus**: on an exercise's screen, choose Off, This set, or 15 / 30 / 45 / 60 min.
+  The blocked apps stay closed during the set (or for the chosen time); earned time doesn't
+  open them, and every focus has an end the phone knows about, so nobody stays locked out.
+  In Strict, leaving the set early doesn't end it.
 - **Earning**: every finished, verified set adds minutes for today (1 min per clean push-up,
   ½ per crunch, 2 min per 10 s of plank in good form; flagged reps earn half; demo sets
   never earn), up to a daily cap. The summary shows "+18 min screen time".
@@ -284,6 +288,8 @@ Time features). Full design: [docs/SCREEN_TIME_PLAN.md](docs/SCREEN_TIME_PLAN.md
   (making things easier waits until midnight, one 10-minute emergency unlock a day),
   Strict (for 1–30 days: no unlocks, apps can't come off the list, easing waits 24 h; end
   early with 100 verified push-ups).
+- **History** shows time in focus and any time protection was off (access revoked, or the
+  Android app stopped from Settings or the Task Manager).
 - **Blocked screen** with "Earn time" (opens Trueline's earn screen), the strictness level's
   unlock, or Close. Home card, two weeks of history, and a red banner if access is switched off.
 

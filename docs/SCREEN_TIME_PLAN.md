@@ -342,6 +342,20 @@ Not done here:
   and demo video are still to do before release.
 - Earning from a real set was checked by tests, not on a device (sets need a person on camera).
 
+**Follow-up after the research guide (docs/research), November 2026.** These items are now built:
+
+- **F1:** daily-limit misfire guard on iOS. Usage is measured from when monitoring is armed
+  (never including earlier activity), and events claiming more use than the time that has
+  passed are re-armed (at most 3 times a day).
+- **F2:** the Android battery step opens the general settings page.
+- **F3:** iOS 26.5 token expiry asks the user to pick the apps again.
+- **F4:** a list of more than 50 single apps is refused on iPhone.
+- **F5:** Android force stop and Task Manager stop are recorded as gaps in history, from a
+  heartbeat plus Android's exit reasons, counted only while the screen was on.
+- **F6:** Workout Focus Mode, on the exercise screen and the session.
+- **F7:** the Apple request text (§14).
+- **F8:** lock times are capped at 7, so the iOS schedules fit in 20.
+
 | Phase         | Work                                                                                                                              | Rough effort             | Done when                                           |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | --------------------------------------------------- |
 | **0**         | Account holder requests Family Controls (Distribution) for the app + 3 extensions (+1 report). Draft in §14                       | Days to weeks of waiting | Status "Assigned" for all                           |
@@ -377,13 +391,32 @@ build before Apple approves; approval is only needed for TestFlight and the App 
 
 ## 14. Apple permission request (draft)
 
-> **App:** Trueline (com.exercisetracker.trueline) and its extensions
-> (com.exercisetracker.trueline.activity-monitor, .shield-config, .shield-action[, .activity-report]).
+Rewritten for the developer agreement's March 2026 rule (3.3.3(P)): an app using Family
+Controls must have personal device-usage management (or parental supervision) as a primary
+purpose. Trueline's must therefore read as exercise **and** personal device-usage management,
+not as a fitness app with blocking added on.
+
+> **App:** Trueline (com.exercisetracker.trueline) and its Screen Time extensions:
+> com.exercisetracker.trueline.st-monitor (DeviceActivityMonitor),
+> com.exercisetracker.trueline.st-shield-config (ShieldConfiguration) and
+> com.exercisetracker.trueline.st-shield-action (ShieldAction).
 >
-> **Use:** Trueline is a fitness app that helps people manage their own screen
-> time. With their consent, users choose apps to limit, set daily limits and
-> times when those apps are unavailable, and can earn extra time by completing
-> exercise sets that Trueline verifies with on-device pose tracking. Authorization
-> is requested for the individual (`.individual`), never for monitoring others.
-> App selections stay as opaque tokens on the device; no usage data or app
-> information is collected, transmitted or used for analytics or advertising.
+> **Primary purpose:** Trueline helps people manage how they use their own iPhone and replace
+> scrolling with exercise. Managing personal device usage is one of its two core functions,
+> alongside the exercise counting itself, and is part of onboarding, the Home screen and every
+> workout.
+>
+> **What users do:**
+> - Choose the apps and websites they want to limit.
+> - Set a daily limit and times when those apps don't open (for example while sleeping).
+> - Block them during a workout (Workout Focus).
+> - Earn extra minutes by completing exercise sets, which Trueline verifies on the device with
+>   pose tracking.
+> - Choose how strict the rules are, including an emergency unlock.
+>
+> **Authorization:** `.individual` only. Each person manages their own device; Trueline never
+> monitors anyone else and has no account, server or remote view.
+>
+> **Data:** App and website selections stay as opaque tokens on the device. No usage data, app
+> information or Screen Time data is collected, transmitted, shared or used for analytics or
+> advertising. The blocking itself is never sold or placed behind a payment (guideline 4.10).
