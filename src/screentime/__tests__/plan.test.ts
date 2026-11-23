@@ -64,7 +64,7 @@ describe('the plan sent to the phone', () => {
         { kind: 'one-more', from: NOON - HOUR, until: NOON - HOUR + MIN },
       ],
     });
-    expect(toNativePlan(london, rules(), used, NOON)).toMatchObject({ emergenciesLeft: 0, oneMoresLeft: 2, emergencyMin: 10, oneMoreMin: 1 });
+    expect(toNativePlan(london, rules(), used, NOON)).toMatchObject({ emergenciesLeft: 0, oneMoresLeft: 2, emergencyMin: 10, oneMoreMin: 1, emergenciesPerDay: 1, oneMoresPerDay: 3 });
   });
 
   it('passes on an unlock that is running', () => {

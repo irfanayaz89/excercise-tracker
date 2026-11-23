@@ -19,6 +19,12 @@ const mockPhone = {
   report: null as NativeReport | null,
   unlocks: [] as { kind: string; minutes: number }[],
   stopped: 0,
+  /** What the phone does when asked for an unlock: record it, stamped with its own clock. */
+  takeUnlock: (kind: string, minutes: number): void => {
+    mockPhone.unlocks.push({ kind, minutes });
+    const now = Date.now();
+    mockPhone.report = { ...(mockPhone.report ?? emptyReport(now)), unlocks: [{ kind: kind as 'emergency', from: now, until: now + minutes * 60_000 }] };
+  },
 };
 
 jest.mock('expo-sqlite/kv-store', () => ({
@@ -38,11 +44,7 @@ jest.mock('../../../modules/screen-time/src', () => ({
       mockPhone.report = null;
       return JSON.stringify(r ?? { day: '', usedMin: 0, limitReached: false, earnedSpentMin: 0, unlocks: [], openEarn: false });
     },
-    takeUnlock: (kind: string, minutes: number) => {
-      mockPhone.unlocks.push({ kind, minutes });
-      const now = Date.now();
-      mockPhone.report = { ...(mockPhone.report ?? emptyReport(now)), unlocks: [{ kind: kind as 'emergency', from: now, until: now + minutes * 60_000 }] };
-    },
+    takeUnlock: (kind: string, minutes: number) => mockPhone.takeUnlock(kind, minutes),
     stopAll: () => void mockPhone.stopped++,
   },
 }));
@@ -184,6 +186,33 @@ describe('screen time store', () => {
     expect(s.decision.blocked).toBe(false);
     expect(s.today.unlocks).toHaveLength(1);
     expect(st.unlockNow('emergency').ok).toBe(false);
+  });
+
+  // The phone stamps an unlock with its own clock, after the app has read the time, and iOS stamps
+  // it in fractions of a millisecond. Either way the app must see the unlock as already started.
+  it.each([
+    ['a millisecond later', true],
+    ['later within the same millisecond', false],
+  ])("an unlock the phone stamps %s than the app's clock still counts as started", (_name, ticking) => {
+    const st = setUp();
+    const start = Date.now();
+    mockPhone.report = { ...emptyReport(start), usedMin: 60, limitReached: true };
+    st.syncScreenTime(start);
+    let tick = 0;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => (ticking ? start + ++tick : start));
+    const takeUnlock = mockPhone.takeUnlock;
+    mockPhone.takeUnlock = (kind, minutes) => {
+      const from = Date.now() + 0.6;
+      mockPhone.report = { ...emptyReport(start), unlocks: [{ kind: kind as 'emergency', from, until: from + minutes * 60_000 }] };
+    };
+    try {
+      expect(st.unlockNow('emergency').ok).toBe(true);
+      expect(st.getScreenTime().decision).toMatchObject({ blocked: false });
+      expect(st.getScreenTime().today.unlocks).toHaveLength(1);
+    } finally {
+      clock.mockRestore();
+      mockPhone.takeUnlock = takeUnlock;
+    }
   });
 
   it('a change that makes things easier waits, and is applied by the first sync after its time', () => {

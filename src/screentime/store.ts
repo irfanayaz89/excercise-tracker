@@ -293,7 +293,9 @@ export function unlockNow(kind: Unlock['kind'], now = Date.now()) {
   } else {
     publish({ ...s, days: withToday(s.days, res.log) });
   }
-  syncScreenTime(now);
+  // The phone stamps the unlock with its own clock, a moment after `now`. Read it back with a clock
+  // that isn't earlier, or the unlock looks like it hasn't started and the app still shows "blocked".
+  syncScreenTime(Math.max(now, Date.now()));
   return res;
 }
 

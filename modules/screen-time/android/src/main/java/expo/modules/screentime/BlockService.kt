@@ -34,6 +34,14 @@ class BlockService : Service() {
   private var lastPkg: String? = null
   private var lastShown = 0L
   private var unsaved = 0
+  /** Seconds counted since the last save. The saved state is re-read every second (the app may
+   *  have changed it), so what hasn't been saved yet is carried here and added back each time. */
+  private var pendingUsed = 0L
+  private var pendingEarned = 0L
+  private var pendingDay = ""
+  /** Activities that resumed and haven't paused since ("package/class" to when), and the newest event read. */
+  private val resumed = mutableMapOf<String, Long>()
+  private var lastEventAt = 0L
   private var lastNote: String? = null
   private var lastBeat = 0L
   private val categories = mutableMapOf<String, String>()
@@ -94,25 +102,44 @@ class BlockService : Service() {
     val pkg = foreground(now) ?: lastPkg
     lastPkg = pkg
     val st = STCore.state(this, now)
+    // A new day starts from zero: yesterday's unsaved seconds don't carry over.
+    if (st.day != pendingDay) {
+      pendingDay = st.day
+      pendingUsed = 0
+      pendingEarned = 0
+    }
+    st.usedSec += pendingUsed
+    st.earnedSpentSec += pendingEarned
+    val save = {
+      STCore.saveState(this, st)
+      unsaved = 0
+      pendingUsed = 0
+      pendingEarned = 0
+    }
     var s = STCore.status(p, st, now)
     if (pkg != null) {
       val cat = category(pkg)
       if (dt > 0 && STCore.counts(p, pkg, cat, packageName)) {
-        if (s.usingEarned) st.earnedSpentSec += dt else st.usedSec += dt
+        if (s.usingEarned) {
+          st.earnedSpentSec += dt
+          pendingEarned += dt
+        } else {
+          st.usedSec += dt
+          pendingUsed += dt
+        }
         val limit = p.dailyLimitMin
         val crossed = limit != null && !st.limitReached && st.usedSec >= limit * 60L
         if (crossed) st.limitReached = true
         // Saved every 10 s (and at once when something changes what's blocked).
-        if (++unsaved >= 10 || crossed || (s.usingEarned && st.earnedSpentSec >= p.earnedLeftMin * 60L)) {
-          STCore.saveState(this, st)
-          unsaved = 0
-        }
+        if (++unsaved >= 10 || crossed || (s.usingEarned && st.earnedSpentSec >= p.earnedLeftMin * 60L)) save()
         s = STCore.status(p, st, now)
+      } else if (pendingUsed + pendingEarned > 0) {
+        // Left the app: write the last few seconds down now.
+        save()
       }
       if (STCore.blocks(p, s, pkg, cat, packageName) && now - lastShown > 1500) {
         lastShown = now
-        STCore.saveState(this, st)
-        unsaved = 0
+        save()
         startActivity(
           Intent(this, BlockActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
@@ -120,9 +147,11 @@ class BlockService : Service() {
         )
       }
     }
+    val clock = { at: Long -> DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at)) }
     val text = when {
-      s.blocked && s.reason == "lock" && s.until != null ->
-        "${s.lockName ?: "Lock time"} until ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(s.until))}"
+      s.unlockedUntil != null -> "Unlocked until ${clock(s.unlockedUntil)}"
+      // A lock time or a workout focus: both have a name and an end.
+      s.blocked && s.until != null && (s.reason == "lock" || s.reason == "focus") -> "${s.lockName ?: "Lock time"} until ${clock(s.until)}"
       s.blocked -> "Today's time is used up"
       s.usingEarned -> "Earned time: ${s.earnedLeftSec / 60} min left"
       else -> p.dailyLimitMin?.let { "${maxOf(0L, it - st.usedSec / 60)} min left today" } ?: "Screen time is on"
@@ -133,17 +162,31 @@ class BlockService : Service() {
     }
   }
 
-  /** The app most recently brought to the front, from the last few seconds of usage events. */
+  /**
+   * The app in front, worked out from the system's activity events. Taking "the last app that
+   * resumed" isn't enough: an app in the background can resume and pause again in the same instant
+   * (the launcher does) without ever coming to the front. So this keeps the set of activities that
+   * resumed and haven't paused since, and answers with the most recent of those.
+   */
   private fun foreground(now: Long): String? {
     val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-    val events = usm.queryEvents(now - 10_000, now)
+    // The first look after the service starts (reboot, app update) goes back far enough to find an
+    // app that was already open. After that, only what is new, with a small overlap: an event can
+    // be recorded a moment late, and replaying one is harmless (each activity keeps its last event).
+    val since = if (lastEventAt == 0L) now - 12 * 3_600_000L else lastEventAt - 2_000
+    val events = usm.queryEvents(since, now)
     val e = UsageEvents.Event()
-    var pkg: String? = null
     while (events.hasNextEvent()) {
       events.getNextEvent(e)
-      if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED) pkg = e.packageName
+      val key = "${e.packageName}/${e.className}"
+      when (e.eventType) {
+        UsageEvents.Event.ACTIVITY_RESUMED -> resumed[key] = e.timeStamp
+        UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED -> resumed.remove(key)
+      }
+      if (e.timeStamp > lastEventAt) lastEventAt = e.timeStamp
     }
-    return pkg
+    if (lastEventAt == 0L) lastEventAt = now
+    return resumed.maxByOrNull { it.value }?.key?.substringBefore('/')
   }
 
   private fun category(pkg: String): String =

@@ -43,6 +43,9 @@ export interface NativePlan {
   oneMoreMin: number;
   emergenciesLeft: number;
   oneMoresLeft: number;
+  /** The full daily allowance: what the phone falls back to on a new day the app hasn't seen yet. */
+  emergenciesPerDay: number;
+  oneMoresPerDay: number;
   /** An unlock already taken in the app (epoch ms). */
   unlockUntil: number | null;
   /** A workout focus blocks the main apps until then (epoch ms). */
@@ -72,6 +75,8 @@ export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, 
     oneMoreMin: ONE_MORE_MIN,
     emergenciesLeft: Math.max(0, EMERGENCIES_PER_DAY - used('emergency')),
     oneMoresLeft: Math.max(0, ONE_MORE_PER_DAY - used('one-more')),
+    emergenciesPerDay: EMERGENCIES_PER_DAY,
+    oneMoresPerDay: ONE_MORE_PER_DAY,
     unlockUntil: d.unlockedUntil,
     focusUntil: d.focus ? d.focus.until : null,
     focusKind: d.focus ? d.focus.kind : null,
@@ -123,6 +128,8 @@ export function parseReport(json: string): NativeReport | null {
             typeof u.until === 'number' &&
             u.until > u.from,
         )
+          // iOS reports fractional milliseconds; whole ones compare cleanly with the app's clock.
+          .map((u) => ({ ...u, from: Math.floor(u.from) }))
       : [];
     const gaps = Array.isArray(o.gaps)
       ? o.gaps.filter(

@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { ScreenTime } from '../../modules/screen-time/src';
 import { MAX_APPS, requestChange, type ChangeResult, type RefusalReason } from './rules';
 import { getScreenTime, saveRules } from './store';
+import { formatClock } from './summary';
 import { deviceZone } from './time';
 import type { RulesCore, Selection } from './types';
 
@@ -19,12 +20,13 @@ export function changeRules(next: RulesCore, now = Date.now()): ChangeResult {
 
 /** One line telling the user what happened to their change. */
 export function describeChange(res: ChangeResult, now = Date.now()): string | null {
-  if (res.result === 'applied') return null;
+  // A stricter change replaces an easier one that was still waiting: say so, or it vanishes without a word.
+  if (res.result === 'applied') return res.cancelledPending ? 'Saved. The easier change that was waiting to start has been cancelled.' : null;
   if (res.result === 'refused') return REFUSALS[res.reason];
-  const hours = Math.round((res.effectiveAt - now) / 3_600_000);
-  const when = new Date(res.effectiveAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return hours >= 20
-    ? `That makes things easier on you, so it starts in 24 hours (${new Date(res.effectiveAt).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}).`
+  // Same clock wording as everywhere else in the app ("tomorrow 00:00"), not the phone's own format.
+  const when = formatClock(deviceZone, res.effectiveAt, now);
+  return res.effectiveAt - now >= 20 * 3_600_000
+    ? `That makes things easier on you, so it starts in 24 hours (${when}).`
     : `That makes things easier on you, so it starts at midnight (${when}).`;
 }
 

@@ -66,6 +66,9 @@ object STCore {
     val oneMoreMin: Int,
     val emergenciesLeft: Int,
     val oneMoresLeft: Int,
+    /** The full daily allowance, used on a new day the app hasn't sent a plan for yet. */
+    val emergenciesPerDay: Int,
+    val oneMoresPerDay: Int,
     val unlockUntil: Double?,
     /** A workout focus blocks the main apps until then (epoch ms). */
     val focusUntil: Double?,
@@ -111,6 +114,8 @@ object STCore {
       oneMoreMin = o.optInt("oneMoreMin", 1),
       emergenciesLeft = o.optInt("emergenciesLeft"),
       oneMoresLeft = o.optInt("oneMoresLeft"),
+      emergenciesPerDay = o.optInt("emergenciesPerDay", 1),
+      oneMoresPerDay = o.optInt("oneMoresPerDay", 3),
       unlockUntil = if (o.isNull("unlockUntil")) null else o.optDouble("unlockUntil"),
       focusUntil = if (!o.has("focusUntil") || o.isNull("focusUntil")) null else o.optDouble("focusUntil"),
       focusKind = if (!o.has("focusKind") || o.isNull("focusKind")) null else o.optString("focusKind"),
@@ -182,8 +187,9 @@ object STCore {
       }
     }
     val today = dayKey(now)
-    if (s.day != today) {
+    if (today > s.day) {
       // A new day: usage and earned time start over (unlocks and an "earn" tap wait for the app).
+      // Only a later day counts: if the clock is moved back, the day already used up stays used up.
       return State(day = today, unlocks = s.unlocks, openEarn = s.openEarn, gaps = s.gaps)
     }
     return s
@@ -244,6 +250,8 @@ object STCore {
     val oneMore: Boolean = false,
     /** Own-app lock times blocking now (their own lists). */
     val ownBlocked: List<Lock> = emptyList(),
+    /** An emergency unlock or "1 more minute" is running until then. */
+    val unlockedUntil: Long? = null,
   )
 
   fun status(p: Plan?, st: State, now: Long): Status {
@@ -253,7 +261,9 @@ object STCore {
     val earnedLeftSec = if (p.earningEnabled && planToday) maxOf(0L, p.earnedLeftMin * 60L - st.earnedSpentSec) else 0L
     val limit = p.dailyLimitMin
     val limitReached = limit != null && (limit == 0 || st.limitReached || st.usedSec >= limit * 60L || (planToday && p.limitReached))
-    val unlocked = (p.unlockUntil ?: 0.0) > now || st.unlocks.any { it.from <= now && now < it.until }
+    val unlockedUntil = (st.unlocks.filter { it.from <= now && now < it.until }.map { it.until } + listOfNotNull(p.unlockUntil?.takeIf { it > now }))
+      .maxOrNull()?.toLong()
+    val unlocked = unlockedUntil != null
 
     val running = p.locks.mapNotNull { l -> active(l, now)?.let { l to it } }
     val main = running.filter { it.first.apps == null }
@@ -284,8 +294,14 @@ object STCore {
     val blocked = reason != null
     val canEarn = blocked && reason != "focus" && p.earningEnabled && p.earnCapLeftMin > 0 && (reason == "limit" || blocking.all { it.first.earnable })
     val any = blocked || ownBlocked.isNotEmpty()
-    val usedEmergencies = st.unlocks.count { it.kind == "emergency" }
-    val usedOneMores = st.unlocks.count { it.kind == "one-more" }
+    // The plan's "left" counts are for the day it was made. On a later day the app hasn't seen yet,
+    // the allowance starts again, and only unlocks taken today count against it.
+    val newDay = today > p.day
+    val mine = st.unlocks.filter { !newDay || dayKey(it.from.toLong()) == today }
+    val usedEmergencies = mine.count { it.kind == "emergency" }
+    val usedOneMores = mine.count { it.kind == "one-more" }
+    val emergenciesLeft = if (newDay) p.emergenciesPerDay else p.emergenciesLeft
+    val oneMoresLeft = if (newDay) p.oneMoresPerDay else p.oneMoresLeft
     return Status(
       blocked = blocked,
       reason = reason,
@@ -294,9 +310,10 @@ object STCore {
       usingEarned = usingEarned,
       earnedLeftSec = earnedLeftSec,
       canEarn = canEarn,
-      emergency = any && p.mode == "standard" && p.emergenciesLeft - usedEmergencies > 0,
-      oneMore = any && p.mode == "nudge" && p.oneMoresLeft - usedOneMores > 0,
+      emergency = any && p.mode == "standard" && emergenciesLeft - usedEmergencies > 0,
+      oneMore = any && p.mode == "nudge" && oneMoresLeft - usedOneMores > 0,
       ownBlocked = ownBlocked,
+      unlockedUntil = unlockedUntil,
     )
   }
 

@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EXERCISE_IDS, EXERCISES } from '@/engine/exercises';
 import { DayTimeline } from '@/features/screentime/DayTimeline';
@@ -73,7 +73,9 @@ export default function ScreenTimeScreen() {
   const apply = useCallback((res: ChangeResult) => setMessage(describeChange(res)), []);
   const change = useCallback((patch: Partial<RulesCore>) => apply(changeRules({ ...coreOf(getScreenTime().rules), ...patch })), [apply]);
 
-  useFocusEffect(useCallback(() => setMessage(null), []));
+  // Clear the note when leaving, not when coming back: on Android the app picker is its own screen,
+  // and the answer to a pick ("Strict mode: apps can't be taken off…") arrives as this one returns.
+  useFocusEffect(useCallback(() => () => setMessage(null), []));
 
   if (!st.meta.setUp) {
     return (
@@ -332,7 +334,9 @@ export default function ScreenTimeScreen() {
               const res = changeRules({ ...coreOf(getScreenTime().rules), blocked: EMPTY_SELECTION, lockTimes: [], dailyLimitMin: null });
               if (res.result === 'applied') {
                 turnOff();
-                router.back();
+                // Opened from a link there may be nothing to go back to.
+                if (router.canGoBack()) router.back();
+                else router.replace('/');
               } else apply(res);
             }}
           />
@@ -409,6 +413,19 @@ function StrictnessSection({
     () => (askedAt === null ? 0 : listSessionsSince(askedAt).reduce((n, s) => n + (s.exercise === 'pushup' ? s.cleanReps : 0), 0)),
     [askedAt],
   );
+  // Strict can't be undone with a tap, so starting it is always a deliberate choice.
+  const confirmStrict = () => {
+    if (strictOn) return;
+    const days = `${strictDays} day${strictDays === 1 ? '' : 's'}`;
+    Alert.alert(
+      `Turn on Strict for ${days}?`,
+      `Until then you can't take apps off the list, shorten a running lock time, use unlocks or turn screen time off. Ending it early takes ${STRICT_OFF_PUSHUPS} verified push-ups or a 24-hour wait.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Turn on Strict', onPress: () => saveRules(startStrict(getScreenTime().rules, Date.now(), strictDays)) },
+      ],
+    );
+  };
   return (
     <Section title="Strictness">
       <View style={styles.pad}>
@@ -418,7 +435,7 @@ function StrictnessSection({
               key={s}
               label={STRICTNESS[s].label}
               selected={mode === s}
-              onPress={() => (s === 'strict' ? saveRules(startStrict(getScreenTime().rules, Date.now(), strictDays)) : change({ strictness: s }))}
+              onPress={() => (s === 'strict' ? confirmStrict() : change({ strictness: s }))}
             />
           ))}
         </View>
@@ -473,27 +490,30 @@ function HistorySection({ st }: { st: ScreenTimeState }) {
             <Mono size={12} style={{ width: 92 }}>
               {d.day}
             </Mono>
-            <Mono size={12} tone={d.overLimit ? 'cue' : 'chalk'} style={{ flex: 1 }}>
-              {`${formatMin(d.usedMin)} used`}
-            </Mono>
-            <Mono size={12} tone="good">
-              {`+${formatMin(d.earnedMin)}`}
-            </Mono>
-            {d.unlocks > 0 && (
-              <Mono size={12} tone="muted">
-                {` · ${d.unlocks} unlock${d.unlocks > 1 ? 's' : ''}`}
+            {/* A busy day has up to five items: let them wrap onto a second line instead of squeezing each other. */}
+            <View style={styles.histItems}>
+              <Mono size={12} tone={d.overLimit ? 'cue' : 'chalk'}>
+                {`${formatMin(d.usedMin)} used`}
               </Mono>
-            )}
-            {d.focusMin > 0 && (
-              <Mono size={12} tone="vial">
-                {` · focus ${formatMin(d.focusMin)}`}
+              <Mono size={12} tone="good">
+                {` · +${formatMin(d.earnedMin)}`}
               </Mono>
-            )}
-            {d.offMin > 0 && (
-              <Mono size={12} tone="fault">
-                {` · off ${formatMin(d.offMin)}`}
-              </Mono>
-            )}
+              {d.unlocks > 0 && (
+                <Mono size={12} tone="muted">
+                  {` · ${d.unlocks} unlock${d.unlocks > 1 ? 's' : ''}`}
+                </Mono>
+              )}
+              {d.focusMin > 0 && (
+                <Mono size={12} tone="vial">
+                  {` · focus ${formatMin(d.focusMin)}`}
+                </Mono>
+              )}
+              {d.offMin > 0 && (
+                <Mono size={12} tone="fault">
+                  {` · off ${formatMin(d.offMin)}`}
+                </Mono>
+              )}
+            </View>
           </View>
         </View>
       ))}
@@ -549,7 +569,8 @@ const styles = StyleSheet.create({
     borderBottomColor: color.line,
   },
   rateRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: space.md },
-  histRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.lg, paddingVertical: space.sm },
+  histRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: space.lg, paddingVertical: space.sm },
+  histItems: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', rowGap: space.xs },
   alert: { gap: space.xs, padding: space.lg, borderRadius: radius.lg, backgroundColor: color.faultSoft, borderWidth: 1, borderColor: color.fault },
   note: { gap: space.sm, padding: space.lg, borderRadius: radius.lg, backgroundColor: color.raised },
 });

@@ -79,6 +79,9 @@ enum STShared {
     var oneMoreMin: Int
     var emergenciesLeft: Int
     var oneMoresLeft: Int
+    /// The full daily allowance, used on a new day the app hasn't sent a plan for yet.
+    var emergenciesPerDay: Int?
+    var oneMoresPerDay: Int?
     /// An unlock already granted in the app (epoch ms).
     var unlockUntil: Double?
     /// A workout focus blocks the main apps until then (epoch ms).
@@ -131,11 +134,12 @@ enum STShared {
 
   static var plan: Plan? { load("st.plan", Plan.self) }
 
-  /// Today's state (a new day starts fresh).
+  /// Today's state (a new day starts fresh). Only a later day counts: if the clock is moved back,
+  /// the day already used up stays used up.
   static func state(now: Date = Date()) -> State {
     var s = load("st.state", State.self) ?? State()
     let today = dayKey(now)
-    if s.day != today {
+    if today > s.day {
       s = State(day: today, unlocks: s.unlocks, openEarn: s.openEarn)
     }
     return s
@@ -250,10 +254,16 @@ enum STShared {
     s.ownBlocked = running.filter { $0.0.ownApps && !unlocked && !($0.0.earnable && earnedLeft > 0) }.map { $0.0.id }
     s.canEarn = s.blocked && s.reason != "focus" && p.earningEnabled && p.earnCapLeftMin > 0 && (s.reason == "limit" || blocking.allSatisfy { $0.0.earnable })
     let any = s.blocked || !s.ownBlocked.isEmpty
-    let usedEmergencies = st.unlocks.filter { $0.kind == "emergency" }.count
-    let usedOneMores = st.unlocks.filter { $0.kind == "one-more" }.count
-    s.emergency = any && p.mode == "standard" && p.emergenciesLeft - usedEmergencies > 0
-    s.oneMore = any && p.mode == "nudge" && p.oneMoresLeft - usedOneMores > 0
+    // The plan's "left" counts are for the day it was made. On a later day the app hasn't seen yet,
+    // the allowance starts again, and only unlocks taken today count against it.
+    let newDay = today > p.day
+    let mine = st.unlocks.filter { !newDay || dayKey(Date(timeIntervalSince1970: $0.from / 1000)) == today }
+    let usedEmergencies = mine.filter { $0.kind == "emergency" }.count
+    let usedOneMores = mine.filter { $0.kind == "one-more" }.count
+    let emergenciesLeft = newDay ? (p.emergenciesPerDay ?? 1) : p.emergenciesLeft
+    let oneMoresLeft = newDay ? (p.oneMoresPerDay ?? 3) : p.oneMoresLeft
+    s.emergency = any && p.mode == "standard" && emergenciesLeft - usedEmergencies > 0
+    s.oneMore = any && p.mode == "nudge" && oneMoresLeft - usedOneMores > 0
     return s
   }
 
