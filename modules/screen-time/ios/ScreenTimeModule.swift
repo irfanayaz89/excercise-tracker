@@ -70,15 +70,18 @@ public class ScreenTimeModule: Module {
       do {
         let plan = try JSONDecoder().decode(STShared.Plan.self, from: data)
         STShared.save("st.plan", plan)
-        // The app has taken in the extensions' counts: they start again from here.
-        var st = STShared.state()
-        st.earnedSpentMin = 0
-        st.earnedBase = 0
-        st.earnedArmed = false
-        st.limitReached = plan.limitReached
-        STShared.saveState(st)
-        DeviceActivityCenter().stopMonitoring([DeviceActivityName("st.earned")])
-        let errors = STShared.scheduleAll()
+        // The limit monitoring keeps running through a sync unless the day or what it watches
+        // changed: restarting it would lose the use counted since its last 15-minute step.
+        let rearmLimit = !STShared.limitArmCurrent(plan)
+        let reached = plan.day == STShared.dayKey(Date()) && plan.limitReached
+        STShared.updateState { st in
+          // With the same monitoring running, a "limit" event it already sent stays counted
+          // (it won't fire again); a new arm measures afresh from the plan.
+          st.limitReached = rearmLimit ? reached : (st.limitReached || reached)
+        }
+        let errors = STShared.scheduleAll(rearmLimit: rearmLimit)
+        // Earned-time monitoring likewise keeps running unless the amount it expects changed.
+        STShared.keepOrStopEarned()
         STShared.reapply()
         return errors
       } catch {
@@ -96,11 +99,15 @@ public class ScreenTimeModule: Module {
         STShared.defaults?.removeObject(forKey: "st.tokensExpired")
       }
       let out = (try? JSONSerialization.data(withJSONObject: dict)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-      var cleared = st
-      cleared.unlocks = []
-      cleared.openEarn = false
-      cleared.openScan = nil
-      STShared.saveState(cleared)
+      // Take off only what was handed over, on a fresh read: an extension may have written since
+      // (a "limit" event, an unlock, more earned minutes), and that must not be lost.
+      let handed = Set(st.unlocks.map { "\($0.kind):\($0.from)" })
+      STShared.updateState { fresh in
+        fresh.unlocks.removeAll { handed.contains("\($0.kind):\($0.from)") }
+        if st.openEarn { fresh.openEarn = false }
+        if st.openScan == true { fresh.openScan = nil }
+        if fresh.day == st.day { fresh.earnedSpentMin = max(0, fresh.earnedSpentMin - st.earnedSpentMin) }
+      }
       return out
     }
 
@@ -113,8 +120,8 @@ public class ScreenTimeModule: Module {
     }
 
     Function("stopAll") {
+      // Removes the plan before stopping the schedules (see STShared.stopAll).
       STShared.stopAll()
-      STShared.defaults?.removeObject(forKey: "st.plan")
     }
 
     AsyncFunction("requestNotifications") { () async -> Bool in

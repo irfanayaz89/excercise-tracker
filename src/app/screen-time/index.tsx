@@ -190,7 +190,7 @@ export default function ScreenTimeScreen() {
         {rules.earning.enabled && (
           <Button label="Earn time" onPress={guard(() => router.push('/earn'))} disabled={today.earnedMin >= rules.earning.dailyCapMin} />
         )}
-        {(d.blocked || d.ownLocks.length > 0) && (d.emergency.available || d.oneMore.available) && (
+        {(d.blocked || d.ownLocks.length > 0 || d.limitBlocks.length > 0) && (d.emergency.available || d.oneMore.available) && (
           <Button
             variant="ghost"
             label={d.emergency.available ? `Emergency unlock: ${d.emergency.minutes} min` : `1 more minute (${d.oneMore.left} left today)`}
@@ -349,13 +349,32 @@ export default function ScreenTimeScreen() {
             label="Turn off screen time"
             disabled={mode === 'strict'}
             onPress={() => {
-              const res = changeRules({ ...coreOf(getScreenTime().rules), blocked: EMPTY_SELECTION, lockTimes: [], dailyLimitMin: null });
+              const cur = getScreenTime();
+              // A key lock ends only with the key; a Strict focus only at its end.
+              if (cur.focus && cur.focus.until > Date.now() && (cur.focus.kind === 'key' || cur.focus.strict)) {
+                // Shown as an alert: the page's message box is far above this button.
+                Alert.alert(
+                  'Can’t turn off yet',
+                  cur.focus.kind === 'key' ? 'A key lock is running: scan your key first.' : 'A Strict focus is running: it ends at its planned time.',
+                );
+                return;
+              }
+              // Everything off counts as making things easier, so it follows the strictness rules.
+              const res = changeRules({
+                ...coreOf(cur.rules),
+                blocked: EMPTY_SELECTION,
+                lockTimes: [],
+                dailyLimitMin: null,
+                appLimits: [],
+                pause: { ...cur.rules.pause, enabled: false },
+                silenceNotifications: false,
+              });
               if (res.result === 'applied') {
                 turnOff();
                 // Opened from a link there may be nothing to go back to.
                 if (router.canGoBack()) router.back();
                 else router.replace('/');
-              } else apply(res);
+              } else Alert.alert('Turn off screen time', describeChange(res));
             }}
           />
         </View>

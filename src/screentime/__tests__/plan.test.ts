@@ -130,7 +130,8 @@ describe('folding a report into today', () => {
   });
 
   it('the exact "limit reached" event counts as the whole limit used, even between 15-minute steps', () => {
-    const merged = mergeReport(london, r, day({ usedMin: 45 }), report({ usedMin: 45, limitReached: true }), NOON);
+    // At the limit event the phone records the whole limit as used (arm start + minutes left).
+    const merged = mergeReport(london, r, day({ usedMin: 45 }), report({ usedMin: 60, limitReached: true }), NOON);
     expect(merged.usedMin).toBe(60);
     expect(decide(london, r, merged, NOON)).toMatchObject({ blocked: true, reason: 'limit' });
   });

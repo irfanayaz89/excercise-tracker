@@ -1,6 +1,7 @@
 package expo.modules.screentime
 
 import android.app.ActivityManager
+import android.app.AlarmManager
 import android.app.ApplicationExitInfo
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
@@ -12,6 +13,9 @@ import android.provider.Telephony
 import android.telecom.TelecomManager
 import android.os.Build
 import android.os.PowerManager
+import android.os.Process
+import android.os.SystemClock
+import android.provider.AlarmClock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -28,6 +32,24 @@ object STCore {
   private const val PREFS = "trueline.screentime"
 
   fun prefs(ctx: Context): SharedPreferences = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+  /**
+   * The state is changed from three threads (the service's loop, the JS thread, the blocked
+   * screen on the main thread). Every load-change-save holds this lock, so no writer overwrites
+   * another's change with an older copy.
+   */
+  private val lock = Any()
+
+  fun <T> locked(block: () -> T): T = synchronized(lock) { block() }
+
+  /** Loads the state, changes it and saves it, as one step. */
+  fun <T> edit(ctx: Context, now: Long = System.currentTimeMillis(), block: (State) -> T): T =
+    synchronized(lock) {
+      val st = state(ctx, now)
+      val r = block(st)
+      saveState(ctx, st)
+      r
+    }
 
   // ── Plan (written by the app) ──────────────────────────────────────────────
 
@@ -87,7 +109,11 @@ object STCore {
     val earningEnabled: Boolean,
     val earnedLeftMin: Int,
     val earnCapLeftMin: Int,
+    /** The full daily earning cap, used on a new day the app hasn't sent a plan for yet. */
+    val earnCapMin: Int,
     val mode: String,
+    /** While Strict runs: when its period ends (epoch ms). From then on the mode reads as "standard". */
+    val strictUntil: Double?,
     val emergencyMin: Int,
     val oneMoreMin: Int,
     val emergenciesLeft: Int,
@@ -159,7 +185,9 @@ object STCore {
       earningEnabled = o.optBoolean("earningEnabled"),
       earnedLeftMin = o.optInt("earnedLeftMin"),
       earnCapLeftMin = o.optInt("earnCapLeftMin"),
+      earnCapMin = o.optInt("earnCapMin", o.optInt("earnCapLeftMin")),
       mode = o.optString("mode", "standard"),
+      strictUntil = if (!o.has("strictUntil") || o.isNull("strictUntil")) null else o.optDouble("strictUntil"),
       emergencyMin = o.optInt("emergencyMin", 10),
       oneMoreMin = o.optInt("oneMoreMin", 1),
       emergenciesLeft = o.optInt("emergenciesLeft"),
@@ -192,14 +220,17 @@ object STCore {
 
   data class Unlock(val kind: String, val from: Double, val until: Double)
 
-  /** A stretch when blocking wasn't running: "stopped" (force stop, Task Manager) or "killed" (e.g. a battery saver). */
-  data class Gap(val from: Long, val to: Long, val kind: String)
+  /**
+   * A stretch when blocking wasn't running: "stopped" (force stop, Task Manager) or "killed" (e.g. a
+   * battery saver). `via` says which stop it was when Android tells ("force-stop", "task-manager").
+   */
+  data class Gap(val from: Long, val to: Long, val kind: String, val via: String? = null)
 
   data class State(
     var day: String = "",
-    /** Seconds the blocked apps were in front today. */
+    /** Seconds the blocked apps were in front today. Whether the daily limit is reached is worked
+     *  out from this and the limit in force now, so raising the limit gives the time back. */
     var usedSec: Long = 0,
-    var limitReached: Boolean = false,
     /** Earned seconds spent since the app last read this state. */
     var earnedSpentSec: Long = 0,
     val unlocks: MutableList<Unlock> = mutableListOf(),
@@ -216,13 +247,12 @@ object STCore {
       val u = JSONArray()
       for (x in unlocks) u.put(JSONObject().put("kind", x.kind).put("from", x.from).put("until", x.until))
       val g = JSONArray()
-      for (x in gaps) g.put(JSONObject().put("from", x.from).put("to", x.to).put("kind", x.kind))
+      for (x in gaps) g.put(JSONObject().put("from", x.from).put("to", x.to).put("kind", x.kind).apply { x.via?.let { put("via", it) } })
       return JSONObject()
         .put("gaps", g)
         .put("day", day)
         .put("usedMin", usedSec / 60)
         .put("usedSec", usedSec)
-        .put("limitReached", limitReached)
         .put("earnedSpentMin", earnedSpentSec / 60)
         .put("earnedSpentSec", earnedSpentSec)
         .put("unlocks", u)
@@ -243,7 +273,6 @@ object STCore {
         val o = JSONObject(raw)
         s.day = o.optString("day")
         s.usedSec = o.optLong("usedSec")
-        s.limitReached = o.optBoolean("limitReached")
         s.earnedSpentSec = o.optLong("earnedSpentSec")
         s.openEarn = o.optBoolean("openEarn")
         val u = o.optJSONArray("unlocks") ?: JSONArray()
@@ -254,7 +283,7 @@ object STCore {
         val g = o.optJSONArray("gaps") ?: JSONArray()
         for (i in 0 until g.length()) {
           val x = g.getJSONObject(i)
-          s.gaps.add(Gap(x.optLong("from"), x.optLong("to"), x.optString("kind")))
+          s.gaps.add(Gap(x.optLong("from"), x.optLong("to"), x.optString("kind"), if (x.isNull("via")) null else x.optString("via")))
         }
         o.optJSONObject("appUsedSec")?.let { m -> m.keys().forEach { s.appUsedSec[it] = m.optLong(it) } }
         o.optJSONObject("appOpens")?.let { m -> m.keys().forEach { s.appOpens[it] = m.optInt(it) } }
@@ -271,8 +300,31 @@ object STCore {
     return s
   }
 
+  /** Call while holding the lock (inside `edit` or `locked`). */
   fun saveState(ctx: Context, s: State) {
     prefs(ctx).edit().putString("state", s.toJson().toString()).apply()
+  }
+
+  /** The daily limit is reached by the usage counted here, against the limit in force now. */
+  fun limitReached(p: Plan?, st: State): Boolean {
+    val limit = p?.dailyLimitMin ?: return false
+    return limit == 0 || st.usedSec >= limit * 60L
+  }
+
+  /** What happened since the app last read it; whole earned minutes are handed over, the remainder stays. */
+  fun takeState(ctx: Context): String =
+    edit(ctx) { st ->
+      val out = st.toJson().put("limitReached", limitReached(plan(ctx), st))
+      st.earnedSpentSec -= (st.earnedSpentSec / 60) * 60
+      st.unlocks.clear()
+      st.gaps.clear()
+      st.openEarn = false
+      out.toString()
+    }
+
+  /** The user tapped "Earn time" on the blocked screen: Trueline opens its earn screen next. */
+  fun requestEarn(ctx: Context) {
+    edit(ctx) { it.openEarn = true }
   }
 
   // ── Local time ──────────────────────────────────────────────────────────────
@@ -347,7 +399,7 @@ object STCore {
     val planToday = p.day == today
     val earnedLeftSec = if (p.earningEnabled && planToday) maxOf(0L, p.earnedLeftMin * 60L - st.earnedSpentSec) else 0L
     val limit = p.dailyLimitMin
-    val limitReached = limit != null && (limit == 0 || st.limitReached || st.usedSec >= limit * 60L || (planToday && p.limitReached))
+    val limitReached = limit != null && (limit == 0 || st.usedSec >= limit * 60L || (planToday && p.limitReached))
     val unlockedUntil = (st.unlocks.filter { it.from <= now && now < it.until }.map { it.until } + listOfNotNull(p.unlockUntil?.takeIf { it > now }))
       .maxOrNull()?.toLong()
     val unlocked = unlockedUntil != null
@@ -380,7 +432,11 @@ object STCore {
     val last = blocking.maxByOrNull { it.second.second }
     val ownBlocked = running.filter { it.first.apps != null && !unlocked && !(it.first.earnable && earnedLeftSec > 0) }.map { it.first }
     val blocked = reason != null
-    val canEarn = blocked && reason != "focus" && p.earningEnabled && p.earnCapLeftMin > 0 && (reason == "limit" || blocking.all { it.first.earnable })
+    // The plan's "left" counts are for the day it was made. On a later day the app hasn't seen yet,
+    // the allowance starts again, and only unlocks taken today count against it.
+    val newDay = today > p.day
+    val earnCapLeft = if (newDay) p.earnCapMin else p.earnCapLeftMin
+    val canEarn = blocked && reason != "focus" && p.earningEnabled && earnCapLeft > 0 && (reason == "limit" || blocking.all { it.first.earnable })
     val blockAll = if (reason == "focus") p.focusAll else reason == "lock" && blocking.any { it.first.allApps }
     val limitBlocked = if (unlocked) emptyList() else p.appLimits.mapNotNull { l ->
       when {
@@ -390,9 +446,8 @@ object STCore {
       }
     }
     val any = blocked || ownBlocked.isNotEmpty() || limitBlocked.isNotEmpty()
-    // The plan's "left" counts are for the day it was made. On a later day the app hasn't seen yet,
-    // the allowance starts again, and only unlocks taken today count against it.
-    val newDay = today > p.day
+    // Strict reads as Standard once its period is over, even before Trueline sends a new plan.
+    val mode = if (p.mode == "strict" && p.strictUntil != null && now >= p.strictUntil) "standard" else p.mode
     val mine = st.unlocks.filter { !newDay || dayKey(it.from.toLong()) == today }
     val usedEmergencies = mine.count { it.kind == "emergency" }
     val usedOneMores = mine.count { it.kind == "one-more" }
@@ -406,8 +461,8 @@ object STCore {
       usingEarned = usingEarned,
       earnedLeftSec = earnedLeftSec,
       canEarn = canEarn,
-      emergency = any && p.mode == "standard" && emergenciesLeft - usedEmergencies > 0,
-      oneMore = any && p.mode == "nudge" && oneMoresLeft - usedOneMores > 0,
+      emergency = any && mode == "standard" && emergenciesLeft - usedEmergencies > 0,
+      oneMore = any && mode == "nudge" && oneMoresLeft - usedOneMores > 0,
       ownBlocked = ownBlocked,
       unlockedUntil = unlockedUntil,
       blockAll = blockAll,
@@ -461,22 +516,35 @@ object STCore {
    * Called when Trueline or the service starts. If the service should have been running but its
    * heartbeat is old, and the phone was in use meanwhile, record the gap: "stopped" when Android
    * says the user stopped the app (Force stop, Task Manager), otherwise "killed".
-   * The screen-on check avoids counting the phone sleeping as a gap.
+   * The screen-on check avoids counting the phone sleeping as a gap. A heartbeat from before the
+   * last boot doesn't start a gap (the phone was off, and a shutdown doesn't always stop the service
+   * cleanly): only time after the boot can count, and only if the service still hadn't started
+   * well after it (it normally starts on BOOT_COMPLETED).
    */
-  fun checkGap(ctx: Context, now: Long = System.currentTimeMillis()) {
-    val pr = prefs(ctx)
-    val hb = pr.getLong("hb", 0L)
-    if (hb == 0L || !pr.getBoolean("svc", false) || now - hb < 60_000) return
-    if (interactiveMs(ctx, hb, now) < 60_000) {
+  fun checkGap(ctx: Context, now: Long = System.currentTimeMillis()) =
+    locked {
+      val pr = prefs(ctx)
+      val hb = pr.getLong("hb", 0L)
+      if (hb == 0L || !pr.getBoolean("svc", false) || now - hb < 60_000) return@locked
+      val bootAt = now - SystemClock.elapsedRealtime()
+      val from = maxOf(hb, bootAt)
+      if (hb < bootAt && now - bootAt < BOOT_GRACE_MS) {
+        heartbeat(ctx, now)
+        return@locked
+      }
+      if (interactiveMs(ctx, from, now) < 60_000) {
+        heartbeat(ctx, now)
+        return@locked
+      }
+      val via = userStopSince(ctx, from, now)
+      val st = state(ctx, now)
+      if (st.gaps.none { it.from == from }) st.gaps.add(Gap(from, now, if (via != null) "stopped" else "killed", via?.takeIf { it != "user" }))
+      saveState(ctx, st)
       heartbeat(ctx, now)
-      return
     }
-    val kind = if (userStoppedSince(ctx, hb)) "stopped" else "killed"
-    val st = state(ctx, now)
-    if (st.gaps.none { it.from == hb }) st.gaps.add(Gap(hb, now, kind))
-    saveState(ctx, st)
-    heartbeat(ctx, now)
-  }
+
+  /** After a boot, how long the service may take to start before the time counts as a gap. */
+  private const val BOOT_GRACE_MS = 5 * 60_000L
 
   /** Milliseconds the screen was on between two moments (from usage events). */
   private fun interactiveMs(ctx: Context, from: Long, to: Long): Long {
@@ -507,15 +575,33 @@ object STCore {
     return total
   }
 
-  /** Android recorded that the user stopped Trueline (Force stop or Task Manager) after `since`. */
-  private fun userStoppedSince(ctx: Context, since: Long): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
-    val am = ctx.getSystemService(ActivityManager::class.java)
-    return runCatching {
+  /**
+   * Did the user stop Trueline (Force stop or Task Manager) after `since`? Returns "force-stop" or
+   * "task-manager" when Android can tell them apart (Android 15+: this start's wasForceStopped(); a
+   * Task Manager stop leaves the app runnable, a force stop doesn't), "user" when it can't, or null.
+   */
+  private fun userStopSince(ctx: Context, since: Long, now: Long): String? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+    val am = ctx.getSystemService(ActivityManager::class.java) ?: return null
+    val requested = runCatching {
       am.getHistoricalProcessExitReasons(ctx.packageName, 0, 5).any {
         it.timestamp >= since && it.reason == ApplicationExitInfo.REASON_USER_REQUESTED
       }
     }.getOrDefault(false)
+    // This process's own start record, if it began after `since` (so the stop it follows is in the gap).
+    val startedAt = now - (SystemClock.elapsedRealtime() - Process.getStartElapsedRealtime())
+    val forced: Boolean? =
+      if (Build.VERSION.SDK_INT >= 35 && startedAt >= since) {
+        runCatching { am.getHistoricalProcessStartReasons(5).firstOrNull { it.pid == Process.myPid() }?.wasForceStopped() }.getOrNull()
+      } else {
+        null
+      }
+    return when {
+      forced == true -> "force-stop"
+      requested && forced == false -> "task-manager"
+      requested -> "user"
+      else -> null
+    }
   }
 
   /** Passes taken today, as far as the app or the phone knows (each makes the next wait longer). */
@@ -524,16 +610,18 @@ object STCore {
   /** The user waited out the pause: this app is open for the pass length, and the next wait grows. */
   fun grantPass(ctx: Context, pkg: String, now: Long = System.currentTimeMillis()) {
     val p = plan(ctx) ?: return
-    val st = state(ctx, now)
-    st.passes.entries.removeAll { it.value <= now }
-    st.passes[pkg] = now + p.pause.passMin * 60_000L
-    st.pauses = pausePasses(p, st, now) + 1
-    saveState(ctx, st)
+    edit(ctx, now) { st ->
+      st.passes.entries.removeAll { it.value <= now }
+      st.passes[pkg] = now + p.pause.passMin * 60_000L
+      st.pauses = pausePasses(p, st, now) + 1
+    }
   }
 
   /**
    * For "block everything": apps the user opens from the launcher, minus the ones the phone needs
-   * (home screen, phone, messages, Settings) and Trueline itself.
+   * (home screen, phone, messages, Settings, the clock app so an alarm is never covered) and
+   * Trueline itself. (An alarm shown over the lock screen is also never blocked: the service does
+   * nothing while the keyguard is up.)
    */
   fun everydayApps(ctx: Context): Set<String> {
     val pm = ctx.packageManager
@@ -545,13 +633,17 @@ object STCore {
       .getOrNull()?.activityInfo?.packageName?.let { needed.add(it) }
     runCatching { ctx.getSystemService(TelecomManager::class.java)?.defaultDialerPackage }.getOrNull()?.let { needed.add(it) }
     runCatching { Telephony.Sms.getDefaultSmsPackage(ctx) }.getOrNull()?.let { needed.add(it) }
+    // Clock apps: whatever shows or sets alarms, and the app that set the next alarm.
+    for (action in listOf(AlarmClock.ACTION_SHOW_ALARMS, AlarmClock.ACTION_SET_ALARM)) {
+      runCatching { pm.queryIntentActivities(Intent(action), PackageManager.MATCH_DEFAULT_ONLY) }.getOrNull()
+        ?.forEach { needed.add(it.activityInfo.packageName) }
+    }
+    runCatching { ctx.getSystemService(AlarmManager::class.java)?.nextAlarmClock?.showIntent?.creatorPackage }.getOrNull()?.let { needed.add(it) }
     return launchable - needed
   }
 
   fun takeUnlock(ctx: Context, kind: String, minutes: Int, now: Long = System.currentTimeMillis()) {
-    val st = state(ctx, now)
-    st.unlocks.add(Unlock(kind, now.toDouble(), (now + minutes * 60_000L).toDouble()))
-    saveState(ctx, st)
+    edit(ctx, now) { st -> st.unlocks.add(Unlock(kind, now.toDouble(), (now + minutes * 60_000L).toDouble())) }
   }
 
   private fun strings(a: JSONArray?): Set<String> {

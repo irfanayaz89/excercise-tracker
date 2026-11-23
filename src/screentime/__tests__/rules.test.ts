@@ -72,7 +72,10 @@ describe('loading rules', () => {
       blocked: { apps: Array.from({ length: 80 }, (_, i) => `app${i}`) },
       lockTimes: Array.from({ length: 12 }, (_, i) => lock({ id: `l${i}` })),
     });
-    expect(r.blocked.apps).toHaveLength(MAX_APPS);
+    // Apple's 50-app limit is enforced by the iPhone pickers (selectionProblem), not by storage:
+    // Android has no such limit.
+    expect(r.blocked.apps).toHaveLength(80);
+    expect(MAX_APPS).toBe(50);
     expect(r.lockTimes).toHaveLength(MAX_LOCK_TIMES);
   });
 

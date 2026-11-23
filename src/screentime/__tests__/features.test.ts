@@ -165,3 +165,47 @@ describe('silencing notifications', () => {
     expect(loosens(coreOf(on), { ...coreOf(on), silenceNotifications: false })).toBe(true);
   });
 });
+
+describe('holes found in review', () => {
+  const sleep = lock({ id: 'sleep', start: '22:00', end: '07:00' });
+  const base = rules({ lockTimes: [sleep] });
+
+  it('moving a lock time onto another list, or off "Everything", is loosening', () => {
+    const c = coreOf(base);
+    const own = { ...sleep, apps: { apps: ['calculator'], categories: [], domains: [] } };
+    expect(loosens(c, { ...c, lockTimes: [own] })).toBe(true);
+    // A twin with its own list, then the main one removed.
+    const twin = { ...own, id: 'twin' };
+    const withTwin = { ...c, lockTimes: [sleep, twin] };
+    expect(loosens(c, withTwin)).toBe(false);
+    expect(loosens(withTwin, { ...c, lockTimes: [twin] })).toBe(true);
+    // An own-list lock made earnable gives its apps back.
+    expect(loosens(withTwin, { ...c, lockTimes: [sleep, { ...twin, earnable: true }] })).toBe(true);
+    // In Strict, during the lock, it's refused.
+    const strict = rules({ lockTimes: [sleep], strictness: 'strict', strictUntil: NOON + 7 * 24 * HOUR });
+    const night = T(london, '2026-11-18 23:00');
+    expect(requestChange(london, strict, { ...coreOf(strict), lockTimes: [own] }, night)).toMatchObject({ result: 'refused' });
+  });
+
+  it("an expired Strict isn't restarted by an unrelated tightening", () => {
+    const over = rules({ strictness: 'strict', strictUntil: NOON - HOUR });
+    const res = requestChange(london, over, { ...coreOf(over), blocked: { ...over.blocked, apps: [...over.blocked.apps, 'yt'] } }, NOON);
+    expect(res).toMatchObject({ result: 'applied', rules: { strictness: 'standard', strictUntil: null } });
+  });
+
+  it('a merged focus never outlasts the cap it is stored with', () => {
+    const k = startKeyLock(null, 8, NOON);
+    expect(startFocus(r, k, 60, NOON + 7.5 * HOUR).until).toBe(NOON + 8 * HOUR);
+    const t = startFocus(r, null, 60, NOON);
+    expect(startFocus(r, t, 60, NOON + 50 * MIN).until - NOON).toBeLessThanOrEqual(3 * HOUR);
+    expect(startKeyLock(t, 8, NOON + 50 * MIN).until).toBe(NOON + 8 * HOUR);
+  });
+
+  it('raising the daily limit after reaching it gives the extra time', () => {
+    const rep = parseReport(JSON.stringify({ day: '2026-11-18', unlocks: [], usedMin: 30, limitReached: true }));
+    const raised = rules({ dailyLimitMin: 60 });
+    const log = mergeReport(london, raised, day(), rep, NOON);
+    expect(log.usedMin).toBe(30);
+    expect(decide(london, raised, log, NOON).blocked).toBe(false);
+  });
+});

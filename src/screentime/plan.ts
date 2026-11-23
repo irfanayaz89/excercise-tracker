@@ -52,6 +52,10 @@ export interface NativePlan {
   earnCapLeftMin: number;
   /** Strictness in force right now (Strict reads as Standard once its period is over). */
   mode: 'nudge' | 'standard' | 'strict';
+  /** While Strict runs: when its period ends (epoch ms), so the phone switches to Standard then. */
+  strictUntil: number | null;
+  /** The full daily earning cap, used on a new day the app hasn't sent a plan for yet. */
+  earnCapMin: number;
   emergencyMin: number;
   oneMoreMin: number;
   emergenciesLeft: number;
@@ -92,6 +96,8 @@ export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, 
     earnedLeftMin: d.earnedLeftMin,
     earnCapLeftMin: Math.max(0, rules.earning.dailyCapMin - log.earnedMin),
     mode: effectiveStrictness(rules, now),
+    strictUntil: effectiveStrictness(rules, now) === 'strict' ? rules.strictUntil : null,
+    earnCapMin: rules.earning.dailyCapMin,
     emergencyMin: EMERGENCY_MIN,
     oneMoreMin: ONE_MORE_MIN,
     emergenciesLeft: Math.max(0, EMERGENCIES_PER_DAY - used('emergency')),
@@ -238,7 +244,8 @@ export function mergeReport(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, r
   const gaps = mergeGaps(log.gaps ?? [], report.gaps ?? []);
   if (report.day !== log.day) return { ...log, unlocks, ...(gaps.length ? { gaps } : {}) };
   let usedMin = Math.max(log.usedMin, report.usedMin);
-  if (report.limitReached && rules.dailyLimitMin !== null) usedMin = Math.max(usedMin, rules.dailyLimitMin);
+  // The phone reports the minutes used; "limit reached" alone isn't bumped up to today's limit, or
+  // raising the limit after reaching it would give no extra time.
   const earnedUsedMin = Math.min(log.earnedMin, log.earnedUsedMin + report.earnedSpentMin);
   // Per-app counts and pauses only ever go up during a day.
   const most = (have: Record<string, number> | undefined, add: Record<string, number> | undefined) => {

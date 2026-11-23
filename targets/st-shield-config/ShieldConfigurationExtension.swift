@@ -31,6 +31,11 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
     let s = STShared.status()
     let app = name ?? "This app"
     let kind = STShared.shieldKind(app: appToken, site: site, category: category, s)
+    // The buttons extension is handed fewer tokens than this one: it reads back what was shown.
+    var shown = Shown(
+      app: appToken.flatMap { STShared.key($0) }, site: site.flatMap { STShared.key($0) },
+      category: category.flatMap { STShared.key($0) })
+    shown.pauseKey = shown.app ?? shown.site ?? app
     let title: String
     var lines: [String] = []
     var pauseLeft = 0
@@ -38,18 +43,17 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
     case .limit(let l):
       title = "\(l.name): done for today"
       lines.append("\(app) has used its \(l.dailyMin ?? 0) minutes today. It opens again tomorrow.")
-      return config(title, lines, kind, s, pauseLeft: 0, app: app)
+      return config(shown, title, lines, kind, s, pauseLeft: 0, app: app)
     case .own(let lock):
-      title = "\(lock) is on"
+      title = "\(lock.name) is on"
       lines.append("\(app) is locked for now.")
-      return config(title, lines, kind, s, pauseLeft: 0, app: app)
+      return config(shown, title, lines, kind, s, pauseLeft: 0, app: app)
     case .pause:
-      let key = appToken.flatMap { STShared.key($0) } ?? site.flatMap { STShared.key($0) } ?? app
-      pauseLeft = STShared.pauseLeft(key)
+      pauseLeft = STShared.pauseLeft(shown.pauseKey ?? app)
       let passMin = STShared.plan?.pause?.passMin ?? 5
       lines.append(pauseLeft > 0 ? "Wait \(pauseLeft) s, then tap Open. \(app) opens for \(passMin) minutes." : "\(app) opens for \(passMin) minutes.")
       lines.append("Each pass today makes the next wait a little longer.")
-      return config("Take a breath", lines, kind, s, pauseLeft: pauseLeft, app: app)
+      return config(shown, "Take a breath", lines, kind, s, pauseLeft: pauseLeft, app: app)
     case .main:
       break
     }
@@ -80,11 +84,20 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
       }
     }
     if s.canEarn { lines.append("Do a set in Trueline to earn more time.") }
-    return config(title, lines, kind, s, pauseLeft: 0, app: app)
+    return config(shown, title, lines, kind, s, pauseLeft: 0, app: app)
   }
 
-  private func config(_ title: String, _ lines: [String], _ kind: STShared.ShieldKind, _ s: STShared.Status, pauseLeft: Int, app: String) -> ShieldConfiguration {
+  /// The tokens of the shield being drawn, as keys (see STShared.ShieldShown).
+  private struct Shown {
+    var app: String?
+    var site: String?
+    var category: String?
+    var pauseKey: String?
+  }
+
+  private func config(_ shown: Shown, _ title: String, _ lines: [String], _ kind: STShared.ShieldKind, _ s: STShared.Status, pauseLeft: Int, app: String) -> ShieldConfiguration {
     let (primary, secondary) = STShared.buttons(kind, s)
+    STShared.recordShown(kind, (primary, secondary), app: shown.app, site: shown.site, category: shown.category, pauseKey: shown.pauseKey)
     return ShieldConfiguration(
       backgroundBlurStyle: .systemUltraThinMaterialDark,
       backgroundColor: bg,

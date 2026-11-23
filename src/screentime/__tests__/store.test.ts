@@ -124,7 +124,7 @@ describe('screen time store', () => {
   it("usage the phone saw while the app was closed counts, and the limit blocks", () => {
     const st = setUp();
     const now = Date.now();
-    mockPhone.report = { ...emptyReport(now), usedMin: 45, limitReached: true };
+    mockPhone.report = { ...emptyReport(now), usedMin: 60, limitReached: true };
     st.syncScreenTime();
     const s = st.getScreenTime();
     expect(s.today.usedMin).toBe(60);

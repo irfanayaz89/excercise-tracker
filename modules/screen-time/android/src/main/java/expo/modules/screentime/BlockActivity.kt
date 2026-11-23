@@ -191,9 +191,7 @@ class BlockActivity : Activity() {
   }
 
   private fun earn() {
-    val st = STCore.state(this)
-    st.openEarn = true
-    STCore.saveState(this, st)
+    STCore.requestEarn(this)
     packageManager.getLaunchIntentForPackage(packageName)?.let {
       startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
     }

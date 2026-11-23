@@ -9,11 +9,18 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-  <!-- Launchable apps only (for the app picker), not every package on the phone. -->
+  <!-- Launchable apps only (for the app picker), not every package on the phone; and the clock
+       apps, which "Block everything" leaves open so an alarm is never covered. -->
   <queries>
     <intent>
       <action android:name="android.intent.action.MAIN" />
       <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SHOW_ALARMS" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SET_ALARM" />
     </intent>
   </queries>
 

@@ -13,7 +13,6 @@ import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import android.app.usage.UsageStatsManager
-import org.json.JSONObject
 import java.util.Calendar
 
 /**
@@ -141,6 +140,7 @@ class ScreenTimeModule : Module() {
         plan.locks.any { it.enabled && (it.allApps || it.apps == null || !it.apps.isEmpty) }
       if (!anything) {
         BlockService.stop(ctx)
+        STWidget.update(ctx, "Screen time is off")
       } else if (!hasAccess(ctx)) {
         problems.add("Usage access or Display over other apps is off")
       } else {
@@ -150,17 +150,7 @@ class ScreenTimeModule : Module() {
     }
 
     /** What happened since the last read; whole minutes are handed over, the remainder stays. */
-    Function("takeState") {
-      val st = STCore.state(ctx)
-      val out: JSONObject = st.toJson()
-      val handed = (st.earnedSpentSec / 60) * 60
-      st.earnedSpentSec -= handed
-      st.unlocks.clear()
-      st.gaps.clear()
-      st.openEarn = false
-      STCore.saveState(ctx, st)
-      out.toString()
-    }
+    Function("takeState") { STCore.takeState(ctx) }
 
     Function("takeUnlock") { kind: String, minutes: Int -> STCore.takeUnlock(ctx, kind, minutes) }
 

@@ -44,7 +44,15 @@ export default function KeyScreen() {
           <Label tone="chalk">Done</Label>
         </Pressable>
       </View>
-      {key ? (
+      {key && running ? (
+        // While a key lock runs the key isn't shown here: it would be a way round keeping it out of reach.
+        <View style={{ gap: space.md }}>
+          <Body tone="muted" size={15}>
+            A key lock is running. Scan the key you saved or printed to end it; it isn’t shown here until then.
+          </Body>
+          <Button label="Scan my key" onPress={() => router.replace('/screen-time/scan')} />
+        </View>
+      ) : key ? (
         <>
           <View style={styles.card} accessibilityLabel="Your key, a QR code">
             <QRCode value={keyText(key.secret)} size={240} color="#0C1A1D" backgroundColor="#FFFFFF" getRef={(c) => (qr.current = c)} />
@@ -57,17 +65,11 @@ export default function KeyScreen() {
           <Button
             variant="ghost"
             label="Make a new key"
-            disabled={running}
             onPress={() => {
               newKey();
               setMessage('New key made. The old one no longer works: save this one.');
             }}
           />
-          {running && (
-            <Body tone="cue" size={13}>
-              A key lock is running: scan this key to end it before making a new one.
-            </Body>
-          )}
         </>
       ) : (
         <Button label="Make my key" onPress={() => newKey()} />

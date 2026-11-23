@@ -57,10 +57,13 @@ const RANK: Record<Focus['kind'], number> = { set: 0, timed: 1, key: 2 };
 function merge(current: Focus | null, next: Focus, now: number): Focus {
   if (!current || !focusActive(current, now)) return next;
   // Running already: keep the later end, the stricter setting, and a timed focus stays timed.
+  const kind = RANK[current.kind] >= RANK[next.kind] ? current.kind : next.kind;
+  // Never longer, from its start, than its kind allows: a longer one wouldn't survive a restart.
+  const cap = (kind === 'key' ? KEY_LOCK_MAX_MIN : FOCUS_MAX_MIN) * MIN_MS;
   return {
-    kind: RANK[current.kind] >= RANK[next.kind] ? current.kind : next.kind,
+    kind,
     startedAt: current.startedAt,
-    until: Math.max(current.until, next.until),
+    until: Math.min(Math.max(current.until, next.until), current.startedAt + cap),
     strict: current.strict || next.strict,
     blockAll: current.blockAll === true || next.blockAll === true,
   };

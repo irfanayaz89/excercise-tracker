@@ -236,8 +236,10 @@ export function FriendPasscodeNote() {
     <View style={styles.note}>
       <Strong size={14}>Make it harder to switch off</Strong>
       <Body tone="muted" size={13}>
-        Ask a friend to set a Screen Time passcode on your iPhone: Settings › Screen Time › Lock Screen Time Settings. Let them keep the
-        code. Changing Screen Time settings then needs them.
+        Ask a friend to set a Screen Time passcode on your iPhone (Settings › Screen Time › Lock Screen Time Settings) and to use their
+        own Apple Account for passcode recovery, or you could reset it yourself. Also, under Screen Time › Content &amp; Privacy
+        Restrictions, set Deleting Apps to Don’t Allow. From iOS 26.4, switching off Trueline’s access then
+        needs their code.
       </Body>
     </View>
   );

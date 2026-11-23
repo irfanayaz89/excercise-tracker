@@ -10,8 +10,10 @@ import type { AppLimit, EarningRules, LockTime, PauseRules, Rate, RulesCore, Scr
 export const MAX_LOCK_TIMES = 7;
 /** Apple's shortest schedule. */
 export const MIN_LOCK_MIN = 15;
-/** Apple shields at most 50 individual apps at once (categories cover more). */
+/** Apple shields at most 50 individual apps at once (categories cover more): the iPhone pickers refuse more. */
 export const MAX_APPS = 50;
+/** What a stored list keeps at most (Android has no 50-app limit, so this is only a sanity bound). */
+const MAX_STORED_APPS = 1000;
 export const MAX_DAILY_CAP_MIN = 240;
 /** Strict: a loosening change waits this long. */
 export const STRICT_WAIT_MS = 24 * 60 * 60 * 1000;
@@ -95,7 +97,7 @@ const num = (v: unknown, lo: number, hi: number): number | null =>
 
 function selection(v: unknown): Selection {
   const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
-  return { apps: strings(o.apps).slice(0, MAX_APPS), categories: strings(o.categories), domains: strings(o.domains) };
+  return { apps: strings(o.apps).slice(0, MAX_STORED_APPS), categories: strings(o.categories), domains: strings(o.domains) };
 }
 
 function lockTime(v: unknown): LockTime | null {
@@ -254,10 +256,22 @@ export function startStrict(r: ScreenTimeRules, now: number, days: number): Scre
 // ─── Changes ────────────────────────────────────────────────────────────────
 
 /** Minutes of the week (0 … 10079, Sunday 00:00 = 0) a lock time covers, for comparing two versions. */
-function weekCoverage(locks: LockTime[], earnableToo: boolean): Set<number> {
+/** Minutes of the week one lock time covers, whatever apps it blocks. */
+function ownCoverage(l: LockTime): Set<number> {
+  const out = new Set<number>();
+  const s = parseHHMM(l.start);
+  const len = lockLengthMin(l);
+  if (!l.enabled || s === null || len === null) return out;
+  for (const d of l.days) for (let k = 0; k < len; k++) out.add((d * 1440 + s + k) % 10080);
+  return out;
+}
+
+function weekCoverage(locks: LockTime[], earnableToo: boolean, scope: 'main' | 'all' = 'main'): Set<number> {
   const out = new Set<number>();
   for (const l of locks) {
     if (!l.enabled || (l.earnable && !earnableToo)) continue;
+    // "main": lock times that block the main list ("Everything" blocks it too); "all": only "Everything".
+    if (scope === 'main' ? l.apps !== 'main' && l.apps !== 'all' : l.apps !== 'all') continue;
     const s = parseHHMM(l.start);
     const len = lockLengthMin(l);
     if (s === null || len === null) continue;
@@ -280,8 +294,12 @@ export function loosens(prev: RulesCore, next: RulesCore): boolean {
   if (!subset(asSet(prev.blocked), asSet(next.blocked))) return true;
   if (!subset(asSet(next.allowed), asSet(prev.allowed))) return true;
   if (prev.dailyLimitMin !== null && (next.dailyLimitMin === null || next.dailyLimitMin > prev.dailyLimitMin)) return true;
-  if (!subset(weekCoverage(prev.lockTimes, false), weekCoverage(next.lockTimes, false))) return true;
-  if (!subset(weekCoverage(prev.lockTimes, true), weekCoverage(next.lockTimes, true))) return true;
+  // Minutes the main apps are locked, and minutes everything is locked, compared separately: moving a
+  // lock time onto another list (or off "Everything") gives those minutes back even if the total stays.
+  for (const scope of ['main', 'all'] as const) {
+    if (!subset(weekCoverage(prev.lockTimes, false, scope), weekCoverage(next.lockTimes, false, scope))) return true;
+    if (!subset(weekCoverage(prev.lockTimes, true, scope), weekCoverage(next.lockTimes, true, scope))) return true;
+  }
   // A newly skipped occurrence gives back one night (or day) even though the weekly pattern is the same.
   for (const n of next.lockTimes) {
     if (n.skipDate === null) continue;
@@ -298,7 +316,9 @@ export function loosens(prev: RulesCore, next: RulesCore): boolean {
     } else if (!n || n.apps === 'main' || n.apps === 'all' || !subset(asSet(p.apps), asSet(n.apps))) {
       return true;
     }
-    if (!subset(weekCoverage([p], true), weekCoverage([n], true))) return true;
+    // Same minutes or more, and not newly opened by earned time.
+    if (!subset(ownCoverage(p), ownCoverage(n))) return true;
+    if (n.earnable && !p.earnable) return true;
   }
   // Per-app limits: each one must still be there, cover at least the same apps, and be no longer.
   for (const p of prev.appLimits) {
@@ -355,6 +375,7 @@ function touchesRunningLock(zone: Zone, prev: RulesCore, next: RulesCore, now: n
     const still = activeOccurrence(zone, n, now);
     if (!still || still.end < occ.end || (n.earnable && !p.earnable)) return true;
     if (p.apps === 'all' && n.apps !== 'all') return true;
+    if (p.apps === 'main' && n.apps !== 'main' && n.apps !== 'all') return true;
     if (p.apps !== 'main' && p.apps !== 'all' && (n.apps === 'main' || n.apps === 'all' || !subset(asSet(p.apps), asSet(n.apps)))) return true;
   }
   return false;
@@ -382,9 +403,12 @@ export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore,
   }
   const prev = coreOf(r);
   if (!loosens(prev, next)) {
-    // Switching to Strict without a period (see startStrict) gets the default week.
-    const strictUntil = next.strictness !== 'strict' ? null : strictActive(r, now) ? r.strictUntil : now + DEFAULT_STRICT_DAYS * DAY_MS;
-    return { result: 'applied', rules: { ...r, ...next, strictUntil, pending: null }, cancelledPending: r.pending !== null };
+    // Switching to Strict without a period (see startStrict) gets the default week. A Strict period
+    // that has run out stays over: carrying "strict" along with some other change doesn't restart it.
+    const expired = next.strictness === 'strict' && r.strictness === 'strict' && !strictActive(r, now);
+    const applied = expired ? { ...next, strictness: 'standard' as const } : next;
+    const strictUntil = applied.strictness !== 'strict' ? null : strictActive(r, now) ? r.strictUntil : now + DEFAULT_STRICT_DAYS * DAY_MS;
+    return { result: 'applied', rules: { ...r, ...applied, strictUntil, pending: null }, cancelledPending: r.pending !== null };
   }
   const mode = effectiveStrictness(r, now);
   if (mode === 'nudge') return { result: 'applied', rules: { ...r, ...next, strictUntil: null, pending: null }, cancelledPending: false };
