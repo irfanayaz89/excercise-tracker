@@ -1,0 +1,80 @@
+
+<section>
+  <h2 id="s1"><span class="num">1</span>Scope and how to read this guide</h2>
+  <p class="lead">This guide is for any team adding screen time and app blocking to an iOS or Android app. It defines a <b>minimum viable product (MVP)</b> feature by feature, and gives the platform detail, strictness limits and store rules behind it.</p>
+  <p><b>Sources:</b> Apple and Google documentation, store policies and change logs, plus Apple Developer Forums and developer write-ups for behaviour the documentation doesn't cover; all read on 18–20 November 2026. Numbers like <sup class="ref">[12]</sup> link to the reference list.</p>
+  <p><b>Labels:</b> <span class="tag yes">Confirmed official</span> Apple or Google documentation or policy · <span class="tag info">Apple staff</span> an Apple engineer on the forums · <span class="tag part">Community</span> developer reports; verify on devices · <span class="tag no">Unverified</span> no reliable source.</p>
+</section>
+
+<section>
+  <h2 id="s2" class="flow"><span class="num">2</span>How app blocking works on phones</h2>
+  <p>There are two fundamentally different models. Understanding them explains almost every difference between iOS and Android in this guide.</p>
+  <div class="grid2">
+    <div class="card"><h4>iOS: the system blocks, the app only gives instructions</h4>
+      <ul>
+        <li>The app tells iOS <i>which</i> apps to block and <i>when</i>.</li>
+        <li><b>iOS itself</b> draws the block screen (the "shield") and keeps it up, even if the app is closed or force-quit.</li>
+        <li>The app never learns which apps the user picked, only anonymous tokens.</li>
+      </ul>
+    </div>
+    <div class="card"><h4>Android: the app blocks, using general permissions</h4>
+      <ul>
+        <li>There is no blocking API.</li>
+        <li>The app watches which app is on screen and covers it with its own screen.</li>
+        <li>It sees real app names and exact usage. The block only works while the app's background service is running.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 id="s2-ios">2.1 iOS, step by step</h3>
+  <figure>
+  <svg viewBox="0 0 680 210" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica Neue, Arial" font-size="10.3">
+    <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#56686b"/></marker></defs>
+    <g text-anchor="middle">
+      <rect x="10" y="20" width="120" height="58" rx="7" fill="#e8c62e"/><text x="70" y="42" font-weight="700" fill="#1d1a05">1 · Permission</text><text x="70" y="57" fill="#1d1a05">user approves with</text><text x="70" y="70" fill="#1d1a05">Face ID / passcode</text>
+      <rect x="148" y="20" width="120" height="58" rx="7" fill="#f2f5f4" stroke="#c9d6d6"/><text x="208" y="42" font-weight="700">2 · Pick apps</text><text x="208" y="57" fill="#56686b">Apple's picker returns</text><text x="208" y="70" fill="#56686b">anonymous tokens</text>
+      <rect x="286" y="20" width="120" height="58" rx="7" fill="#f2f5f4" stroke="#c9d6d6"/><text x="346" y="42" font-weight="700">3 · Set rules</text><text x="346" y="57" fill="#56686b">shield now, or schedule</text><text x="346" y="70" fill="#56686b">times / usage limits</text>
+      <rect x="424" y="20" width="120" height="58" rx="7" fill="#0c1a1d"/><text x="484" y="42" font-weight="700" fill="#e8c62e">4 · iOS enforces</text><text x="484" y="57" fill="#c9d3ce">shield covers the app;</text><text x="484" y="70" fill="#c9d3ce">works with app closed</text>
+      <rect x="562" y="20" width="108" height="58" rx="7" fill="#f2f5f4" stroke="#c9d6d6"/><text x="616" y="42" font-weight="700">5 · Shield buttons</text><text x="616" y="57" fill="#56686b">Close · Earn ·</text><text x="616" y="70" fill="#56686b">open the app (26.5+)</text>
+    </g>
+    <g stroke="#56686b"><line x1="130" y1="49" x2="147" y2="49" marker-end="url(#ar)"/><line x1="268" y1="49" x2="285" y2="49" marker-end="url(#ar)"/><line x1="406" y1="49" x2="423" y2="49" marker-end="url(#ar)"/><line x1="544" y1="49" x2="561" y2="49" marker-end="url(#ar)"/></g>
+    <rect x="148" y="108" width="396" height="86" rx="8" fill="#fff" stroke="#c9d6d6" stroke-dasharray="4 3"/>
+    <text x="160" y="126" font-weight="700" fill="#0c1a1d">While the app is closed: three small extensions run inside iOS</text>
+    <text x="160" y="145" fill="#56686b">• Monitor extension: woken at schedule start/end and usage thresholds; changes shields</text>
+    <text x="160" y="162" fill="#56686b">• Shield configuration extension: the text, icon and colours on the block screen</text>
+    <text x="160" y="179" fill="#56686b">• Shield action extension: what each block-screen button does</text>
+    <line x1="346" y1="78" x2="346" y2="107" stroke="#56686b" marker-end="url(#ar)"/>
+  </svg>
+  <figcaption>Figure 1. iOS: the app sets rules; iOS enforces them and runs the app's extensions at the right moments.</figcaption>
+  </figure>
+
+  <h3 id="s2-android">2.2 Android, step by step</h3>
+  <figure>
+  <svg viewBox="0 0 680 170" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica Neue, Arial" font-size="10.3">
+    <defs><marker id="ar2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#56686b"/></marker></defs>
+    <g text-anchor="middle">
+      <rect x="10" y="20" width="140" height="58" rx="7" fill="#e8c62e"/><text x="80" y="42" font-weight="700" fill="#1d1a05">1 · Two permissions</text><text x="80" y="57" fill="#1d1a05">Usage access + Display</text><text x="80" y="70" fill="#1d1a05">over other apps</text>
+      <rect x="168" y="20" width="130" height="58" rx="7" fill="#f2f5f4" stroke="#c9d6d6"/><text x="233" y="42" font-weight="700">2 · Pick apps</text><text x="233" y="57" fill="#56686b">The app's own list</text><text x="233" y="70" fill="#56686b">(real app names)</text>
+      <rect x="316" y="20" width="160" height="58" rx="7" fill="#0c1a1d"/><text x="396" y="42" font-weight="700" fill="#e8c62e">3 · Background service</text><text x="396" y="57" fill="#c9d3ce">every second: which app</text><text x="396" y="70" fill="#c9d3ce">is in front? count usage</text>
+      <rect x="494" y="20" width="176" height="58" rx="7" fill="#f2f5f4" stroke="#c9d6d6"/><text x="582" y="42" font-weight="700">4 · Block screen</text><text x="582" y="57" fill="#56686b">blocked? open the app's</text><text x="582" y="70" fill="#56686b">screen on top of it</text>
+    </g>
+    <g stroke="#56686b"><line x1="150" y1="49" x2="167" y2="49" marker-end="url(#ar2)"/><line x1="298" y1="49" x2="315" y2="49" marker-end="url(#ar2)"/><line x1="476" y1="49" x2="493" y2="49" marker-end="url(#ar2)"/></g>
+    <path d="M582,78 C582,120 396,120 396,80" fill="none" stroke="#56686b" stroke-dasharray="4 3" marker-end="url(#ar2)"/>
+    <text x="490" y="128" text-anchor="middle" fill="#56686b">loop continues while the service runs</text>
+    <text x="10" y="155" fill="#b3372a">If the user force-stops the app or revokes a permission, the loop stops: blocking ends until the app is opened again.</text>
+  </svg>
+  <figcaption>Figure 2. Android: the app itself watches and blocks, using general-purpose permissions.</figcaption>
+  </figure>
+
+  <h3 id="s2-see">2.3 What each platform lets the app see</h3>
+  <table>
+    <thead><tr><th style="width:30%">Information</th><th style="width:35%">iOS</th><th>Android</th></tr></thead>
+    <tbody>
+      <tr><td>Which apps the user picked</td><td>No. Opaque tokens only <sup class="ref">[4]</sup>. Names can be <i>shown</i> with Apple's <code>Label(token)</code>; the shield extension sees the blocked app's name</td><td>Yes: package names and labels</td></tr>
+      <tr><td>Minutes used per app</td><td>No, only "threshold reached" events and an Apple-drawn chart <sup class="ref">[19]</sup>. The EU has an exception (iOS 26.4) <sup class="ref">[5]</sup></td><td>Yes, to the second <sup class="ref">[34]</sup></td></tr>
+      <tr><td>Which app is open right now</td><td>No</td><td>Yes, from usage events (polled)</td></tr>
+      <tr><td>Whether access was revoked</td><td>Yes, through the authorization status when the app runs</td><td>Yes, through permission checks when the app runs</td></tr>
+      <tr><td>Can data leave the phone?</td><td>No. Apple restricts Family Controls usage data to the controls themselves <sup class="ref">[23]</sup></td><td>Allowed with disclosure and consent, but not recommended <sup class="ref">[56]</sup></td></tr>
+    </tbody>
+  </table>
+</section>

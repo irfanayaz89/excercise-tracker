@@ -1,0 +1,84 @@
+
+<section>
+  <h2 id="s4" class="flow"><span class="num">5</span>iOS in depth</h2>
+  <p>An App Store app has exactly <b>one</b> supported way to restrict other apps: Apple's Screen Time API (iOS 15+, extended every year) <sup class="ref">[20][21]</sup>. It needs no device management, but distributing it requires Apple's approval (12.1).</p>
+
+  <h3 id="s4-1">5.1 The four frameworks</h3>
+  <table>
+    <thead><tr><th style="width:17%">Framework</th><th style="width:40%">What it does</th><th>Key limits</th></tr></thead>
+    <tbody>
+      <tr><td class="k">FamilyControls</td><td>Authorization (<code>.individual</code> / <code>.child</code>) <sup class="ref">[2]</sup> and Apple's app picker, which returns opaque tokens <sup class="ref">[4]</sup></td><td>The app never learns app names, except EU users under a separate entitlement (26.4) <sup class="ref">[5]</sup></td></tr>
+      <tr><td class="k">ManagedSettings</td><td>Restrictions written into named <code>ManagedSettingsStore</code>s: shields plus other setting groups (5.3) <sup class="ref">[9]</sup></td><td>50 stores per process; the most restrictive store wins <sup class="ref">[9][21]</sup>; 50 tokens per list <sup class="ref">[10]</sup></td></tr>
+      <tr><td class="k">ManagedSettingsUI</td><td>Block-screen text and buttons, through shield configuration and shield action extensions <sup class="ref">[12]</sup></td><td>Sandboxed with no network; a slow configuration falls back to Apple's default shield</td></tr>
+      <tr><td class="k">DeviceActivity</td><td>Schedules, usage thresholds and warnings; a monitor extension runs at those moments <sup class="ref">[16][18]</sup>. Report extension for charts <sup class="ref">[19]</sup></td><td>15 min to 1 week per schedule, 20 activities per app <sup class="ref">[16]</sup>; roughly 5–6 MB of extension memory reported; Apple publishes no figure <sup class="ref">[28][95]</sup> <span class="tag part">Community</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="s4-2">5.2 Authorization</h3>
+  <table>
+    <thead><tr><th style="width:24%"></th><th style="width:40%">Individual (adult, own phone)</th><th>Child (Family Sharing)</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Who approves</td><td>The user (Face ID, Touch ID or passcode) <sup class="ref">[2]</sup></td><td>A parent in the same family group <sup class="ref">[2]</sup></td></tr>
+      <tr><td class="k">Can delete the app?</td><td><span class="tag no">Yes</span> <sup class="ref">[1]</sup></td><td><span class="tag yes">No</span>, and can't sign out of iCloud either <sup class="ref">[1][20]</sup></td></tr>
+      <tr><td class="k">Can revoke access?</td><td><span class="tag no">Yes</span>, in Settings › Screen Time › Apps with Screen Time Access <sup class="ref">[21]</sup>. Enforcement stops and all tokens become invalid <sup class="ref">[3][85]</sup></td><td>Guardian-controlled <sup class="ref">[1]</sup></td></tr>
+      <tr><td class="k">Revoke protection</td><td>Face ID or passcode only; open since 2023 with no reply from Apple <sup class="ref">[80]</sup>. Reports conflict on whether 26.4+ can put it behind the Screen Time passcode, and one describes a way around it <sup class="ref">[79]</sup> <span class="tag part">Community</span></td><td>n/a</td></tr>
+      <tr><td class="k">Detecting revocation</td><td colspan="2"><code>AuthorizationCenter.shared.$authorizationStatus</code> publishes changes, but only while the app runs <sup class="ref">[85]</sup>; a revoke while the app is in the background gives no callback <sup class="ref">[93]</sup> <span class="tag part">Community</span>. <b>Re-check the status on every launch</b> and treat "not approved" as protection lost.</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="s4-3">5.3 What ManagedSettings can restrict</h3>
+  <p>An MVP needs only the <b>shield</b> group: <code>applications</code>, <code>applicationCategories</code>, <code>webDomains</code> and <code>webDomainCategories</code> <sup class="ref">[83]</sup>. Other groups exist (hiding apps <sup class="ref">[81]</sup>, denying app removal <sup class="ref">[11]</sup>, forcing automatic date and time <sup class="ref">[82]</sup>), but which of them work under individual authorization is undocumented; deny-removal is "not guaranteed" <sup class="ref">[26]</sup>.</p>
+
+  <h3 id="s4-4">5.4 Shields and the picker</h3>
+  <ul>
+    <li><b>Block screen:</b> title, subtitle, colours, an icon you supply and two buttons <sup class="ref">[12]</sup>. The extension is the only place the app sees the blocked app's name.</li>
+    <li><b>Buttons:</b> close, defer or no action <sup class="ref">[14]</sup>; up to 3 menu items on 26.4 <sup class="ref">[13]</sup>; open the app that applied the shield on 26.5 <sup class="ref">[14]</sup>.</li>
+    <li><b>Websites:</b> covered in Safari and browsers that report through Screen Time <sup class="ref">[83][84]</sup>. Chrome, Firefox and Brave reportedly aren't <span class="tag part">Community</span>.</li>
+    <li><b>Limits:</b> 50 apps per list <sup class="ref">[10]</sup>; an allow list (<code>.all(except:)</code>) takes up to 50 exceptions <sup class="ref">[83]</sup>; system apps such as Phone and Settings can't be shielded <sup class="ref">[96]</sup>; the picker reportedly returns fresh tokens on every "Done" <sup class="ref">[101]</sup> <span class="tag part">Community</span>.</li>
+  </ul>
+
+  <h3 id="s4-5">5.5 Schedules, thresholds and warnings</h3>
+  <table>
+    <thead><tr><th style="width:26%">Mechanism</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Schedule</td><td><code>startMonitoring(name, during: DeviceActivitySchedule)</code>: start and end times, repeating or one-off; 15 min to 1 week; 20 per app; reusing a name replaces the schedule <sup class="ref">[16][90]</sup></td></tr>
+      <tr><td class="k">Usage threshold</td><td><code>DeviceActivityEvent(applications:categories:webDomains:threshold:includesPastActivity:)</code> (17.4). Measures <b>time</b> in the chosen apps <sup class="ref">[17]</sup>. Early, duplicate and phantom events are reported from iOS 17.6.1 through 26.x and 27 <sup class="ref">[25][92]</sup>. Apple's engineers said in December 2024 they couldn't say "when, or indeed if" it would be fixed <sup class="ref">[91]</sup></td></tr>
+      <tr><td class="k">Monitor callbacks</td><td><code>intervalDidStart</code>, <code>intervalDidEnd</code>, <code>eventDidReachThreshold</code>, plus the three warnings. They run while the device is in use, without launching the app <sup class="ref">[18]</sup></td></tr>
+      <tr><td class="k">Known traps <span class="tag part">Community</span></td><td>A one-off schedule starting "now" can be booked for tomorrow, so start it in the past. <code>intervalDidEnd</code> can wait until the phone is next used. Stopping a monitor also fires <code>intervalDidEnd</code> <sup class="ref">[93][94]</sup></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="s4-6">5.6 Persistence and reliability</h3>
+  <table>
+    <thead><tr><th style="width:24%">Event</th><th>What happens</th><th style="width:16%">Status</th></tr></thead>
+    <tbody>
+      <tr><td>App force-quit</td><td>Shields stay; extensions keep running <sup class="ref">[18][20]</sup></td><td><span class="tag yes">Official</span></td></tr>
+      <tr><td>Phone restart</td><td>Expected to persist. Schedules reportedly sometimes vanish until the app opens, so re-register on every launch <sup class="ref">[29]</sup></td><td><span class="tag part">Community</span></td></tr>
+      <tr><td>Access revoked</td><td>Enforcement stops and tokens become invalid <sup class="ref">[3][85]</sup></td><td><span class="tag yes">Official</span></td></tr>
+      <tr><td>App deleted</td><td>Undocumented; shields or install and removal denials sometimes reportedly stay stuck <sup class="ref">[30]</sup></td><td><span class="tag no">Unverified</span></td></tr>
+      <tr><td>Stored tokens</td><td>Can expire on 26.5+ (<code>TokenExpiryMessage</code>, <code>refresh</code>) <sup class="ref">[15]</sup>. Expired tokens reportedly keep blocking until re-picked <sup class="ref">[101]</sup></td><td><span class="tag yes">Official</span> / <span class="tag part">Community</span></td></tr>
+      <tr><td>iOS 27</td><td>Shields reportedly sometimes stay stuck on; a restart or clearing every store fixes it <sup class="ref">[100]</sup></td><td><span class="tag part">Community</span></td></tr>
+      <tr><td>Simulator</td><td>Can't verify blocking; test on a real iPhone <sup class="ref">[93]</sup></td><td><span class="tag part">Community</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="s4-7">5.7 Recent changes, and what iOS can't do</h3>
+  <div class="grid2">
+    <div class="card"><h4>2025 to November 2026</h4>
+      <ul>
+        <li><b>26.4:</b> shield submenu <sup class="ref">[13]</sup>; EU-only usage data <sup class="ref">[5]</sup>.</li>
+        <li><b>26.5:</b> open the app from the shield <sup class="ref">[14]</sup>; token expiry and store management <sup class="ref">[15]</sup>.</li>
+        <li><b>March 2026:</b> developer agreement primary-purpose rule (12.1) <sup class="ref">[23][24]</sup>.</li>
+        <li><b>iOS 27:</b> no new developer APIs; Apple added its own parental "Time Allowances" <sup class="ref">[33]</sup>.</li>
+        <li>App Review Guidelines: no Screen Time-specific changes; 4.10 still applies <sup class="ref">[22]</sup>.</li>
+      </ul></div>
+    <div class="card"><h4>Not possible on iOS</h4>
+      <ul>
+        <li>Turning on Do Not Disturb or Focus. There's no API, and Focus filters only react when the user turns a Focus on <sup class="ref">[32][86][87]</sup>.</li>
+        <li>Reading usage minutes or app names (outside the EU).</li>
+        <li>MDM for consumers (enterprise and education only) <sup class="ref">[22][31]</sup>.</li>
+        <li>Preventing an adult from revoking access or deleting the app.</li>
+      </ul></div>
+  </div>
+
+</section>

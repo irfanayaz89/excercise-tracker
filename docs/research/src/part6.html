@@ -1,0 +1,74 @@
+
+<section>
+  <h2 id="s10" class="flow"><span class="num">10</span>Technical architecture</h2>
+  <p>The structure below suits any cross-platform or fully native app: <b>one rules engine decides, and thin native code on each platform applies the decision.</b></p>
+
+  <h3 id="s10-1">10.1 What is built where</h3>
+  <table>
+    <thead><tr><th style="width:22%">Layer</th><th>Responsibilities</th><th style="width:24%">Example stack</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Screens</td><td>Setup, Screen Time page, lock-time editor, earn screen, focus chooser, Home card, history</td><td>React Native, Expo Router</td></tr>
+      <tr><td class="k">Rules engine (the authority)</td><td>What is blocked now and why: lock times across midnight and daylight saving, daily limit, earned time, focus, strictness, unlocks, pending changes. Pure functions</td><td>TypeScript, unit-tested</td></tr>
+      <tr><td class="k">Saved state and sync</td><td>Rules and 14 days of history on the device. Sends a <b>plan</b> to native code on app open, resume, rule change and after earning; merges native reports back</td><td>TypeScript + on-device key-value store</td></tr>
+      <tr><td class="k">Native bridge</td><td><code>isSupported</code>, <code>requestAuthorization</code>, <code>pickApps</code>, <code>sync(plan)</code>, <code>takeState()</code>, <code>takeUnlock</code>, <code>stopAll</code></td><td>Expo module: Swift + Kotlin</td></tr>
+      <tr><td class="k">iOS enforcement</td><td>Apply and lift shields, schedules and thresholds, block-screen text and buttons, while the app is closed</td><td>Swift: module + 3 extensions</td></tr>
+      <tr><td class="k">Android enforcement</td><td>Check the app in front, count usage, show the block screen, heartbeat, restart after boot</td><td>Kotlin: foreground service, activity, boot receiver</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="s10-2">10.2 Architecture diagram</h3>
+  <figure>
+  <svg viewBox="0 0 680 400" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica Neue, Arial" font-size="10.5">
+    <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#56686b"/></marker></defs>
+    <rect x="10" y="8" width="660" height="150" rx="10" fill="#f2f5f4" stroke="#c9d6d6"/>
+    <text x="22" y="26" font-weight="700" fill="#0c1a1d">JavaScript (React Native, Expo Router)</text>
+    <rect x="22" y="36" width="200" height="54" rx="6" fill="#fff" stroke="#c9d6d6"/><text x="122" y="56" text-anchor="middle" font-weight="700">Screens</text><text x="122" y="72" text-anchor="middle" fill="#56686b">Setup · Screen Time · Lock editor</text><text x="122" y="84" text-anchor="middle" fill="#56686b">Earn · Focus · Home card</text>
+    <rect x="240" y="36" width="200" height="54" rx="6" fill="#fff" stroke="#c9d6d6"/><text x="340" y="56" text-anchor="middle" font-weight="700">Earning task</text><text x="340" y="72" text-anchor="middle" fill="#56686b">whatever the app verifies</text><text x="340" y="84" text-anchor="middle" fill="#56686b">(for example exercise sets)</text>
+    <rect x="458" y="36" width="200" height="54" rx="6" fill="#e8c62e" stroke="#c9a816"/><text x="558" y="56" text-anchor="middle" font-weight="700" fill="#1d1a05">Screen Time rules engine</text><text x="558" y="72" text-anchor="middle" fill="#1d1a05">decide() · earn() · strictness</text><text x="558" y="84" text-anchor="middle" fill="#1d1a05">the single authority</text>
+    <rect x="158" y="102" width="364" height="44" rx="6" fill="#fff" stroke="#c9d6d6"/><text x="340" y="120" text-anchor="middle" font-weight="700">Store + sync</text><text x="340" y="135" text-anchor="middle" fill="#56686b">rules &amp; 14-day log on device · plan out · reports in</text>
+    <line x1="340" y1="90" x2="340" y2="101" stroke="#56686b" marker-end="url(#a)"/><line x1="558" y1="90" x2="470" y2="101" stroke="#56686b" marker-end="url(#a)"/><line x1="122" y1="90" x2="210" y2="101" stroke="#56686b" marker-end="url(#a)"/>
+    <rect x="110" y="172" width="460" height="34" rx="6" fill="#17363c"/><text x="340" y="193" text-anchor="middle" fill="#fff" font-weight="700">Expo module "ScreenTime": sync(plan) · takeState() · pickApps · takeUnlock</text>
+    <line x1="340" y1="146" x2="340" y2="171" stroke="#56686b" marker-end="url(#a)"/>
+    <rect x="10" y="222" width="325" height="170" rx="10" fill="#fff" stroke="#c9d6d6"/><text x="22" y="240" font-weight="700" fill="#0c1a1d">iOS</text>
+    <rect x="22" y="250" width="140" height="40" rx="6" fill="#f2f5f4" stroke="#c9d6d6"/><text x="92" y="267" text-anchor="middle" font-weight="700">App Group</text><text x="92" y="281" text-anchor="middle" fill="#56686b">plan.json · state.json</text>
+    <rect x="182" y="250" width="140" height="40" rx="6" fill="#f2f5f4" stroke="#c9d6d6"/><text x="252" y="267" text-anchor="middle" font-weight="700">Monitor extension</text><text x="252" y="281" text-anchor="middle" fill="#56686b">schedule edges, thresholds</text>
+    <rect x="22" y="300" width="140" height="40" rx="6" fill="#f2f5f4" stroke="#c9d6d6"/><text x="92" y="317" text-anchor="middle" font-weight="700">Shield config ext.</text><text x="92" y="331" text-anchor="middle" fill="#56686b">block-screen text</text>
+    <rect x="182" y="300" width="140" height="40" rx="6" fill="#f2f5f4" stroke="#c9d6d6"/><text x="252" y="317" text-anchor="middle" font-weight="700">Shield action ext.</text><text x="252" y="331" text-anchor="middle" fill="#56686b">Earn · Emergency · Close</text>
+    <rect x="22" y="350" width="300" height="32" rx="6" fill="#0c1a1d"/><text x="172" y="370" text-anchor="middle" fill="#e8c62e" font-weight="700">iOS: ManagedSettings shields · DeviceActivity</text>
+    <rect x="345" y="222" width="325" height="170" rx="10" fill="#fff" stroke="#c9d6d6"/><text x="357" y="240" font-weight="700" fill="#0c1a1d">Android</text>
+    <rect x="357" y="250" width="140" height="40" rx="6" fill="#f2f5f4" stroke="#c9d6d6"/><text x="427" y="267" text-anchor="middle" font-weight="700">SharedPreferences</text><text x="427" y="281" text-anchor="middle" fill="#56686b">plan · state</text>
+    <rect x="517" y="250" width="140" height="40" rx="6" fill="#f2f5f4" stroke="#c9d6d6"/><text x="587" y="267" text-anchor="middle" font-weight="700">BlockService (FGS)</text><text x="587" y="281" text-anchor="middle" fill="#56686b">1 s check · usage count</text>
+    <rect x="357" y="300" width="140" height="40" rx="6" fill="#f2f5f4" stroke="#c9d6d6"/><text x="427" y="317" text-anchor="middle" font-weight="700">BlockActivity</text><text x="427" y="331" text-anchor="middle" fill="#56686b">overlay block screen</text>
+    <rect x="517" y="300" width="140" height="40" rx="6" fill="#f2f5f4" stroke="#c9d6d6"/><text x="587" y="317" text-anchor="middle" font-weight="700">BootReceiver</text><text x="587" y="331" text-anchor="middle" fill="#56686b">restart after reboot</text>
+    <rect x="357" y="350" width="300" height="32" rx="6" fill="#0c1a1d"/><text x="507" y="370" text-anchor="middle" fill="#e8c62e" font-weight="700">Android: UsageStatsManager · overlay permission</text>
+    <line x1="270" y1="206" x2="170" y2="249" stroke="#56686b" marker-end="url(#a)"/><line x1="410" y1="206" x2="440" y2="249" stroke="#56686b" marker-end="url(#a)"/>
+  </svg>
+  <figcaption>Figure 4. The rules engine decides; native code applies its plan and reports back. Extensions and the Android service act on the last plan while the app is closed.</figcaption>
+  </figure>
+  <p><b>Why the rules live in one shared engine:</b> one implementation serves both platforms and can be unit-tested across time zones and daylight-saving changes; native code stays a small mirror of "what's blocked right now"; and app lists travel inside the plan, so changing them follows the same strictness rules as any other change.</p>
+  <p class="small"><b>Expo and React Native notes:</b> Expo Go can't run this, so a development build is required. The iOS extensions are generated from config (<code>@bacons/apple-targets</code>), never by hand-editing <code>ios/</code>. Add the entitlement and extensions behind a build flag, so builds from free Apple teams keep working. An iOS-only library, <code>react-native-device-activity</code>, covers similar ground <sup class="ref">[113]</sup>; Foqos is an open-source native example <sup class="ref">[114]</sup>. Extensions must stay tiny: no JavaScript runtime, database or network.</p>
+
+  <h3 id="s10-5">10.3 Safe removal and interrupted sessions</h3>
+  <ol>
+    <li><b>No block without an end.</b> Every focus, unlock and lock-time edge is registered with the system.</li>
+    <li><b>A hard cap</b> on focus length (3 h), so a bad input can't lock someone out for a day.</li>
+    <li><b>Reconcile on every app open:</b> recompute from the rules and clock, clear anything expired, re-register schedules. This also repairs schedules lost after a reboot <sup class="ref">[29]</sup>.</li>
+    <li><b>An emergency path</b> sized by strictness (section 4, M8), and an always-allowed list.</li>
+    <li><b>An explicit "Turn off"</b> that clears every store before the user deletes the app, because what happens to shields after deletion is undocumented <sup class="ref">[30]</sup>.</li>
+    <li><b>Protection lost:</b> record the gap in history, show a red banner, and offer to re-grant.</li>
+  </ol>
+
+</section>
+
+<section>
+  <h2 id="s11" class="flow"><span class="num">11</span>User experience: honest wording</h2>
+  <p>The feature should feel like a tool the user chose, not parental monitoring: a short setup (M1), a fair way out (M8), and wording that doesn't overpromise.</p>
+  <div class="callout">Suggested wording: <i>"This blocks the apps you choose and makes switching it off take effort. You can always remove Screen Time access in Settings or delete the app; if you do, it will show in your history."</i></div>
+  <p><b>Never promise:</b></p>
+  <ul>
+    <li>"Can't be bypassed", "uninstall-proof" or "impossible to turn off": false for adults on both platforms.</li>
+    <li>"Exact screen time" on iPhone: it's coarse, and sometimes wrong.</li>
+    <li>"Blocks every app": 50 apps per list on iOS, and up to about a second of delay on Android.</li>
+    <li>"Works the same on every Android phone": battery savers vary by maker.</li>
+  </ul>
+</section>

@@ -1,0 +1,97 @@
+
+<section>
+  <h2 id="s12" class="flow"><span class="num">12</span>Security, privacy and store compliance</h2>
+
+  <h3 id="s12-1">12.1 Apple: entitlement, review and the developer agreement</h3>
+  <ol>
+    <li><b>Paid team.</b> Family Controls (development) is only available to paid Apple Developer Program members <sup class="ref">[8]</sup>. A free Personal team can't use it.</li>
+    <li><b>Distribution request.</b> The Account Holder submits Apple's Family Controls (Distribution) request <sup class="ref">[7]</sup> for the app <b>and each</b> Screen Time extension <sup class="ref">[6]</sup>. Apple publishes no timeline; reports range from 2 days to more than a month, and extensions sometimes stay "Submitted" after the app is approved <sup class="ref">[97][98]</sup> <span class="tag part">Community</span>. File it first.</li>
+    <li><b>Primary purpose (developer agreement, "Family Controls Framework" clause).</b> An app using the framework must have a primary purpose of parental supervision through Family Sharing, or of focus, productivity and personal device-usage management. It may not be used for ad blocking, by organisations, or to manage another adult's device. Usage data may be used only for those controls, never shared, used for ads or sold <sup class="ref">[23][24]</sup>.
+      <ul>
+        <li>The agreement PDF of 29 October 2026 numbers this clause 3.3.3(P); Apple's March 2026 notice called it 3.3.3(Q) <sup class="ref">[102]</sup>. Cite it by title.</li>
+      </ul>
+      <div class="callout warn"><b>Risk for apps whose main purpose is something else</b> (for example fitness): present the app as personal device-usage management in the request, the store listing and the review notes, and make the feature prominent. Apple could still decline; the fallback is to ship without the feature while the request is pending.</div></li>
+    <li><b>Guideline 4.10:</b> built-in capabilities can't be monetized, and the Screen Time APIs are named explicitly. <b>Guideline 3.1.1:</b> anything unlocked for money must use in-app purchase <sup class="ref">[22]</sup>. Charge for the app's own features, never for "unlock blocking".</li>
+    <li><b>Guideline 5.5:</b> MDM is for enterprise, education and limited parental cases <sup class="ref">[22]</sup>. Not a route for a consumer MVP.</li>
+  </ol>
+
+  <h3 id="s12-2">12.2 Google Play</h3>
+  <table>
+    <thead><tr><th style="width:27%">Policy area</th><th>What the app must do</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Foreground service <code>specialUse</code> <sup class="ref">[53]</sup></td><td>Declare it in Play Console: feature, impact if deferred, demonstration video. Keep it user-initiated, visible and stoppable <sup class="ref">[59]</sup>.</td></tr>
+      <tr><td class="k">User Data <sup class="ref">[56]</sup></td><td>App inventory and usage are personal and sensitive data: show a <b>prominent in-app disclosure with consent</b> before asking for usage access. In the Data safety form, mark them as collected, not shared, processed on the device.</td></tr>
+      <tr><td class="k">Package visibility <sup class="ref">[57]</sup></td><td><code>&lt;queries&gt;</code> for launcher apps; no <code>QUERY_ALL_PACKAGES</code>.</td></tr>
+      <tr><td class="k">Battery exemption <sup class="ref">[43]</sup></td><td>Open the general battery-optimisation settings page, never the direct "Allow" prompt.</td></tr>
+      <tr><td class="k">Accessibility <sup class="ref">[54][63]</sup></td><td>Not in the MVP. If ever used: separate disclosure, consent, a declaration with video, and never claim <code>isAccessibilityTool</code>. Play also bans autonomous use of the API; rule-based automation stays allowed (enforcement dated 28 January 2026 <span class="tag no">Unverified</span>) <sup class="ref">[55]</sup>.</td></tr>
+      <tr><td class="k">Device admin, blocking uninstall <sup class="ref">[60][109]</sup></td><td>Not in the MVP. Play allows preventing uninstall or settings changes only for parental-control apps authorised by a guardian.</td></tr>
+      <tr><td class="k">Monitoring / stalkerware <sup class="ref">[60][61]</sup></td><td>Applies to monitoring <i>another person</i> or sending data off the device. Self-management with on-device data shouldn't need <code>isMonitoringTool</code> <span class="tag no">Unverified</span>.</td></tr>
+      <tr><td class="k">Developer verification <sup class="ref">[64][108]</sup></td><td>Register the package (automatic with Play App Signing). Enforced in four countries since 30 September 2026, worldwide from 2027.</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="s12-3">12.3 Privacy and law</h3>
+  <ul>
+    <li><b>On-device only:</b> rules, usage minutes, tokens and package names never leave the phone, and no analytics event contains an app identity.</li>
+    <li><b>Consent and exit:</b> a one-screen explanation before each permission, and a "Turn off" that removes everything.</li>
+    <li><b>Adults only in the MVP.</b> A child or family mode would bring children's-privacy law: the amended US COPPA rule (fully enforceable since 22 April 2026) <sup class="ref">[115]</sup>, US state app-store age laws such as the one in force in Texas <sup class="ref">[116]</sup>, and the UK Children's Code, which requires an obvious sign to the child when monitoring is on <sup class="ref">[117]</sup>.</li>
+  </ul>
+
+  <h3 id="s12-4">12.4 Risks and what to watch</h3>
+  <table>
+    <thead><tr><th style="width:36%">Risk</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>Apple declines the entitlement (primary purpose)</td><td>Frame it as personal device-usage management, make it prominent, request early; ship without it if needed.</td></tr>
+      <tr><td>iOS threshold misfires continue <sup class="ref">[25][91]</sup></td><td>Check elapsed time and re-arm. Lock times and focus don't depend on thresholds.</td></tr>
+      <tr><td>Shields stuck after uninstall, or stuck on under iOS 27 <sup class="ref">[30][100]</sup></td><td>"Turn off" clears every store; document it in support.</td></tr>
+      <tr><td>Android service killed by battery savers or memory limits <sup class="ref">[66][103]</sup></td><td>Battery settings guidance, a lean service, heartbeat detection, testing on Samsung and Xiaomi.</td></tr>
+      <tr><td>Android 17+ background-launch hardening <sup class="ref">[51]</sup></td><td>Keep the overlay-based launch; test each new Android beta.</td></tr>
+      <tr><td>Someone locked out in an emergency</td><td>Always-allowed list, rationed unlocks, capped focus length, an end on every block.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2 id="s13" class="flow"><span class="num">13</span>Competitor and industry research</h2>
+  <p>Checked against official listings and help pages in November 2026.</p>
+  <table>
+    <thead><tr><th style="width:15%">App</th><th style="width:32%">How it restricts</th><th>Strictness and what it teaches</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Opal <sup class="ref">[67][68]</sup></td><td>Screen Time shields; timers and sessions</td><td>Three levels, up to "no early exit". Advises a friend holding the Screen Time passcode.</td></tr>
+      <tr><td class="k">one sec <sup class="ref">[69]</sup></td><td>A Shortcuts automation shows a pause when an app opens</td><td>A <b>delay</b>, not a block. In a 6-week study, opens of target apps fell 57%; the study had no control group and the app's creator is a co-author <sup class="ref">[112]</sup>.</td></tr>
+      <tr><td class="k">Brick <sup class="ref">[70]</sup></td><td>A physical NFC puck starts and ends a block</td><td>5 emergency "unbricks". Physical friction works.</td></tr>
+      <tr><td class="k">AppBlock <sup class="ref">[71][72]</sup></td><td>Android: usage access + <b>accessibility</b> + overlay</td><td>Strict Mode blocks uninstall and Settings: the strongest Android approach, with the policy risk that comes with it.</td></tr>
+      <tr><td class="k">Freedom <sup class="ref">[73][74]</sup></td><td>iOS: Screen Time (50 apps, 50 domains) + optional VPN</td><td>Locked Mode; admits it can't stop access being revoked in Settings.</td></tr>
+      <tr><td class="k">Exercise-to-unlock apps <sup class="ref">[75][76][77][78]</sup></td><td>Camera pose or Health data unlock time (Pushscroll, ScrollToll, Fit to Scroll, Fitlock)</td><td>Common complaints: miscounting, locks not always holding, paywalled unlocks, exercise that can be skipped.</td></tr>
+    </tbody>
+  </table>
+  <p><b>Patterns that work:</b> three strictness steps (soft delay, harder, hard lock); a <b>rationed</b> way out in every hard mode; effort to loosen rules; on iOS, a passcode held by a friend. <b>Gaps a new product can fill:</b> a task that is verified honestly, no paywall on unlocking, and a real Android version (most exercise competitors are iPhone-only).</p>
+</section>
+
+<section>
+  <h2 id="s14" class="flow"><span class="num">14</span>Recommendations and roadmap</h2>
+  <div class="callout ok"><b>Ship the MVP in section 4: real blocking (Level 3) with an opt-in Strict mode (Level 4).</b> A timer with reminders adds little that phones don't already do. Skip Level 5. Never promise "can't be bypassed".</div>
+
+  <div class="keep">
+  <h3 id="s14-1">14.1 Roadmap</h3>
+  <table>
+    <thead><tr><th style="width:8%">Phase</th><th>Work</th><th style="width:22%">Effort</th></tr></thead>
+    <tbody>
+      <tr><td>0</td><td>Paid Apple team; distribution requests for the app and 3 extensions; privacy policy; Play declarations</td><td>Low effort, long wait</td></tr>
+      <tr><td>1</td><td>MVP features M1–M10 on both platforms, with the shared rules engine</td><td>High</td></tr>
+      <tr><td>2</td><td>Real-device pass (4.5): iPhone on iOS 26.5 and 27; Pixel, Samsung, Xiaomi on Android 15–17</td><td>Medium</td></tr>
+      <tr><td>3</td><td>TestFlight and Play closed testing, 1–2 weeks of daily use</td><td>Medium</td></tr>
+      <tr><td>4</td><td>Public launch</td><td>Low</td></tr>
+      <tr><td>Later</td><td>Block-screen earn menu, usage charts, website blocking on iOS, stricter focus (allow list, screen pinning)</td><td>Low to medium each</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 id="s14-2">14.2 Long-term maintainability</h3>
+  <ul>
+    <li>Keep <b>all rules in one shared engine</b>. Native code mirrors only "what's blocked now", through one tested contract (the plan).</li>
+    <li>One shared Swift file linked into every extension, with nothing heavier than Apple's frameworks.</li>
+    <li>Gate features by OS version at runtime: 17.4 (thresholds), 26.4 (menu), 26.5 (open app, token expiry).</li>
+    <li>Rerun the device pass on every iOS and Android beta. Both platforms changed this area in every 2025–2026 release.</li>
+  </ul>
+</section>

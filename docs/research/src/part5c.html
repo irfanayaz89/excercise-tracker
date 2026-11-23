@@ -1,0 +1,17 @@
+
+<section>
+  <h2 id="s8" class="flow"><span class="num">9</span>iOS vs Android comparison</h2>
+  <table>
+    <thead><tr><th style="width:20%">Capability</th><th style="width:31%">iOS (Screen Time API)</th><th style="width:31%">Android (usage access + overlay + service)</th><th>Stronger</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Usage tracking accuracy</td><td>Threshold steps only, with misfires on 26.x/27 <sup class="ref">[25]</sup>; numbers not readable outside the EU <sup class="ref">[5][19]</sup></td><td>To the second <sup class="ref">[35]</sup></td><td><span class="tag info">Android</span></td></tr>
+      <tr><td class="k">Website restrictions</td><td>Web domains and categories in the shield <sup class="ref">[9]</sup></td><td>VPN (unclear policy <sup class="ref">[58]</sup>) or accessibility (avoid)</td><td><span class="tag info">iOS</span></td></tr>
+      <tr><td class="k">Real-time enforcement</td><td>Immediate (system)</td><td>Up to about 1 s (polling)</td><td><span class="tag info">iOS</span></td></tr>
+      <tr><td class="k">Bypass resistance</td><td>Only revoking access or deleting the app</td><td>Force stop, Task Manager, Safe Mode, revoke, uninstall</td><td><span class="tag info">iOS</span></td></tr>
+      <tr><td class="k">Block screen design</td><td>Title, subtitle, icon, colours, 2 buttons + 3 menu items <sup class="ref">[12][13]</sup></td><td>Fully custom</td><td><span class="tag info">Android</span></td></tr>
+      <tr><td class="k">Store hurdles</td><td>Paid team, approval per bundle, primary-purpose rule <sup class="ref">[6][23]</sup></td><td>FGS declaration with video; disclosure <sup class="ref">[53][56]</sup></td><td><span class="tag info">Android</span></td></tr>
+      <tr><td class="k">Development complexity</td><td>High: 3–4 extensions, App Group, entitlements, tokens, OS bugs</td><td>Medium: one service, one activity, OEM quirks</td><td><span class="tag info">Android</span></td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn"><b>Where neither platform gives complete control:</b> an adult can always remove protection from their own phone. Promise "makes it hard and visible", never "impossible".</div>
+</section>

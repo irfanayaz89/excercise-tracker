@@ -1,0 +1,33 @@
+
+<section>
+  <h2 id="s3" class="flow"><span class="num">3</span>Feature catalogue: everything an app can build</h2>
+  <p>The main Screen Time features open to an ordinary App Store or Google Play app, with no device management. The last column says whether each belongs in a first release (section 4).</p>
+  <p class="small">Type: <span class="tag yes">Enforce</span> actually prevents · <span class="tag part">Deter</span> possible but costly · <span class="tag info">Inform</span> shows or reminds. Availability: <span class="tag yes">Yes</span> <span class="tag part">Partial</span> <span class="tag no">No</span></p>
+
+  <table>
+    <thead><tr><th style="width:15%">Feature</th><th style="width:32%">iOS</th><th style="width:27%">Android</th><th style="width:8%">Type</th><th>In the MVP?</th></tr></thead>
+    <tbody>
+      <tr><td colspan="5" style="background:#e9efee;font-weight:700">A · Seeing usage</td></tr>
+      <tr><td class="k">Usage report</td><td><span class="tag part">Partial</span> An Apple-drawn chart inside the app; the app can't read the numbers <sup class="ref">[19]</sup></td><td><span class="tag yes">Yes</span> Exact minutes per app <sup class="ref">[34]</sup></td><td><span class="tag info">Inform</span></td><td>MVP: 14-day history</td></tr>
+
+      <tr><td colspan="5" style="background:#e9efee;font-weight:700">B · What can be blocked</td></tr>
+      <tr><td class="k">Chosen apps</td><td><span class="tag yes">Yes</span> System shield, up to 50 per list <sup class="ref">[9][10]</sup></td><td><span class="tag yes">Yes</span> Block screen over the app</td><td><span class="tag yes">Enforce</span></td><td>MVP</td></tr>
+      <tr><td class="k">Whole categories</td><td><span class="tag yes">Yes</span> Apple's categories, no 50 limit <sup class="ref">[10]</sup></td><td><span class="tag part">Partial</span> Many apps declare no category</td><td><span class="tag yes">Enforce</span></td><td>MVP (recommended in setup)</td></tr>
+      <tr><td class="k">Websites</td><td><span class="tag yes">Yes</span> Domains and categories, in Safari and browsers that report to Screen Time <sup class="ref">[83][84]</sup></td><td><span class="tag part">Partial</span> Only through a VPN or accessibility <sup class="ref">[54][58]</sup></td><td><span class="tag yes">Enforce</span></td><td>Later, iOS only</td></tr>
+
+      <tr><td colspan="5" style="background:#e9efee;font-weight:700">C · When blocking applies</td></tr>
+      <tr><td class="k">Focus session (now, for N min)</td><td><span class="tag yes">Yes</span> Shield now + a schedule for the end <sup class="ref">[16]</sup></td><td><span class="tag yes">Yes</span> Exact</td><td><span class="tag yes">Enforce</span></td><td><b>MVP: focus session</b></td></tr>
+      <tr><td class="k">Repeating schedules</td><td><span class="tag yes">Yes</span> 20 activities per app <sup class="ref">[16]</sup></td><td><span class="tag yes">Yes</span> Service clock</td><td><span class="tag yes">Enforce</span></td><td>MVP: lock times</td></tr>
+      <tr><td class="k">Daily time limit</td><td><span class="tag part">Partial</span> Usage threshold; misfires <sup class="ref">[25][91]</sup></td><td><span class="tag yes">Yes</span> Exact</td><td><span class="tag yes">Enforce</span></td><td>MVP (iOS approximate)</td></tr>
+
+      <tr><td colspan="5" style="background:#e9efee;font-weight:700">D · Ways out (designed friction)</td></tr>
+      <tr><td class="k">Temporary unlock</td><td><span class="tag yes">Yes</span> Lift the shield and schedule the re-block</td><td><span class="tag yes">Yes</span></td><td><span class="tag part">Deter</span></td><td>MVP: emergency, "1 more minute"</td></tr>
+      <tr><td class="k">Buttons on the block screen</td><td><span class="tag yes">Yes</span> 2 buttons; 3 menu items (26.4); open the app (26.5) <sup class="ref">[13][14]</sup></td><td><span class="tag yes">Yes</span> Fully custom</td><td><span class="tag part">Deter</span></td><td>MVP (menu items later)</td></tr>
+      <tr><td class="k">Earn time with a task</td><td><span class="tag yes">Yes</span> App logic + shields</td><td><span class="tag yes">Yes</span></td><td><span class="tag part">Deter</span></td><td>MVP, optional</td></tr>
+
+      <tr><td colspan="5" style="background:#e9efee;font-weight:700">E · Making it stick</td></tr>
+      <tr><td class="k">Rule lock (strict period)</td><td><span class="tag yes">Yes</span> In-app logic</td><td><span class="tag yes">Yes</span> In-app logic</td><td><span class="tag part">Deter</span></td><td>MVP: Strict</td></tr>
+      <tr><td class="k">Detect bypass</td><td><span class="tag yes">Yes</span> Authorization status on each launch <sup class="ref">[85]</sup></td><td><span class="tag yes">Yes</span> Permissions, exit reasons, heartbeat <sup class="ref">[40][42]</sup></td><td><span class="tag info">Detect</span></td><td>MVP: banner and history</td></tr>
+    </tbody>
+  </table>
+</section>
