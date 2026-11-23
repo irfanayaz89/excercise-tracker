@@ -1,90 +1,80 @@
-
 <section>
-  <h2 id="mvp"><span class="num">4</span>The MVP, feature by feature</h2>
-  <p class="lead">The MVP is the smallest release that keeps the product's promise: <b>the apps a user chooses stay closed when they said they should, with a fair and limited way to open them</b>. It has ten features. Each is specified the same way: what the user gets, how each platform does it, the rules, and the edge cases it must handle. Lines marked "Example" show one real set of choices, from an exercise app.</p>
+  <h2 id="mvp" class="flow"><span class="num">4</span>The MVP, feature by feature</h2>
+  <p class="lead">The MVP is the smallest release that keeps the product's promise: <b>the apps a user chooses stay closed when they said they should, with a fair and limited way to open them</b>. Its ten features (M1–M10) are specified the same way: what the user gets, each platform, the rules and the edge cases. "Level" is the strictness level from section 7; lines marked "Example" show one real set of choices, from an exercise app.</p>
+  <div class="callout"><b>Design rule behind every feature:</b> <i>a block never starts without an end time the system already knows</i> (an iOS schedule; on Android the plan plus the service clock). A crash, a dead battery or an abandoned workout can't leave someone locked out.</div>
 
   <h3 id="mvp-1">4.1 The MVP at a glance</h3>
   <table>
-    <thead><tr><th style="width:5%">#</th><th style="width:22%">Feature</th><th>What the user gets</th><th style="width:11%">Level</th></tr></thead>
+    <thead><tr><th style="width:5%">#</th><th style="width:24%">Feature</th><th>What the user gets</th><th style="width:8%">Level</th></tr></thead>
     <tbody>
       <tr><td>M1</td><td class="k">Setup and permissions</td><td>A one-minute guided setup that asks for access one step at a time</td><td>—</td></tr>
-      <tr><td>M2</td><td class="k">App lists</td><td>Choose the apps to block and the apps that always stay open</td><td>3</td></tr>
-      <tr><td>M3</td><td class="k">Focus session</td><td>Blocked apps stay closed for a session the user starts (for example during a workout)</td><td>3</td></tr>
+      <tr><td>M2</td><td class="k">App lists</td><td>The apps to block, and the apps that always stay open</td><td>3</td></tr>
+      <tr><td>M3</td><td class="k">Focus session</td><td>Blocked apps stay closed for a session the user starts</td><td>3</td></tr>
       <tr><td>M4</td><td class="k">Lock times</td><td>Repeating blocked windows, such as Sleep 22:00–07:00</td><td>3</td></tr>
-      <tr><td>M5</td><td class="k">Daily limit</td><td>A daily allowance for the blocked apps; blocked when it runs out</td><td>3</td></tr>
-      <tr><td>M6</td><td class="k">Earn time with a task <small>(optional)</small></td><td>Something the app can verify turns into minutes of app time (for example exercise)</td><td>3</td></tr>
-      <tr><td>M7</td><td class="k">Block screen</td><td>A clear screen saying why the app is closed, until when, and what to do</td><td>3</td></tr>
-      <tr><td>M8</td><td class="k">Strictness and ways out</td><td>Nudge, Standard or Strict, each with its own rationed way out</td><td>2–4</td></tr>
-      <tr><td>M9</td><td class="k">Protection health</td><td>The app notices when blocking was switched off, and shows it</td><td>4</td></tr>
+      <tr><td>M5</td><td class="k">Daily limit</td><td>A daily allowance for the blocked apps</td><td>3</td></tr>
+      <tr><td>M6</td><td class="k">Earn time with a task</td><td>Verified work turns into minutes of app time (optional)</td><td>3</td></tr>
+      <tr><td>M7</td><td class="k">Block screen</td><td>Why the app is closed, until when, and what to do</td><td>3</td></tr>
+      <tr><td>M8</td><td class="k">Strictness and ways out</td><td>Nudge, Standard or Strict, each with a rationed way out</td><td>2–4</td></tr>
+      <tr><td>M9</td><td class="k">Protection health</td><td>The app notices and shows when blocking was switched off</td><td>4</td></tr>
       <tr><td>M10</td><td class="k">Home card, history, Turn off</td><td>Today at a glance, 14 days of history, and a clean way to stop</td><td>—</td></tr>
     </tbody>
   </table>
-  <p class="small"><b>Level</b> is the strictness level from section 7.</p>
-  <div class="callout"><b>Design rule behind every feature:</b> <i>a block never starts without an end time the system already knows</i> (an iOS schedule; on Android the plan plus the service clock). A crash, a dead battery or an abandoned workout can't leave someone locked out.</div>
 
   <h3 id="mvp-2">4.2 Feature specifications</h3>
 
   <div class="keep"><h4>M1 · Setup and permissions</h4>
   <table class="spec"><tbody>
     <tr><td class="k">User gets</td><td>Why → access → pick apps → always allowed → daily limit → lock times → strictness → summary. Nothing is blocked until the last step.</td></tr>
-    <tr><td class="k">iOS</td><td>One Apple prompt, confirmed with Face ID or the passcode (individual authorization) <sup class="ref">[2]</sup>.</td></tr>
-    <tr><td class="k">Android</td><td>A disclosure screen with consent <sup class="ref">[56]</sup>, then Usage access, Display over other apps, notifications, and a battery step that opens the system battery page ("choose Don't optimise / Unrestricted") <sup class="ref">[43]</sup>.</td></tr>
-    <tr><td class="k">Edge cases</td><td>A denied permission keeps setup on that step and leaves the rest of the app fully usable. Where blocking can't work (Expo Go, an iPhone build without the entitlement, iOS below 17.4) the feature is hidden.</td></tr>
+    <tr><td class="k">iOS</td><td>One Apple prompt for individual authorization (5.2).</td></tr>
+    <tr><td class="k">Android</td><td>A disclosure screen with consent <sup class="ref">[56]</sup>, then Usage access, Display over other apps, notifications, and the system battery page ("Don't optimise / Unrestricted") <sup class="ref">[43]</sup>.</td></tr>
+    <tr><td class="k">Edge cases</td><td>A denied permission keeps setup on that step; the rest of the app stays usable. Where blocking can't work (Expo Go, an iPhone build without the entitlement, iOS below 17.4) the feature is hidden.</td></tr>
   </tbody></table></div>
 
-  <div class="keep"><h4>M2 · App lists (blocked and always allowed)</h4>
+  <div class="keep"><h4>M2 · App lists</h4>
   <table class="spec"><tbody>
-    <tr><td class="k">User gets</td><td>One list of apps to block and one list that always stays open (Phone, Messages and Maps are suggested).</td></tr>
-    <tr><td class="k">iOS</td><td>Apple's picker: apps, whole categories and websites, returned as anonymous tokens <sup class="ref">[4]</sup>. Categories are recommended.</td></tr>
-    <tr><td class="k">Android</td><td>The app's own list of launchable apps with real names, using <code>&lt;queries&gt;</code> and not <code>QUERY_ALL_PACKAGES</code> <sup class="ref">[57]</sup>.</td></tr>
+    <tr><td class="k">User gets</td><td>A list of apps to block and a list that always stays open (Phone, Messages and Maps are suggested).</td></tr>
+    <tr><td class="k">Platforms</td><td>iOS: Apple's picker returns apps, categories and websites as tokens <sup class="ref">[4]</sup>; categories are recommended. Android: the app's own list of launchable apps, using <code>&lt;queries&gt;</code>, not <code>QUERY_ALL_PACKAGES</code> <sup class="ref">[57]</sup>.</td></tr>
     <tr><td class="k">Rules</td><td>Always-allowed wins over blocked. In Strict, apps can be added to the blocked list but not removed.</td></tr>
-    <tr><td class="k">Edge cases</td><td>iOS: more than 50 single apps silently blocks nothing <sup class="ref">[10][27]</sup>, so every picker refuses 51 and suggests categories. iOS 26.5 can expire tokens <sup class="ref">[15]</sup>: a "Pick your apps again" banner appears. A new phone is a new setup (tokens are device-specific).</td></tr>
+    <tr><td class="k">Edge cases</td><td>iOS: more than 50 single apps silently blocks nothing, and one report says the 50 counts across all stores, a risk for separate block, pause and limit stores <sup class="ref">[10][27]</sup>; the picker refuses 51 and suggests categories. Expired tokens (26.5) show a "Pick your apps again" banner <sup class="ref">[15]</sup>. A new phone is a new setup (tokens are reportedly device-specific).</td></tr>
   </tbody></table></div>
 
   <div class="keep"><h4>M3 · Focus session</h4>
   <table class="spec"><tbody>
-    <tr><td class="k">User gets</td><td>"Block my apps now, until this time." While it runs, a blocked app shows the session message and a button back to the app.</td></tr>
-    <tr><td class="k">iOS</td><td>A dedicated shield store, plus a system wake-up at the planned end so iOS lifts it even if the app is closed. Schedules must last 15 minutes <sup class="ref">[16]</sup>, so the wake-up is a 15-minute window that <i>ends</i> at the planned end. The button opens the app on iOS 26.5+ <sup class="ref">[14]</sup> and just closes the blocked app on older versions.</td></tr>
-    <tr><td class="k">Android</td><td>The plan carries "focus until T"; the service blocks until T, and the button opens the app.</td></tr>
-    <tr><td class="k">Rules</td><td>A running session can only be extended, never shortened. Earned minutes don't open apps during it; the emergency unlock still does. Nothing lasts longer than 3 hours. In Strict it can't be ended by hand.</td></tr>
-    <tr><td class="k">Example</td><td>An exercise app's "Workout Focus": a chooser above Start with <b>Off · This set · 15 · 30 · 45 · 60 min</b>. "This set" ends when the set is done (safety cap 60 min); a timed focus runs its full time. The block screen says "Workout in progress" with <b>Back to workout</b>.</td></tr>
-    <tr><td class="k">Edge cases</td><td>App crash or an abandoned session: the system lifts the block at the planned end. A clock moved backwards doesn't extend it. If the session can't start (for example a missing permission), nothing is blocked.</td></tr>
-    <tr><td class="k">Open question</td><td>On iPhone, whether the under-15-minute window lifts on time is <span class="tag no">Unverified</span> on a device.</td></tr>
+    <tr><td class="k">User gets</td><td>"Block my apps now, until this time." A blocked app shows the session message and a button back to the app.</td></tr>
+    <tr><td class="k">iOS</td><td>A dedicated shield store plus a system wake-up at the planned end. Schedules last at least 15 minutes <sup class="ref">[16]</sup>, so the wake-up window starts in the past and ends at the planned end; <code>intervalDidEnd</code> runs then if the phone is in use, otherwise at its next use <sup class="ref">[120]</sup>. The button opens the app on 26.5+ <sup class="ref">[14]</sup> and closes the blocked app before that. Android: the plan carries "focus until T" and the button opens the app.</td></tr>
+    <tr><td class="k">Rules</td><td>A running session can be extended, never shortened. Earned minutes don't open apps during it; the emergency unlock does. At most 3 hours. In Strict it can't be ended by hand.</td></tr>
+    <tr><td class="k">Example</td><td>"Workout Focus": <b>Off · This set · 15 · 30 · 45 · 60 min</b>. "This set" ends with the set (safety cap 60 min). The block screen says "Workout in progress" with <b>Back to workout</b>.</td></tr>
+    <tr><td class="k">Edge cases</td><td>After a crash or an abandoned session the system lifts the block at the planned end. A clock moved backwards doesn't extend it. If the session can't start, nothing is blocked.</td></tr>
   </tbody></table></div>
 
   <div class="keep"><h4>M4 · Lock times</h4>
   <table class="spec"><tbody>
-    <tr><td class="k">User gets</td><td>Up to 7 repeating windows by weekday, each at least 15 minutes, with ready-made presets. A lock time can block the main list or its own list, and can be marked "earned time can open it" or not.</td></tr>
-    <tr><td class="k">iOS</td><td>One repeating <code>DeviceActivity</code> schedule per edge; the monitor extension applies and lifts the shield with the app closed <sup class="ref">[16][18]</sup>. Budget: 5 fixed activities + 2 per lock time = 19 of the 20 allowed.</td></tr>
-    <tr><td class="k">Android</td><td>The service checks the schedule every second and restarts after a reboot <sup class="ref">[41]</sup>.</td></tr>
-    <tr><td class="k">Rules</td><td>Making a lock easier waits: until midnight in Standard, 24 hours in Strict. A running lock can't be shortened in Strict.</td></tr>
-    <tr><td class="k">Edge cases</td><td>Windows across midnight, daylight-saving changes and time-zone travel are covered by tests in three time zones. Schedules are re-registered on every app open, which also repairs schedules lost after an iPhone restart <sup class="ref">[29]</sup>.</td></tr>
+    <tr><td class="k">User gets</td><td>Up to 7 repeating weekday windows of at least 15 minutes, with presets. Each blocks the main list or its own, and is marked "earned time can open it" or not.</td></tr>
+    <tr><td class="k">iOS</td><td>One repeating <code>DeviceActivity</code> schedule per edge <sup class="ref">[16][18]</sup>. Budget: 6 fixed activities (including the pause's wake-up, M12) + 2 per lock time = 20 of the 20 allowed. Android: the service checks every second and restarts after a reboot <sup class="ref">[39][44]</sup>.</td></tr>
+    <tr><td class="k">Rules</td><td>Loosening waits until midnight in Standard and 24 hours in Strict. A running lock can't be shortened in Strict.</td></tr>
+    <tr><td class="k">Edge cases</td><td>Windows across midnight, daylight-saving changes and time-zone travel need tests in several time zones. Schedules are re-registered on every app open (5.6).</td></tr>
   </tbody></table></div>
 
   <div class="keep"><h4>M5 · Daily limit</h4>
   <table class="spec"><tbody>
     <tr><td class="k">User gets</td><td>A daily allowance for the blocked apps (default 60 min). At zero they're blocked until midnight, unless minutes were earned.</td></tr>
-    <tr><td class="k">iOS</td><td>Usage thresholds in 15-minute steps plus a "limit" event <sup class="ref">[17]</sup>. Because these events misfire <sup class="ref">[25][91]</sup>, the extension rejects any event that arrives sooner than real time allows and re-arms the remainder (up to 3 times). <b>Shown as approximate.</b></td></tr>
-    <tr><td class="k">Android</td><td>Counted to the second by the service.</td></tr>
-    <tr><td class="k">Edge cases</td><td>A false "limit reached" would lock someone out wrongly, so the guard prefers blocking a little late over blocking early. Moving the clock back never grants a fresh day.</td></tr>
-    <tr><td class="k">Open question</td><td>How the guard behaves over a real day on an iPhone is <span class="tag no">Unverified</span>; it is the first item of the device pass.</td></tr>
+    <tr><td class="k">iOS</td><td>Usage thresholds in 15-minute steps plus a "limit" event <sup class="ref">[17]</sup>. Because they misfire (5.5), the extension rejects any event that arrives sooner than real time allows and re-arms the remainder (up to 3 times). <b>Shown as approximate.</b> Android counts to the second.</td></tr>
+    <tr><td class="k">Edge cases</td><td>The guard prefers blocking a little late over blocking early. Moving the clock back never grants a fresh day. How the guard behaves over a real day on an iPhone is <span class="tag no">Unverified</span>.</td></tr>
   </tbody></table></div>
 
   <div class="keep"><h4>M6 · Earn time with a task (optional)</h4>
   <table class="spec"><tbody>
-    <tr><td class="k">User gets</td><td>Extra minutes for doing something the app can verify, up to a daily cap. This is what separates a product from a plain blocker, and it's optional in a first release.</td></tr>
-    <tr><td class="k">Both platforms</td><td>Pure app logic on top of M4 and M5: earned minutes keep the apps open after the daily limit and during lock times marked "earned time can open it".</td></tr>
-    <tr><td class="k">Rules</td><td>Only verified work earns, each piece once. A daily cap. Earned minutes never open apps during a focus session.</td></tr>
-    <tr><td class="k">Example</td><td>Camera-verified sets: <b>push-up 1 min</b> per clean rep (0.5 if flagged), <b>crunch 0.5 min</b> (0.25), <b>plank and side plank 2 min per 10 s</b> in good form; 120 earned minutes a day. Demo sets and reps removed by the real-person check earn nothing.</td></tr>
-    <tr><td class="k">Edge cases</td><td>On iOS, spending earned time is measured with the same misfire guard as M5. The block screen offers "Earn time" only when earning is actually possible (cap not reached, lock allows it).</td></tr>
+    <tr><td class="k">User gets</td><td>Extra minutes for work the app can verify, up to a daily cap. This separates a product from a plain blocker.</td></tr>
+    <tr><td class="k">Both platforms</td><td>App logic on top of M4 and M5: earned minutes keep apps open after the daily limit and in lock times marked "earned time can open it". On iOS, spending is measured with M5's guard.</td></tr>
+    <tr><td class="k">Rules</td><td>Only verified work earns, each piece once; a daily cap; never during a focus session. The block screen offers "Earn time" only when earning is possible.</td></tr>
+    <tr><td class="k">Example</td><td>Camera-verified sets: <b>push-up 1 min</b> per clean rep (0.5 if flagged), <b>crunch 0.5 min</b> (0.25), <b>plank 2 min per 10 s</b>; 120 min a day. A real-person check removes demo sets, which earn nothing.</td></tr>
   </tbody></table></div>
 
   <div class="keep"><h4>M7 · Block screen</h4>
   <table class="spec"><tbody>
-    <tr><td class="k">User gets</td><td>Why the app is closed ("Today's time is up", a lock time's name, "Workout in progress"), until when, and one or two buttons: <b>Earn time</b>, <b>Back to the session</b>, <b>Emergency: 10 min</b>, <b>1 more minute</b> or <b>Close</b>.</td></tr>
-    <tr><td class="k">iOS</td><td>Apple's shield with the app's text and two buttons <sup class="ref">[12]</sup>. On 26.5+ a button can open the app <sup class="ref">[14]</sup>; before that, "Earn time" closes the blocked app and the earn screen appears the next time the app is opened.</td></tr>
-    <tr><td class="k">Android</td><td>The app's own full-screen page, opened from the background through the overlay permission <sup class="ref">[37]</sup>. Close goes to the home screen; the back gesture is handled.</td></tr>
-    <tr><td class="k">Edge cases</td><td>Android: the blocked app can be visible for up to about a second before the screen covers it. iOS: system apps can't be shielded <sup class="ref">[96]</sup>.</td></tr>
+    <tr><td class="k">User gets</td><td>Why the app is closed ("Today's time is up", a lock time's name, "Workout in progress"), until when, and one or two of: <b>Earn time</b>, <b>Back to the session</b>, <b>Emergency: 10 min</b>, <b>1 more minute</b>, <b>Close</b>.</td></tr>
+    <tr><td class="k">Platforms</td><td>iOS: Apple's shield with the app's text and two buttons (5.4); before 26.5, "Earn time" closes the blocked app and the earn screen appears on the next open. Android: the app's own full-screen page, opened from the background through the overlay permission <sup class="ref">[37]</sup>; Close goes home and the back gesture is handled.</td></tr>
+    <tr><td class="k">Edge cases</td><td>Android: the blocked app can show for up to about a second. iOS: Always Allowed apps escape category and "everything" shields (5.4).</td></tr>
   </tbody></table></div>
 
   <div class="keep"><h4>M8 · Strictness and ways out</h4>
@@ -96,71 +86,64 @@
       <tr><td class="k">Strict (1–30 days, default 7)</td><td>Apps can't be removed, a running lock can't be shortened, loosening waits 24 h</td><td>No unlocks. Ending Strict early costs real effort (for example 100 verified push-ups)</td></tr>
     </tbody>
   </table>
-  <p class="small">The numbers are example defaults. All of this is rule logic in one shared engine, identical on both platforms. Every unlock has an end that is registered with the system, so the block comes back even if the app is closed.</p></div>
+  <p class="small">Example defaults. All of this is rule logic in one shared engine. Every unlock has an end registered with the system, so the block comes back even if the app is closed.</p></div>
 
-  <div class="keep"><h4>M9 · Protection health (bypass detection)</h4>
+  <div class="keep"><h4>M9 · Protection health</h4>
   <table class="spec"><tbody>
-    <tr><td class="k">User gets</td><td>A red banner when blocking isn't working, and history lines such as "off 2 min" for the time it wasn't.</td></tr>
-    <tr><td class="k">iOS</td><td>The authorization status is checked on every app open <sup class="ref">[85]</sup>; time without access is logged as a gap.</td></tr>
-    <tr><td class="k">Android</td><td>The service writes a heartbeat every 5 seconds. A gap during which the screen was on is logged as "stopped" (the user stopped the app <sup class="ref">[40]</sup>) or "killed" (the system did). Lost permissions show the banner.</td></tr>
-    <tr><td class="k">Edge cases</td><td>A phone that was simply off or asleep is not counted as a bypass. Deleting the app can't be detected on either platform.</td></tr>
+    <tr><td class="k">User gets</td><td>A red banner when blocking isn't working, and history lines such as "off 2 min".</td></tr>
+    <tr><td class="k">Platforms</td><td>iOS: the launch-time authorization check (5.2); time without access is logged as a gap. Android: a heartbeat every 5 seconds; a gap with the screen on is logged as "stopped" or "killed" (6.3), and lost permissions show the banner.</td></tr>
+    <tr><td class="k">Edge cases</td><td>A phone that was off or asleep isn't a bypass. Deleting the app can't be detected on either platform.</td></tr>
   </tbody></table></div>
 
   <div class="keep"><h4>M10 · Home card, history and Turn off</h4>
   <table class="spec"><tbody>
     <tr><td class="k">User gets</td><td>Home card: time used against the limit, earned minutes left, the next lock time, a running focus. Screen Time page: all settings and 14 days of history (used, earned, focus held, time off).</td></tr>
-    <tr><td class="k">Turn off</td><td>One button removes every shield, schedule and the Android service, so nobody has to delete the app to escape. It follows the strictness rules (not available during Strict).</td></tr>
-    <tr><td class="k">Data</td><td>Rules, history, tokens and app names stay on the phone (12.3).</td></tr>
+    <tr><td class="k">Turn off</td><td>One button removes every shield, schedule and the Android service, so nobody has to delete the app to escape. It follows the strictness rules (not during Strict).</td></tr>
+    <tr><td class="k">Data</td><td>Rules, history, tokens and app names stay on the phone (11.3).</td></tr>
   </tbody></table></div>
 
-  <h3 id="mvp-3">4.3 Left out of the MVP, and why</h3>
+  <h3 id="mvp-3">4.3 Left out, and why</h3>
   <table>
     <thead><tr><th style="width:30%">Feature</th><th>Why it waits</th></tr></thead>
     <tbody>
-      <tr><td class="k">Website blocking</td><td>iOS only covers Safari and browsers that report to Screen Time; Android needs a VPN with unclear Play eligibility <sup class="ref">[58]</sup>.</td></tr>
-      <tr><td class="k">Usage charts on iPhone</td><td>Needs a fourth extension and one more Apple approval; the app still couldn't read the numbers <sup class="ref">[19]</sup>.</td></tr>
-      <tr><td class="k">"Earn 5 / 15 / 60 min" menu on the iOS block screen</td><td>iOS 26.4+ only <sup class="ref">[13]</sup>; the two-button screen already covers the flow.</td></tr>
-      <tr><td class="k">Block everything except an allow list; Android screen pinning</td><td>A stricter workout mode. Higher lock-out risk, so it follows real-device results.</td></tr>
-      <tr><td class="k">Silencing notifications (Android)</td><td>One more sensitive permission in setup <sup class="ref">[88]</sup>.</td></tr>
-      <tr><td class="k">Accessibility, VPN or device admin on Android</td><td>Play policy risk, and Android 17 Advanced Protection switches off non-tool accessibility services <sup class="ref">[54][104]</sup>.</td></tr>
-      <tr><td class="k">Family or child mode; accountability partner</td><td>Turns the product into parental control, brings children's-privacy law (12.3), and on iOS usage data may not leave the phone <sup class="ref">[23]</sup>.</td></tr>
+      <tr><td class="k">Website blocking on Android</td><td>Needs a VPN, with unclear Play eligibility <sup class="ref">[58]</sup>. On iPhone, Apple's picker already has a Websites tab (5.4).</td></tr>
+      <tr><td class="k">"Earn 5 / 15 / 60 min" menu on the iOS shield</td><td>iOS 26.4+ only <sup class="ref">[13]</sup>; two buttons already cover the flow.</td></tr>
+      <tr><td class="k">Android screen pinning</td><td>The user confirms it and can leave with a gesture <sup class="ref">[46]</sup>; M13 does the job better.</td></tr>
+      <tr><td class="k">Accessibility, VPN or device admin</td><td>Play policy risk, and Android 17 Advanced Protection switches off non-tool accessibility services <sup class="ref">[54][103]</sup>.</td></tr>
+      <tr><td class="k">Family or child mode; accountability partner</td><td>Turns the product into parental control, brings children's-privacy law (11.3), and on iOS usage data may go only to a parent through Family Sharing, never to another adult <sup class="ref">[23]</sup>.</td></tr>
     </tbody>
   </table>
 
   <h3 id="mvp-4">4.4 Before launch</h3>
   <table>
-    <thead><tr><th style="width:4%"></th><th>Step</th><th style="width:30%">Depends on</th></tr></thead>
+    <thead><tr><th style="width:4%"></th><th>Step</th><th style="width:22%">Depends on</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td><b>Paid Apple Developer team.</b> Needed even for a debug build on an iPhone <sup class="ref">[8]</sup>.</td><td>Account holder</td></tr>
-      <tr><td>2</td><td><b>Family Controls distribution request</b> for the app and each of the 3 extensions <sup class="ref">[6][7]</sup>. Reported waits run from 2 days to over a month <sup class="ref">[97][98]</sup> <span class="tag part">Community</span>, so file it first.</td><td>Account holder</td></tr>
-      <tr><td>3</td><td><b>iPhone device pass</b> on iOS 26.5 and 27 (4.5).</td><td>Step 1</td></tr>
-      <tr><td>4</td><td><b>Android device pass</b> on a Pixel, a Samsung and a Xiaomi, Android 15–17 (4.5).</td><td>None</td></tr>
-      <tr><td>5</td><td><b>Play Console:</b> foreground-service declaration with a video <sup class="ref">[53]</sup>, Data safety form, privacy policy.</td><td>Step 4 (for the video)</td></tr>
-      <tr><td>6</td><td><b>Store listing and review notes</b> that present the app as personal device-usage management (12.1), with the honest wording from section 11.</td><td>None</td></tr>
-      <tr><td>7</td><td><b>Closed testing</b> on TestFlight and a Play closed track: 1–2 weeks of daily use, then merge and launch.</td><td>Steps 2–5</td></tr>
+      <tr><td>1</td><td><b>Paid Apple Developer team</b>, needed even for a debug build on an iPhone <sup class="ref">[8]</sup>.</td><td>Account holder</td></tr>
+      <tr><td>2</td><td><b>Family Controls distribution request</b> for the app and each of its 3 extensions (11.1). File it first.</td><td>Account holder</td></tr>
+      <tr><td>3</td><td><b>Device pass</b> (4.5): iPhone on iOS 26.5 and 27; a Pixel, a Samsung and a Xiaomi on Android 15–17.</td><td>Step 1</td></tr>
+      <tr><td>4</td><td><b>Play Console:</b> foreground-service declaration with a video <sup class="ref">[53]</sup> and a fallback if it is refused (11.2), Data safety form, privacy policy. New apps and updates must target Android 16 (API 36) since 31 August 2026 <sup class="ref">[144]</sup>.</td><td>Step 3 (video)</td></tr>
+      <tr><td>5</td><td><b>Store listing and review notes</b> that present the app as personal device-usage management (11.1). Answer Apple's age-rating questions (including the social-media question) and keep the rating current, which Texas law also requires (11.3) <sup class="ref">[139][142]</sup>. Uploads need Xcode 26 and the iOS 26 SDK since 28 April 2026 <sup class="ref">[143]</sup>.</td><td>None</td></tr>
+      <tr><td>6</td><td><b>Closed testing</b> on TestFlight and a Play closed track. A Play personal account created after 13 November 2023 needs 12 testers opted in for 14 days in a row before production access <sup class="ref">[145]</sup>.</td><td>Steps 2–4</td></tr>
     </tbody>
   </table>
 
   <h3 id="mvp-5">4.5 Device pass: what must be seen on real phones</h3>
-  <div class="grid2">
-    <div class="card"><h4>iPhone</h4>
-      <ul>
-        <li>Focus and lock time hold with the app force-quit, and lift on time.</li>
-        <li>A focus shorter than 15 minutes lifts at its planned end.</li>
-        <li>Daily limit over a full day: count early or duplicate events.</li>
-        <li>Revoke access: banner and history gap on next open.</li>
-        <li>"Turn off", then delete the app: nothing stays blocked.</li>
-        <li>Pick 49, 50 and 51 apps; token expiry on 26.5.</li>
-        <li>Restart the phone mid-lock.</li>
-      </ul></div>
-    <div class="card"><h4>Android</h4>
-      <ul>
-        <li>Force stop, Task Manager stop and Safe Mode: each shows as "off" afterwards.</li>
-        <li>Restart mid-lock: blocking resumes without opening the app.</li>
-        <li>Samsung and Xiaomi overnight with the battery saver on.</li>
-        <li>Split screen and picture-in-picture over a blocked app.</li>
-        <li>Revoke each permission in turn.</li>
-        <li>Advanced Protection on (Android 17): no effect expected, since no accessibility service is used.</li>
-      </ul></div>
-  </div>
+  <table class="spec"><tbody>
+    <tr><td class="k">iPhone</td><td>Focus and lock time hold with the app force-quit and lift on time, including a focus under 15 minutes · daily limit over a full day (early or duplicate events) · revoke access: banner and history gap on next open · "Turn off", then delete the app: nothing stays blocked · 49, 50 and 51 apps · token expiry on 26.5 · restart mid-lock.</td></tr>
+    <tr><td class="k">Android</td><td>Force stop, Task Manager stop and Safe Mode each show as "off" · restart mid-lock: blocking resumes without opening the app · Samsung and Xiaomi overnight with the battery saver on · each permission revoked in turn · split screen and picture-in-picture · Advanced Protection (17): blocking should be unaffected, but sideloading is blocked, so install from Play or with ADB <sup class="ref">[50]</sup>.</td></tr>
+  </tbody></table>
+
+  <h3 id="mvp-6">4.6 After the MVP: six more features</h3>
+  <p>Opt-in features competitors use that fit an ordinary app. Each change follows the strictness rules (making a rule easier waits).</p>
+  <table>
+    <thead><tr><th style="width:12%">Feature</th><th style="width:24%">What the user gets</th><th style="width:36%">iOS</th><th>Android</th></tr></thead>
+    <tbody>
+      <tr><td class="k">M11 · App limits</td><td>Up to three own limits for an app or group ("Instagram 20 min"), closed until midnight once used. Earned time doesn't open them.</td><td>Extra usage events on the daily-limit schedule, so no extra schedule; M5's guard applies. Opens can't be counted <sup class="ref">[17]</sup>.</td><td>Counts seconds and opens ("3 opens a day"). An open is a visit from another app; the app's own pause and block screens don't count.</td></tr>
+      <tr><td class="k">M12 · Pause before opening</td><td>Outside locks and limits, a 5–30 s wait (5 s longer per pass that day, up to a minute), then 5 minutes open. The friction design with the most evidence: two one sec studies <sup class="ref">[111][146]</sup>; lockout-task studies are smaller <sup class="ref">[147][148]</sup>.</td><td>A pause store; the shield reads "Wait 10 s, then tap Open". <code>.defer</code> redraws the shield and re-asks the configuration extension, so the seconds left update each tap <sup class="ref">[123]</sup> <span class="tag yes">Confirmed official</span>. Removing the app from the store and returning <code>.defer</code> lifts the shield per Apple staff; one TestFlight report says it stays until the app is opened, and stale configurations are reported after a token moves between stores <sup class="ref">[124][125]</sup> <span class="tag part">Community</span>.</td><td>The app's own screen with a live countdown, "Open" and "Not now".</td></tr>
+      <tr><td class="k">M13 · Block everything else</td><td>A lock time, focus or key lock blocks every app except the always-allowed ones. The daily limit still counts only the blocked list.</td><td><code>.all(except:)</code> with up to 50 exceptions <sup class="ref">[83]</sup>; the app itself is exempt <sup class="ref">[117]</sup> and Always Allowed apps are skipped <sup class="ref">[95]</sup>.</td><td>Every launcher app except the home screen, default phone and messages apps, Settings and the app itself.</td></tr>
+      <tr><td class="k">M14 · Key lock (QR)</td><td>A printed QR key, like Brick's tap device (12), ends a "Lock now" block; safety end 1–8 h; the strictness unlock still works.</td><td colspan="2">Both: a focus session of its own kind (M3) with a random key stored on the phone; scanning needs a real phone. Guideline 3.1.1 bans an app's own unlock mechanisms, naming QR codes, for paid features, so the key never unlocks anything sold <sup class="ref">[22]</sup>.</td></tr>
+      <tr><td class="k">M15 · Hide notifications</td><td>Notifications from apps blocked right now are hidden; nothing is read or kept.</td><td>Not possible: no public API silences another app's notifications (Apple confirms none for Do Not Disturb <sup class="ref">[86]</sup>).</td><td>A notification listener with Notification access <sup class="ref">[88]</sup>. A build installed outside a store (13+) first needs "Allow restricted settings" <span class="tag part">Community</span>.</td></tr>
+      <tr><td class="k">M16 · Usage chart, widget</td><td>7 days of use with top apps, and a home-screen widget showing what is blocked until when.</td><td>The blocked apps' minutes in 15-minute steps. Apple's data needs a sandboxed report extension with its own Family Controls request <sup class="ref">[6][19]</sup>, which some cross-platform build tools can't create. A WidgetKit widget reading app-group data shouldn't need approval <span class="tag no">Unverified</span>.</td><td>Built from app-switch events: daily buckets aren't aligned to local midnight and can run past the range <sup class="ref">[34]</sup>; Android 17's calendar-aligned query is for system roles only <sup class="ref">[106]</sup>.</td></tr>
+    </tbody>
+  </table>
 </section>

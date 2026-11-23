@@ -2,29 +2,13 @@
 <section>
   <h2 id="s1"><span class="num">1</span>Scope and how to read this guide</h2>
   <p class="lead">This guide is for any team adding screen time and app blocking to an iOS or Android app. It defines a <b>minimum viable product (MVP)</b> feature by feature, and gives the platform detail, strictness limits and store rules behind it.</p>
-  <p><b>Sources:</b> Apple and Google documentation, store policies and change logs, plus Apple Developer Forums and developer write-ups for behaviour the documentation doesn't cover; all read on 18–20 November 2026. Numbers like <sup class="ref">[12]</sup> link to the reference list.</p>
+  <p><b>Sources:</b> Apple and Google documentation, store policies and change logs, plus Apple Developer Forums and developer write-ups for behaviour the documentation doesn't cover; all read on 18–23 November 2026. Numbers like <sup class="ref">[12]</sup> link to the reference list.</p>
   <p><b>Labels:</b> <span class="tag yes">Confirmed official</span> Apple or Google documentation or policy · <span class="tag info">Apple staff</span> an Apple engineer on the forums · <span class="tag part">Community</span> developer reports; verify on devices · <span class="tag no">Unverified</span> no reliable source.</p>
 </section>
 
 <section>
   <h2 id="s2" class="flow"><span class="num">2</span>How app blocking works on phones</h2>
-  <p>There are two fundamentally different models. Understanding them explains almost every difference between iOS and Android in this guide.</p>
-  <div class="grid2">
-    <div class="card"><h4>iOS: the system blocks, the app only gives instructions</h4>
-      <ul>
-        <li>The app tells iOS <i>which</i> apps to block and <i>when</i>.</li>
-        <li><b>iOS itself</b> draws the block screen (the "shield") and keeps it up, even if the app is closed or force-quit.</li>
-        <li>The app never learns which apps the user picked, only anonymous tokens.</li>
-      </ul>
-    </div>
-    <div class="card"><h4>Android: the app blocks, using general permissions</h4>
-      <ul>
-        <li>There is no blocking API.</li>
-        <li>The app watches which app is on screen and covers it with its own screen.</li>
-        <li>It sees real app names and exact usage. The block only works while the app's background service is running.</li>
-      </ul>
-    </div>
-  </div>
+  <p>There are two fundamentally different models. <b>On iOS the system blocks:</b> the app tells iOS which apps to block and when, and iOS draws the block screen (the "shield") and keeps it up while the app isn't running. <b>On Android the app blocks:</b> there is no blocking API, so the app watches which app is on screen and covers it with its own screen, which works only while its background service runs.</p>
 
   <h3 id="s2-ios">2.1 iOS, step by step</h3>
   <figure>
@@ -68,13 +52,15 @@
 
   <h3 id="s2-see">2.3 What each platform lets the app see</h3>
   <table>
-    <thead><tr><th style="width:30%">Information</th><th style="width:35%">iOS</th><th>Android</th></tr></thead>
+    <thead><tr><th style="width:22%">Information</th><th style="width:44%">iOS</th><th>Android</th></tr></thead>
     <tbody>
-      <tr><td>Which apps the user picked</td><td>No. Opaque tokens only <sup class="ref">[4]</sup>. Names can be <i>shown</i> with Apple's <code>Label(token)</code>; the shield extension sees the blocked app's name</td><td>Yes: package names and labels</td></tr>
-      <tr><td>Minutes used per app</td><td>No, only "threshold reached" events and an Apple-drawn chart <sup class="ref">[19]</sup>. The EU has an exception (iOS 26.4) <sup class="ref">[5]</sup></td><td>Yes, to the second <sup class="ref">[34]</sup></td></tr>
-      <tr><td>Which app is open right now</td><td>No</td><td>Yes, from usage events (polled)</td></tr>
-      <tr><td>Whether access was revoked</td><td>Yes, through the authorization status when the app runs</td><td>Yes, through permission checks when the app runs</td></tr>
-      <tr><td>Can data leave the phone?</td><td>No. Apple restricts Family Controls usage data to the controls themselves <sup class="ref">[23]</sup></td><td>Allowed with disclosure and consent, but not recommended <sup class="ref">[56]</sup></td></tr>
+      <tr><td>Which apps the user picked</td><td>Opaque tokens only <sup class="ref">[4]</sup>; <code>Label(token)</code> shows names without revealing them</td><td>Package names and labels</td></tr>
+      <tr><td>Minutes used per app</td><td>Threshold events only; a chart needs the app's own sandboxed report extension <sup class="ref">[19]</sup>. EU exception (26.4) <sup class="ref">[5]</sup></td><td>To the second <sup class="ref">[34]</sup></td></tr>
+      <tr><td>Which app is open now</td><td>No</td><td>Yes, from polled usage events <sup class="ref">[35]</sup></td></tr>
+      <tr><td>Whether access was revoked</td><td>On launch, via <code>requestAuthorization</code> (5.2)</td><td>Permission checks on launch</td></tr>
+      <tr><td>Can data leave the phone?</td><td>Only within the controls: to the parent in child mode, the user's own device in individual mode; never to ads or data brokers <sup class="ref">[23]</sup>. EU export exception <sup class="ref">[5]</sup></td><td>Allowed with disclosure and consent <sup class="ref">[56]</sup></td></tr>
     </tbody>
   </table>
+
+
 </section>

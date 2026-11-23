@@ -1,55 +1,51 @@
-
 <section>
+  <div class="keep" style="break-before: page">
   <h2 id="s5" class="flow"><span class="num">6</span>Android in depth</h2>
-  <p>Android has <b>no public API to block other apps</b> and no third-party hook into Digital Wellbeing app timers. Android 16 QPR2 and 17 added built-in parental controls, with no developer API <sup class="ref">[34][65]</sup>. Every consumer blocker combines general-purpose permissions.</p>
+  <p>Android has <b>no public API to block other apps</b> and no third-party hook into Digital Wellbeing timers. Android 16 QPR2 (December 2025, Pixel first) added Parental Controls in Settings, with no developer API <sup class="ref">[65]</sup>. Every consumer blocker combines general-purpose permissions.</p>
+  </div>
 
   <h3 id="s5-1">6.1 Every approach, compared</h3>
   <table>
-    <thead><tr><th style="width:15%">Approach</th><th style="width:24%">What it gives</th><th style="width:27%">Limits</th><th>Google Play policy</th></tr></thead>
+    <thead><tr><th style="width:15%">Approach</th><th style="width:24%">What it gives</th><th style="width:30%">Limits</th><th>Google Play policy</th></tr></thead>
     <tbody>
-      <tr><td class="k">Usage access<br><small><code>PACKAGE_USAGE_STATS</code></small></td><td>Which app is in front (<code>ACTIVITY_RESUMED</code>) and usage per app <sup class="ref">[34][35]</sup></td><td>User grants it in Settings and can revoke it. No callback: the app must poll. Events are kept only a few days <sup class="ref">[34]</sup></td><td>Personal data under User Data policy: <b>prominent disclosure + consent</b> <sup class="ref">[56]</sup> <span class="tag yes">OK</span></td></tr>
-      <tr><td class="k">Display over other apps<br><small><code>SYSTEM_ALERT_WINDOW</code></small></td><td>Opening the block screen from the background (a listed exemption) <sup class="ref">[37]</sup></td><td>User-granted. Since Android 11 the intent opens a list of apps, not the app's page <sup class="ref">[36]</sup>. Denied on Android Go</td><td>Send users to system settings <sup class="ref">[55]</sup> <span class="tag yes">OK</span></td></tr>
-      <tr><td class="k">Foreground service <code>specialUse</code></td><td>Keeps the check running with an ongoing notification; may restart from BOOT_COMPLETED <sup class="ref">[38][41]</sup></td><td>Android 13+ Task Manager "Stop" kills the app with no callback <sup class="ref">[40]</sup>. OEM battery savers <sup class="ref">[66]</sup></td><td>Play Console declaration with a demonstration video; limited scenarios <sup class="ref">[53]</sup> <span class="tag part">Reviewed</span></td></tr>
-      <tr><td class="k">Accessibility service</td><td>Instant app-switch events, reading the screen. The strongest consumer blocking <sup class="ref">[71]</sup></td><td>With Advanced Protection on, Android 17 blocks services that aren't accessibility tools and removes existing grants <sup class="ref">[50][62][104]</sup> <span class="tag part">Press</span>. Android 16 did not yet enforce this <sup class="ref">[105]</sup></td><td>Separate disclosure, consent, declaration with video; false <code>isAccessibilityTool</code> leads to rejection <sup class="ref">[54][63]</sup> <span class="tag no">High risk</span></td></tr>
-      <tr><td class="k">Device Owner / Android Enterprise</td><td>Real app suspension, kiosk lock task, uninstall control <sup class="ref">[45][46]</sup></td><td>New or factory-reset phone; no new custom DPC registrations <sup class="ref">[47]</sup></td><td><span class="tag no">Not for consumers</span></td></tr>
-      <tr><td class="k">Device admin</td><td>Formerly used to slow uninstalling</td><td>Deprecated since Android 9 <sup class="ref">[48]</sup></td><td>Play allows blocking uninstall only for parental-control apps authorised by a guardian <sup class="ref">[60][109]</sup> <span class="tag no">No</span></td></tr>
-      <tr><td class="k">VpnService</td><td>Website and domain blocking</td><td>Only one VPN at a time; the user can disconnect it <sup class="ref">[49]</sup></td><td>Core-functionality or listed exceptions; declaration + video; self-control apps <span class="tag no">Unverified</span> <sup class="ref">[58]</sup></td></tr>
+      <tr><td class="k">Usage access<br><small><code>PACKAGE_USAGE_STATS</code></small></td><td>The app in front (<code>ACTIVITY_RESUMED</code>) and exact usage per app <sup class="ref">[34][35]</sup></td><td>User-granted and revocable. No callback, so the app polls. Events kept only a few days <sup class="ref">[34]</sup></td><td>Prominent disclosure + consent <sup class="ref">[56]</sup> <span class="tag yes">OK</span></td></tr>
+      <tr><td class="k">Display over other apps<br><small><code>SYSTEM_ALERT_WINDOW</code></small></td><td>Opening the block screen from the background (a listed exemption) <sup class="ref">[37]</sup></td><td>Since Android 11 the intent opens a list, not the app's page <sup class="ref">[36]</sup>. Denied on Android Go <sup class="ref">[133]</sup></td><td>Send users to system settings <sup class="ref">[55]</sup> <span class="tag yes">OK</span></td></tr>
+      <tr><td class="k">Foreground service <code>specialUse</code></td><td>Keeps the check running with an ongoing notification; may restart from BOOT_COMPLETED <sup class="ref">[38][41]</sup></td><td>Task Manager "Stop" (13+) kills it with no callback <sup class="ref">[40]</sup>; OEM battery savers <sup class="ref">[66]</sup></td><td>Declaration with a video; limited scenarios <sup class="ref">[53]</sup> <span class="tag part">Reviewed</span></td></tr>
+      <tr><td class="k">Accessibility service</td><td>Instant app-switch events; the strongest consumer blocking <sup class="ref">[71]</sup></td><td>With Advanced Protection, Android 17 blocks non-tool services <sup class="ref">[62]</sup> and reportedly removes existing grants <sup class="ref">[103]</sup> <span class="tag part">Press</span>; Android 16 didn't yet <sup class="ref">[104]</sup></td><td>Disclosure, consent, declaration with video; false <code>isAccessibilityTool</code> is rejected <sup class="ref">[54][63]</sup> <span class="tag no">High risk</span></td></tr>
+      <tr><td class="k">Device Owner</td><td>App suspension, lock task, uninstall control <sup class="ref">[45][46]</sup></td><td>Set at setup, or with <code>adb</code> on a phone with no accounts <sup class="ref">[136]</sup>; no new custom DPC registrations <sup class="ref">[47]</sup></td><td><span class="tag no">Not for consumers</span></td></tr>
+      <tr><td class="k">Device admin</td><td>Formerly used to slow uninstalling</td><td>Policies deprecated in Android 9 stopped working for apps targeting 10; the API still exists <sup class="ref">[48]</sup></td><td>Blocking uninstall with it counts as malware <sup class="ref">[60]</sup>; the guardian exception is in the Accessibility policy <sup class="ref">[55]</sup> <span class="tag no">No</span></td></tr>
+      <tr><td class="k">VpnService</td><td>Website and domain blocking</td><td>One VPN at a time; the user can disconnect it <sup class="ref">[49]</sup></td><td>Core function or listed exceptions, with a video; self-control apps <span class="tag no">Unverified</span> <sup class="ref">[58]</sup></td></tr>
     </tbody>
   </table>
   <div class="callout ok"><b>Recommended stack: usage access + display over other apps + a <code>specialUse</code> foreground service.</b> No accessibility, VPN or device admin.</div>
 
-  <h3 id="s5-2">6.2 How the once-a-second check works (timing and battery)</h3>
+  <h3 id="s5-2">6.2 How the once-a-second check works</h3>
   <ul>
-    <li><b>Detecting the app in front:</b> every second the service reads the last few seconds of usage events and takes the last <code>ACTIVITY_RESUMED</code> package <sup class="ref">[35]</sup>. There's no push callback for third-party apps <sup class="ref">[34][89]</sup>, so a blocked app can be visible for up to about a second.</li>
-    <li><b>Counting usage:</b> each second in a blocked app adds to today's total. State is saved every 10 s and whenever what's blocked changes.</li>
-    <li><b>Battery and stability:</b> skip work while the screen is off, throttle re-opening the block screen, and run the loop on a background thread, not the main thread.</li>
+    <li><b>App in front:</b> each second, read the new usage events <sup class="ref">[35]</sup> and keep activities that resumed and haven't paused; the newest is in front. "The last app that resumed" fails, because the home screen can resume and pause in the same instant. After a restart, look back a few hours.</li>
+    <li><b>Counting:</b> keep unsaved seconds in memory and add them back whenever saved state is re-read; save every 10 s and when what's blocked changes. Skip work while the screen is off, and run the loop off the main thread.</li>
+    <li><b>Categories</b> are only partial: many apps declare none, so the app's list is per app.</li>
   </ul>
 
   <h3 id="s5-3">6.3 Persistence, bypass and detection</h3>
   <table>
-    <thead><tr><th style="width:24%">Event</th><th>What happens</th><th style="width:30%">How the app detects it</th></tr></thead>
+    <thead><tr><th style="width:20%">Event</th><th>What happens</th><th style="width:32%">How the app detects it</th></tr></thead>
     <tbody>
-      <tr><td>Settings › Force stop</td><td>Services stop and receivers get nothing until the user opens the app. Android 15 also cancels its PendingIntents <sup class="ref">[42]</sup></td><td>A heartbeat every 5 s; a gap with the screen on is logged as "off"</td></tr>
-      <tr><td>Task Manager "Stop" (13+)</td><td>Kills the app with no callback <sup class="ref">[40]</sup></td><td>Exit reason <code>REASON_USER_REQUESTED</code> <sup class="ref">[40]</sup></td></tr>
-      <tr><td>Reboot</td><td>The BOOT_COMPLETED receiver restarts the service, once the app has been opened at least once <sup class="ref">[44]</sup></td><td>Not needed; blocking resumes</td></tr>
-      <tr><td>Permission revoked</td><td>Blocking stops</td><td>Permission check on next launch; red banner</td></tr>
-      <tr><td>Safe Mode</td><td>Third-party apps don't run, so nothing is blocked until a normal restart <sup class="ref">[110]</sup> <span class="tag part">Community</span></td><td>Heartbeat gap</td></tr>
-      <tr><td>Private Space, second user, cloned apps</td><td>Apps there live in another profile that a main-profile service can't see <sup class="ref">[106][111]</sup></td><td>Can't be detected; documented as a limit</td></tr>
-      <tr><td>Uninstall</td><td>Can't be prevented <sup class="ref">[60]</sup></td><td>Can't be detected</td></tr>
-      <tr><td>Battery saver or low-memory kill</td><td>The service dies until the app is opened <sup class="ref">[66]</sup>. Android 17 adds memory-limit kills <sup class="ref">[103]</sup></td><td>Heartbeat gap, logged as "killed"</td></tr>
+      <tr><td>Settings › Force stop</td><td>Services stop; nothing runs until the user opens the app, even after a reboot. Android 15 also cancels its PendingIntents <sup class="ref">[42]</sup></td><td>Heartbeat every 5 s; a gap with the screen on is "off"</td></tr>
+      <tr><td>Task Manager "Stop" (13+)</td><td>Kills the app with no callback, but not into the stopped state: alarms and jobs still fire <sup class="ref">[40]</sup></td><td><code>REASON_USER_REQUESTED</code> <sup class="ref">[40]</sup>, also left by force stop and Recents; <code>wasForceStopped()</code> (API 35) tells them apart <sup class="ref">[131][132]</sup></td></tr>
+      <tr><td>Reboot</td><td>BOOT_COMPLETED restarts the service, once the app has been opened at least once <sup class="ref">[44]</sup></td><td>Not needed</td></tr>
+      <tr><td>Battery saver or low memory</td><td>OEM savers often stop the service until the app opens <sup class="ref">[66]</sup>; after a plain low-memory kill Android re-creates a <code>START_STICKY</code> service <sup class="ref">[135]</sup>. Android 17 adds memory-limit kills <sup class="ref">[102]</sup></td><td>Heartbeat gap, logged as "killed"</td></tr>
+      <tr><td>Permission revoked, Safe Mode, profiles, uninstall</td><td colspan="2">See section 8.</td></tr>
     </tbody>
   </table>
 
   <h3 id="s5-4">6.4 Recent changes (2025 to November 2026)</h3>
   <table>
-    <thead><tr><th style="width:15%">Version / date</th><th>Change</th><th style="width:33%">What it means</th></tr></thead>
+    <thead><tr><th style="width:14%">Version / date</th><th>Change</th><th style="width:28%">What it means</th></tr></thead>
     <tbody>
-      <tr><td>Android 15</td><td>Force stop cancels PendingIntents <sup class="ref">[42]</sup>. Targeting 35+, the overlay permission only lets a foreground service start from the background while an overlay window is visible <sup class="ref">[41]</sup></td><td>Start the service while the app is open, or from BOOT_COMPLETED; both are allowed <sup class="ref">[39]</sup></td></tr>
-      <tr><td>Android 16</td><td>Targeting 36: <code>onBackPressed</code> no longer called (predictive back) <sup class="ref">[52]</sup>. Tighter job quotas</td><td>The block screen uses <code>OnBackInvokedCallback</code></td></tr>
-      <tr><td>Dec 2025</td><td>Apps falsely setting <code>isAccessibilityTool</code> are rejected and blocked by Play Protect <sup class="ref">[63]</sup></td><td>Confirms avoiding accessibility</td></tr>
-      <tr><td>Android 17</td><td>Tighter background activity launches (<code>ALLOW_IF_VISIBLE</code>); Advanced Protection limits accessibility; memory-limit kills <sup class="ref">[51][62][103]</sup>. A new usage-duration query (API 37.2) needs a new permission <sup class="ref">[107]</sup> <span class="tag no">Unverified</span></td><td>Re-test the overlay launch on real devices</td></tr>
-      <tr><td>30 Sep 2026 →</td><td>Developer verification enforced in Brazil, Indonesia, Singapore and Thailand; worldwide from 2027. ADB installs exempt <sup class="ref">[64][108]</sup></td><td>Register the package</td></tr>
+      <tr><td>Android 15</td><td>Targeting 35+, the overlay permission lets a foreground service start from the background only while an overlay is visible <sup class="ref">[41]</sup></td><td>Start the service while the app is open, or from BOOT_COMPLETED <sup class="ref">[39]</sup></td></tr>
+      <tr><td>Android 16</td><td>Targeting 36: <code>onBackPressed</code> no longer called <sup class="ref">[52]</sup>. Tighter job quotas <sup class="ref">[134]</sup></td><td>Use <code>OnBackInvokedCallback</code></td></tr>
+      <tr><td>Android 17</td><td>Targeting 37, the background-launch opt-in extends to <code>IntentSender</code> and <code>PendingIntent</code> senders (<code>ALLOW_IF_VISIBLE</code>); the overlay exemption for a direct start is unchanged <sup class="ref">[37][51]</sup>. Advanced Protection limits accessibility; memory-limit kills <sup class="ref">[62][102]</sup>. A calendar-aligned usage query (37.2) needs <code>QUERY_APP_USAGE</code>, held only by system roles <sup class="ref">[34][106]</sup></td><td>Re-test the overlay launch, especially through a <code>PendingIntent</code></td></tr>
+      <tr><td>30 Sep 2026 →</td><td>Developer verification for installs from participating stores on certified Android 8+ devices in Brazil, Indonesia, Singapore and Thailand; worldwide from 2027 <sup class="ref">[64]</sup>. ADB installs need none <sup class="ref">[107]</sup></td><td>Play registers most packages automatically (11.2)</td></tr>
     </tbody>
   </table>
-
 </section>

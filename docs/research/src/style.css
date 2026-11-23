@@ -113,3 +113,10 @@ ol.refs { columns: 2; column-gap: 7mm; }
 
 h2 { break-after: avoid; }
 h2.flow + table, h2.flow + p { break-before: avoid; }
+h2#refs { break-before: page; border-top: 0; margin-top: 0; }
+
+/* v3.1 compact layout */
+table { line-height: 1.36; }
+h2.flow { margin-top: 5mm; padding-top: 3mm; }
+h3 { margin-top: 4.5mm; }
+.keep h4 { margin-top: 3.5mm; }
