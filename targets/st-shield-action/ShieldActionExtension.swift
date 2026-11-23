@@ -4,20 +4,20 @@ import UserNotifications
 /// The blocked screen's buttons. Same layout as ShieldConfigurationExtension (STShared.buttons).
 class ShieldActionExtension: ShieldActionDelegate {
   override func handle(action: ShieldAction, for application: ApplicationToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
-    respond(action, completionHandler)
+    respond(action, key: STShared.key(application), STShared.shieldKind(app: application, site: nil, category: nil, STShared.status()), completionHandler)
   }
 
   override func handle(action: ShieldAction, for webDomain: WebDomainToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
-    respond(action, completionHandler)
+    respond(action, key: STShared.key(webDomain), STShared.shieldKind(app: nil, site: webDomain, category: nil, STShared.status()), completionHandler)
   }
 
   override func handle(action: ShieldAction, for category: ActivityCategoryToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
-    respond(action, completionHandler)
+    respond(action, key: nil, STShared.shieldKind(app: nil, site: nil, category: category, STShared.status()), completionHandler)
   }
 
-  private func respond(_ action: ShieldAction, _ done: @escaping (ShieldActionResponse) -> Void) {
+  private func respond(_ action: ShieldAction, key: String?, _ kind: STShared.ShieldKind, _ done: @escaping (ShieldActionResponse) -> Void) {
     let s = STShared.status()
-    let (primary, secondary) = STShared.buttons(s)
+    let (primary, secondary) = STShared.buttons(kind, s)
     let pressed: STShared.ShieldButton?
     switch action {
     case .primaryButtonPressed: pressed = primary
@@ -35,6 +35,7 @@ class ShieldActionExtension: ShieldActionDelegate {
         notifyEarn { done(.close) }
       }
     case .workout:
+      if STShared.plan?.focusKind == "key" { STShared.requestScan() }
       if #available(iOS 26.5, *) {
         done(.openParentalControlsApp)
       } else {
@@ -45,6 +46,10 @@ class ShieldActionExtension: ShieldActionDelegate {
       done(.defer)
     case .oneMore:
       STShared.takeUnlock(kind: "one-more", minutes: STShared.plan?.oneMoreMin ?? 1)
+      done(.defer)
+    case .open:
+      // The pause: after the wait, open this app for the pass length; before it, stay.
+      if let key, STShared.pauseLeft(key) == 0 { STShared.grantPass(key) }
       done(.defer)
     case .close, .none:
       done(.close)

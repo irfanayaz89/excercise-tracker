@@ -1,6 +1,6 @@
 import { effectiveStrictness, strictActive } from './rules';
 import { dayKey, nextMidnight, occurrences, type Zone } from './time';
-import type { Decision, DayLog, Focus, LockTime, ScreenTimeRules, Unlock } from './types';
+import type { Decision, DayLog, Focus, LockTime, ScreenTimeRules, Selection, Unlock } from './types';
 
 /** Standard: one emergency unlock a day, this long. */
 export const EMERGENCY_MIN = 10;
@@ -61,8 +61,9 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   const unlock = log.unlocks.find((u) => u.from <= now && now < u.until) ?? null;
 
   const locks = activeLocks(zone, rules, now);
-  const main = locks.filter((a) => a.lock.apps === 'main');
-  const own = locks.filter((a) => a.lock.apps !== 'main');
+  // "Everything" lock times block the main apps too (and more): they decide like main ones.
+  const main = locks.filter((a) => a.lock.apps === 'main' || a.lock.apps === 'all');
+  const own = locks.filter((a) => a.lock.apps !== 'main' && a.lock.apps !== 'all');
   // Locked out entirely by a lock time that doesn't allow earning; earnable ones give way to earned time.
   const hardLock = main.filter((a) => !a.lock.earnable);
   const softLock = main.filter((a) => a.lock.earnable);
@@ -96,7 +97,20 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
 
   const ownLocks = own
     .filter((a) => !unlock && !(a.lock.earnable && left > 0))
-    .map((a) => ({ id: a.lock.id, name: a.lock.name, until: a.end, apps: a.lock.apps as Exclude<LockTime['apps'], 'main'> }));
+    .map((a) => ({ id: a.lock.id, name: a.lock.name, until: a.end, apps: a.lock.apps as Selection }));
+
+  // Per-app limits: their own apps close once their time or opens are used up. Earned time doesn't
+  // open them; an unlock does.
+  const limitBlocks: Decision['limitBlocks'] = [];
+  if (!unlock) {
+    for (const l of rules.appLimits) {
+      if (!l.enabled) continue;
+      if (l.dailyMin !== null && (log.appUsed?.[l.id] ?? 0) >= l.dailyMin) limitBlocks.push({ id: l.id, name: l.name, apps: l.apps, why: 'time' });
+      else if (l.opensPerDay !== null && (log.appOpens?.[l.id] ?? 0) >= l.opensPerDay)
+        limitBlocks.push({ id: l.id, name: l.name, apps: l.apps, why: 'opens' });
+    }
+  }
+  const blockAll = reason === 'focus' ? focus?.blockAll === true : reason === 'lock' && blocking.some((a) => a.lock.apps === 'all');
 
   // Next moment the answer may change on its own.
   const candidates = [nextMidnight(zone, now)];
@@ -107,7 +121,7 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   if (strictActive(rules, now)) candidates.push(rules.strictUntil!);
   if (rules.pending && rules.pending.effectiveAt > now) candidates.push(rules.pending.effectiveAt);
 
-  const blockedAny = reason !== null || ownLocks.length > 0;
+  const blockedAny = reason !== null || ownLocks.length > 0 || limitBlocks.length > 0;
   return {
     blocked: reason !== null,
     reason,
@@ -127,6 +141,8 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
     },
     ownLocks,
     focus: focus ? { kind: focus.kind, until: focus.until, strict: focus.strict } : null,
+    blockAll,
+    limitBlocks,
     nextChange: Math.min(...candidates),
   };
 }
@@ -145,7 +161,7 @@ export function takeUnlock(
 ): UnlockResult {
   const log = rollDay(zone, logIn, now);
   const d = decide(zone, rules, log, now, focus);
-  if (!d.blocked && d.ownLocks.length === 0) return { ok: false, log, reason: 'not-blocked' };
+  if (!d.blocked && d.ownLocks.length === 0 && d.limitBlocks.length === 0) return { ok: false, log, reason: 'not-blocked' };
   const option = kind === 'emergency' ? d.emergency : d.oneMore;
   const mode = effectiveStrictness(rules, now);
   if ((kind === 'emergency' && mode !== 'standard') || (kind === 'one-more' && mode !== 'nudge'))

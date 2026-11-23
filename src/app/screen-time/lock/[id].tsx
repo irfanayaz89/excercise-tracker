@@ -125,37 +125,39 @@ export default function LockEditor() {
       </Section>
 
       <Section title="Apps">
-        <View style={styles.row}>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Strong>Use my blocked apps</Strong>
-            <Body tone="muted" size={13}>
-              {lock.apps === 'main' ? 'Locks the same apps as the daily limit.' : `Locks its own list: ${countLabel(lock.apps)}.`}
-            </Body>
+        <View style={styles.pad}>
+          <View style={styles.chips}>
+            <Chip label="My blocked apps" selected={lock.apps === 'main'} onPress={() => set({ apps: 'main' })} />
+            <Chip label="Everything" selected={lock.apps === 'all'} onPress={() => set({ apps: 'all' })} />
+            <Chip
+              label="Its own list"
+              selected={lock.apps !== 'main' && lock.apps !== 'all'}
+              onPress={() => lock.apps === 'main' || lock.apps === 'all' ? set({ apps: EMPTY_SELECTION }) : undefined}
+            />
           </View>
-          <Switch
-            value={lock.apps === 'main'}
-            onValueChange={(v) => set({ apps: v ? 'main' : EMPTY_SELECTION })}
-            trackColor={{ false: color.raised, true: color.vial }}
-            thumbColor={lock.apps === 'main' ? color.vialInk : color.chalk2}
-            accessibilityLabel="Use my blocked apps"
-          />
-        </View>
-        {lock.apps !== 'main' && (
-          <View style={styles.pad}>
+          <Body tone="muted" size={13}>
+            {lock.apps === 'main'
+              ? 'Locks the same apps as the daily limit.'
+              : lock.apps === 'all'
+                ? 'Locks every app except your always-allowed ones (and what the phone needs, like calls).'
+                : `Locks its own list: ${countLabel(lock.apps)}.`}
+          </Body>
+          {lock.apps !== 'main' && lock.apps !== 'all' && (
             <Button
               size="sm"
               variant="ghost"
               label="Pick apps for this lock time"
               onPress={guard(async () => {
-                const picked = await pickApps(lock.name || 'Lock time', lock.apps === 'main' ? EMPTY_SELECTION : lock.apps);
+                const current = lock.apps === 'main' || lock.apps === 'all' ? EMPTY_SELECTION : lock.apps;
+                const picked = await pickApps(lock.name || 'Lock time', current);
                 if (!picked) return;
                 const bad = selectionProblem(picked);
                 if (bad) setMessage(bad);
                 else set({ apps: picked });
               })}
             />
-          </View>
-        )}
+          )}
+        </View>
         <View style={styles.row}>
           <View style={{ flex: 1, gap: 2 }}>
             <Strong>Earned time works</Strong>
@@ -182,7 +184,7 @@ export default function LockEditor() {
       <View style={{ gap: space.md }}>
         <Button
           label={isNew ? 'Add lock time' : 'Save'}
-          disabled={!!problem || !lock.name.trim() || (lock.apps !== 'main' && countLabel(lock.apps) === 'None picked')}
+          disabled={!!problem || !lock.name.trim() || (lock.apps !== 'main' && lock.apps !== 'all' && countLabel(lock.apps) === 'None picked')}
           onPress={save}
         />
         {!isNew && <Button variant="danger" label="Delete" onPress={remove} />}

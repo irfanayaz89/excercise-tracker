@@ -331,4 +331,31 @@ describe('workout focus and protection gaps', () => {
     st.setFocusChoice(30);
     expect(load().getScreenTime().meta.focusChoice).toBe(30);
   });
+
+  it('key lock: needs a key, holds until the right key is scanned, and survives a restart', () => {
+    const st = setUp();
+    expect(st.startKeyLockNow(2, true)).toBeNull();
+    expect(st.newKey()).toBe(true);
+    const key = st.getScreenTime().meta.key!;
+    const lockOn = st.startKeyLockNow(2, true);
+    expect(lockOn).toMatchObject({ kind: 'key', strict: true, blockAll: true });
+    expect(mockPhone.plans.at(-1)).toMatchObject({ focusKind: 'key', focusAll: true });
+    // A new key can't be made while the key is the way out; End by hand doesn't work.
+    expect(st.newKey()).toBe(false);
+    expect(st.endFocusNow('manual').ended).toBe(false);
+    const again = load();
+    expect(again.getScreenTime().focus).toMatchObject({ kind: 'key' });
+    expect(again.scanKey('trueline-key:not-mine')).toBe('wrong-key');
+    expect(again.getScreenTime().focus).not.toBeNull();
+    expect(again.scanKey(again.keyText(key.secret))).toBe('ended');
+    expect(again.getScreenTime().focus).toBeNull();
+    expect(again.scanKey(again.keyText(key.secret))).toBe('nothing-running');
+  });
+
+  it('a workout focus can block everything when chosen', () => {
+    const st = setUp();
+    st.setFocusBlockAll(true);
+    st.startFocusNow(15);
+    expect(mockPhone.plans.at(-1)).toMatchObject({ focusAll: true, focusKind: 'timed' });
+  });
 });

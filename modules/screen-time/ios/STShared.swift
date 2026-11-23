@@ -2,6 +2,9 @@ import DeviceActivity
 import FamilyControls
 import Foundation
 import ManagedSettings
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 /// Shared by Trueline's ScreenTime module and its three Screen Time extensions
 /// (monitor, blocked-screen text, blocked-screen buttons). The same file is
@@ -64,6 +67,33 @@ enum STShared {
     /// Blocks its own selection instead of the main list.
     let ownApps: Bool
     let apps: Sel?
+    /// Blocks every app except the always-allowed ones.
+    let allApps: Bool?
+  }
+
+  /// A per-app limit, with the minutes the app knew were used today when it wrote the plan.
+  struct AppLimPlan: Codable {
+    let id: String
+    let name: String
+    let apps: Sel
+    let dailyMin: Int?
+    /// Android only (iPhone can't count opens).
+    let opensPerDay: Int?
+    let usedMin: Int
+    let opens: Int
+  }
+
+  /// The pause before a blocked app opens outside blocks: the first wait, the step added per
+  /// pass, the cap, how long a pass lasts, and the passes the app knew about today.
+  struct PausePlan: Codable {
+    let enabled: Bool
+    let seconds: Int
+    let step: Int
+    let max: Int
+    let passMin: Int
+    let passes: Int
+
+    func wait(_ passesToday: Int) -> Int { Swift.min(max, seconds + step * passesToday) }
   }
 
   struct Plan: Codable {
@@ -93,6 +123,10 @@ enum STShared {
     var locks: [LockPlan]
     var blocked: Sel
     var allowed: Sel
+    /// The running focus blocks every app except the always-allowed ones.
+    var focusAll: Bool?
+    var appLimits: [AppLimPlan]?
+    var pause: PausePlan?
   }
 
   struct Unlock: Codable {
@@ -120,6 +154,16 @@ enum STShared {
     var unlocks: [Unlock] = []
     /// The user tapped "Earn time" on the blocked screen: open the earn screen.
     var openEarn: Bool = false
+    /// The user tapped "Scan my key": open the key scanner.
+    var openScan: Bool? = nil
+    /// Per-app limits: minutes used today, by limit id (optional: older saved state has none).
+    var appUsed: [String: Int]? = nil
+    /// Passes taken through the pause screen today.
+    var pauses: Int? = nil
+    /// Apps or sites open on a pass (token key → until, epoch ms).
+    var passes: [String: Double]? = nil
+    /// When the pause screen first appeared for an app or site (token key → epoch ms).
+    var pauseShown: [String: Double]? = nil
   }
 
   static func load<T: Decodable>(_ key: String, _ type: T.Type) -> T? {
@@ -140,7 +184,7 @@ enum STShared {
     var s = load("st.state", State.self) ?? State()
     let today = dayKey(now)
     if today > s.day {
-      s = State(day: today, unlocks: s.unlocks, openEarn: s.openEarn)
+      s = State(day: today, unlocks: s.unlocks, openEarn: s.openEarn, passes: s.passes)
     }
     return s
   }
@@ -206,6 +250,15 @@ enum STShared {
     var emergency = false
     var oneMore = false
     var ownBlocked: [String] = []
+    /// The block covers every app except the always-allowed ones.
+    var blockAll = false
+    /// Per-app limits used up today (ids).
+    var limitBlocked: [String] = []
+  }
+
+  /// Minutes used today against a per-app limit: the most the app or the extensions have counted.
+  static func limitUsed(_ p: Plan, _ st: State, _ l: AppLimPlan, today: String) -> Int {
+    Swift.max(st.appUsed?[l.id] ?? 0, p.day == today ? l.usedMin : 0)
   }
 
   static func status(at now: Date = Date()) -> Status {
@@ -252,8 +305,12 @@ enum STShared {
     }
     s.blocked = s.reason != nil
     s.ownBlocked = running.filter { $0.0.ownApps && !unlocked && !($0.0.earnable && earnedLeft > 0) }.map { $0.0.id }
+    s.blockAll = s.reason == "focus" ? (p.focusAll ?? false) : (s.reason == "lock" && blocking.contains { $0.0.allApps == true })
+    if !unlocked {
+      s.limitBlocked = (p.appLimits ?? []).filter { l in l.dailyMin.map { limitUsed(p, st, l, today: today) >= $0 } ?? false }.map { $0.id }
+    }
     s.canEarn = s.blocked && s.reason != "focus" && p.earningEnabled && p.earnCapLeftMin > 0 && (s.reason == "limit" || blocking.allSatisfy { $0.0.earnable })
-    let any = s.blocked || !s.ownBlocked.isEmpty
+    let any = s.blocked || !s.ownBlocked.isEmpty || !s.limitBlocked.isEmpty
     // The plan's "left" counts are for the day it was made. On a later day the app hasn't seen yet,
     // the allowance starts again, and only unlocks taken today count against it.
     let newDay = today > p.day
@@ -269,7 +326,7 @@ enum STShared {
 
   // MARK: Blocked-screen buttons (shared by the shield's text and its actions)
 
-  enum ShieldButton { case earn, workout, emergency, oneMore, close }
+  enum ShieldButton { case earn, workout, emergency, oneMore, close, open }
 
   /// The blocked screen has a main button and at most one more.
   static func buttons(_ s: Status) -> (primary: ShieldButton, secondary: ShieldButton?) {
@@ -278,6 +335,48 @@ enum STShared {
     if s.reason == "focus" { return (.workout, escape ?? .close) }
     if s.canEarn { return (.earn, escape ?? .close) }
     return (.close, escape)
+  }
+
+  /// Why a particular app or site is behind a shield right now (they share one blocked screen).
+  enum ShieldKind {
+    case main
+    case limit(AppLimPlan)
+    case own(String)
+    case pause
+  }
+
+  static func shieldKind(app: ApplicationToken?, site: WebDomainToken?, category: ActivityCategoryToken?, _ s: Status) -> ShieldKind {
+    if s.blocked { return .main }
+    func has(_ sel: FamilyActivitySelection) -> Bool {
+      (app.map { sel.applicationTokens.contains($0) } ?? false)
+        || (site.map { sel.webDomainTokens.contains($0) } ?? false)
+        || (category.map { sel.categoryTokens.contains($0) } ?? false)
+    }
+    if let l = plan?.appLimits?.first(where: { s.limitBlocked.contains($0.id) && has($0.apps.family) }) { return .limit(l) }
+    if let id = s.ownBlocked.first(where: { selection("lock.\($0)").map(has) ?? false }), let lock = plan?.locks.first(where: { $0.id == id }) {
+      return .own(lock.name)
+    }
+    if paused(s) { return .pause }
+    return .main
+  }
+
+  /// The buttons for a shield of this kind: the pause offers Open; limits and own lock times offer
+  /// the strictness level's unlock; the main block keeps its own set (buttons(_:)).
+  static func buttons(_ kind: ShieldKind, _ s: Status) -> (primary: ShieldButton, secondary: ShieldButton?) {
+    switch kind {
+    case .main: return buttons(s)
+    case .pause: return (.open, .close)
+    case .limit, .own:
+      let escape: ShieldButton? = s.emergency ? .emergency : s.oneMore ? .oneMore : nil
+      return escape.map { ($0, .close) } ?? (.close, nil)
+    }
+  }
+
+  /// The user asked to scan their key: Trueline opens on its scanner next time.
+  static func requestScan() {
+    var st = state()
+    st.openScan = true
+    saveState(st)
   }
 
   /// The user asked to earn time: Trueline opens on its earn screen next time.
@@ -290,6 +389,15 @@ enum STShared {
   // MARK: Applying blocks
 
   static func store(_ name: String) -> ManagedSettingsStore { ManagedSettingsStore(named: .init(name)) }
+
+  /// Block every app and site except the always-allowed ones (Trueline itself is always exempt).
+  static func blockEverything(_ name: String, allowed: FamilyActivitySelection?) {
+    let s = store(name)
+    s.shield.applications = nil
+    s.shield.applicationCategories = .all(except: allowed?.applicationTokens ?? [])
+    s.shield.webDomains = nil
+    s.shield.webDomainCategories = .all(except: allowed?.webDomainTokens ?? [])
+  }
 
   static func block(_ name: String, _ sel: FamilyActivitySelection, allowed: FamilyActivitySelection?) {
     let s = store(name)
@@ -314,7 +422,23 @@ enum STShared {
     }
     let s = status(at: now)
     let allowed = selection("allowed")
-    if s.blocked, let main = selection("main") { block("st.main", main, allowed: allowed) } else { unblock("st.main") }
+    if s.blocked && s.blockAll {
+      blockEverything("st.main", allowed: allowed)
+    } else if s.blocked, let main = selection("main") {
+      block("st.main", main, allowed: allowed)
+    } else {
+      unblock("st.main")
+    }
+    // Per-app limits used up: their own apps, in a store each.
+    limIds = limIds + (p.appLimits ?? []).map { $0.id }
+    for id in limIds {
+      if s.limitBlocked.contains(id), let l = p.appLimits?.first(where: { $0.id == id }), !l.apps.isEmpty {
+        block("st.lim.\(id)", l.apps.family, allowed: allowed)
+      } else {
+        unblock("st.lim.\(id)")
+      }
+    }
+    applyPause(p, s, allowed: allowed, now: now)
     let own = p.locks.filter { $0.ownApps }.map { $0.id }
     ownIds = ownIds + own
     for id in ownIds {
@@ -336,11 +460,127 @@ enum STShared {
       st.earnedArmed = false
       saveState(st)
     }
+    writeWidget(s)
+  }
+
+  // MARK: Pause before opening
+
+  /// A token as the plan stores it (base64 of its JSON), so passes can be keyed by it.
+  static func key<T: Encodable>(_ token: T) -> String? { (try? JSONEncoder().encode(token))?.base64EncodedString() }
+
+  static func token<T: Decodable>(_ key: String, _ t: T.Type) -> T? {
+    Data(base64Encoded: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
+  }
+
+  /// Passes taken today, as far as the app or the extensions know.
+  static func pausePasses(_ p: Plan, _ st: State, now: Date) -> Int {
+    Swift.max(st.pauses ?? 0, p.day == dayKey(now) ? (p.pause?.passes ?? 0) : 0)
+  }
+
+  /// The pause is shown for the blocked list when nothing else blocks it: a shield of its own
+  /// ("st.pause") with the apps and sites on a pass left out.
+  static func applyPause(_ p: Plan, _ s: Status, allowed: FamilyActivitySelection?, now: Date) {
+    guard let pause = p.pause, pause.enabled, !s.blocked, let main = selection("main") else {
+      unblock("st.pause")
+      return
+    }
+    let nowMs = now.timeIntervalSince1970 * 1000
+    let open = (state(now: now).passes ?? [:]).filter { $0.value > nowMs }.map { $0.key }
+    let openApps = Set(open.compactMap { token($0, ApplicationToken.self) })
+    let openSites = Set(open.compactMap { token($0, WebDomainToken.self) })
+    let keepApps = (allowed?.applicationTokens ?? []).union(openApps)
+    let keepSites = (allowed?.webDomainTokens ?? []).union(openSites)
+    let st = store("st.pause")
+    let apps = main.applicationTokens.subtracting(keepApps)
+    st.shield.applications = apps.isEmpty ? nil : apps
+    st.shield.applicationCategories = main.categoryTokens.isEmpty ? nil : .specific(main.categoryTokens, except: keepApps)
+    let sites = main.webDomainTokens.subtracting(keepSites)
+    st.shield.webDomains = sites.isEmpty ? nil : sites
+    st.shield.webDomainCategories = main.categoryTokens.isEmpty ? nil : .specific(main.categoryTokens, except: keepSites)
+    // Wake when the next pass runs out, so the pause comes back with Trueline closed. Only when
+    // that moment changes: restarting a schedule ends its interval, which calls reapply again.
+    let next = (state(now: now).passes ?? [:]).values.filter { $0 > nowMs }.min()
+    if let next, defaults?.double(forKey: "st.passWake") != next {
+      defaults?.set(next, forKey: "st.passWake")
+      wakeAt(Date(timeIntervalSince1970: next / 1000), name: "st.pass")
+    }
+  }
+
+  /// Is this app or site behind the pause (and not blocked for another reason)?
+  static func paused(_ s: Status) -> Bool { !s.blocked && (plan?.pause?.enabled ?? false) }
+
+  /// Seconds still to wait on the pause screen for `key` (the first time it shows, the clock starts).
+  static func pauseLeft(_ key: String, now: Date = Date()) -> Int {
+    guard let p = plan, let pause = p.pause else { return 0 }
+    var st = state(now: now)
+    let nowMs = now.timeIntervalSince1970 * 1000
+    var shown = st.pauseShown ?? [:]
+    // A pause screen left alone for two minutes starts over next time.
+    if (shown[key] ?? 0) < nowMs - 120_000 {
+      shown[key] = nowMs
+      st.pauseShown = shown
+      saveState(st)
+    }
+    let wait = Double(pause.wait(pausePasses(p, st, now: now)))
+    return Swift.max(0, Int(ceil(wait - (nowMs - (shown[key] ?? nowMs)) / 1000)))
+  }
+
+  /// The wait is over: open this app or site for the pass length; the next wait grows.
+  static func grantPass(_ key: String, now: Date = Date()) {
+    guard let p = plan, let pause = p.pause else { return }
+    var st = state(now: now)
+    let nowMs = now.timeIntervalSince1970 * 1000
+    var passes = (st.passes ?? [:]).filter { $0.value > nowMs }
+    passes[key] = nowMs + Double(pause.passMin) * 60_000
+    st.passes = passes
+    st.pauses = pausePasses(p, st, now: now) + 1
+    st.pauseShown?[key] = nil
+    saveState(st)
+    reapply(at: now)
+  }
+
+  // MARK: Home screen widget
+
+  /// What the widget shows: a title and, when there is one, the time it changes.
+  static func writeWidget(_ s: Status?) {
+    var title = "Screen time is off"
+    var until: Double? = nil
+    if let s, let p = plan {
+      let nowMs = Date().timeIntervalSince1970 * 1000
+      let unlock = (state().unlocks.filter { $0.from <= nowMs && nowMs < $0.until }.map { $0.until } + [p.unlockUntil ?? 0]).max() ?? 0
+      if unlock > nowMs {
+        title = "Unlocked"
+        until = unlock
+      } else if s.blocked {
+        title = s.reason == "limit" ? "Today's time is up" : s.reason == "focus" ? (p.focusKind == "key" ? "Key lock" : "Workout focus") : (s.lockName ?? "Locked")
+        until = s.until.map { $0.timeIntervalSince1970 * 1000 }
+      } else if s.usingEarned {
+        title = "Using earned time"
+      } else {
+        title = p.dailyLimitMin.map { "Daily limit \($0) min" } ?? "Screen time is on"
+      }
+    }
+    let json: [String: Any] = ["title": title, "until": until ?? NSNull(), "at": Date().timeIntervalSince1970 * 1000]
+    guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
+    if defaults?.data(forKey: "st.widget") == data { return }
+    defaults?.set(data, forKey: "st.widget")
+    #if canImport(WidgetKit)
+    WidgetCenter.shared.reloadAllTimelines()
+    #endif
   }
 
   static func unblockAll() {
     unblock("st.main")
+    unblock("st.pause")
     for id in ownIds { unblock("st.own.\(id)") }
+    for id in limIds { unblock("st.lim.\(id)") }
+    writeWidget(nil)
+  }
+
+  /// Every per-app limit store ever used (so a deleted limit's block can still be lifted).
+  static var limIds: [String] {
+    get { defaults?.stringArray(forKey: "st.limIds") ?? [] }
+    set { defaults?.set(Array(Set(newValue)).sorted(), forKey: "st.limIds") }
   }
 
   /// Every own-app lock store ever used (so a deleted lock time's block can still be lifted).
@@ -374,11 +614,12 @@ enum STShared {
   }
 
   /// (Re)start every schedule. Apple allows 20 per app:
-  /// day + limit + earned + unlock + focus (5) + 2 per lock time (at most 7) = 19.
+  /// day + limit + earned + unlock + focus + pause pass (6) + 2 per lock time (at most 7) = 20.
+  /// Per-app limits add events to the "limit" schedule, not schedules of their own.
   static func scheduleAll() -> [String] {
     var errors: [String] = []
     let center = DeviceActivityCenter()
-    center.stopMonitoring(center.activities.filter { $0.rawValue.hasPrefix("st.") && $0.rawValue != "st.earned" && $0.rawValue != "st.unlock" })
+    center.stopMonitoring(center.activities.filter { $0.rawValue.hasPrefix("st.") && !["st.earned", "st.unlock", "st.pass"].contains($0.rawValue) })
     guard #available(iOS 17.4, *) else { return ["Screen Time needs iOS 17.4 or later"] }
     guard let p = plan else { return errors }
     // The day schedule has no events: it only wakes the monitor at midnight to start the new day.
@@ -422,6 +663,9 @@ enum STShared {
     var left: Int
     /// Times it was re-armed after a misfire today.
     var rearms: Int
+    /// Per-app limits: minutes used when armed, and minutes left to their limit.
+    var groupUsed: [String: Int]?
+    var groupLeft: [String: Int]?
   }
 
   static var limitArm: LimitArm? {
@@ -434,18 +678,37 @@ enum STShared {
   /// Events: "uM" every 15 minutes of use, and "limit" when the minutes left run out.
   @discardableResult
   static func armLimit(used: Int, rearms: Int) -> String? {
-    guard #available(iOS 17.4, *), let p = plan, let main = selection("main") else { return nil }
+    guard #available(iOS 17.4, *), let p = plan else { return nil }
+    let main = selection("main")
     let center = DeviceActivityCenter()
     center.stopMonitoring([DeviceActivityName("st.limit")])
     let now = Date()
+    let today = dayKey(now)
     let left = p.dailyLimitMin.map { max(0, $0 - used) } ?? 0
-    var evs = events(for: main, prefix: "u", upTo: 600, step: 15, final: nil)
-    if p.dailyLimitMin != nil, !p.limitReached, left > 0 {
-      evs[DeviceActivityEvent.Name("limit")] = DeviceActivityEvent(
-        applications: main.applicationTokens, categories: main.categoryTokens, webDomains: main.webDomainTokens,
-        threshold: DateComponents(minute: left), includesPastActivity: false)
+    var evs: [DeviceActivityEvent.Name: DeviceActivityEvent] = [:]
+    if let main {
+      evs = events(for: main, prefix: "u", upTo: 600, step: 15, final: nil)
+      if p.dailyLimitMin != nil, !p.limitReached, left > 0 {
+        evs[DeviceActivityEvent.Name("limit")] = DeviceActivityEvent(
+          applications: main.applicationTokens, categories: main.categoryTokens, webDomains: main.webDomainTokens,
+          threshold: DateComponents(minute: left), includesPastActivity: false)
+      }
     }
-    limitArm = LimitArm(day: dayKey(now), at: now.timeIntervalSince1970, used: used, left: left, rearms: rearms)
+    // Per-app limits: "g.<id>.<m>" every 15 minutes of use and "g.<id>.end" when its minutes run out.
+    let st = state(now: now)
+    var groupUsed: [String: Int] = [:]
+    var groupLeft: [String: Int] = [:]
+    for l in p.appLimits ?? [] {
+      guard let daily = l.dailyMin, !l.apps.isEmpty else { continue }
+      let u = limitUsed(p, st, l, today: today)
+      groupUsed[l.id] = u
+      groupLeft[l.id] = max(0, daily - u)
+      if daily - u > 0 {
+        evs.merge(events(for: l.apps.family, prefix: "g.\(l.id).", upTo: daily - u - 1, step: 15, final: daily - u)) { a, _ in a }
+      }
+    }
+    if evs.isEmpty { return nil }
+    limitArm = LimitArm(day: today, at: now.timeIntervalSince1970, used: used, left: left, rearms: rearms, groupUsed: groupUsed, groupLeft: groupLeft)
     // Until the end of today; a schedule must last 15 minutes, so late at night it starts a little in the past.
     let cal = Calendar.current
     guard let endOfDay = cal.date(bySettingHour: 23, minute: 59, second: 59, of: now) else { return nil }
@@ -548,7 +811,27 @@ enum STShared {
   static func onEvent(_ event: String, activity: String) {
     var st = state()
     let now = Date()
-    if activity == "st.limit", let arm = limitArm, arm.day == dayKey(now) {
+    if activity == "st.limit", let arm = limitArm, arm.day == dayKey(now), event.hasPrefix("g."), let dot = event.lastIndex(of: ".") {
+      // A per-app limit: "g.<id>.<minutes>" or "g.<id>.end".
+      let id = String(event[event.index(event.startIndex, offsetBy: 2)..<dot])
+      let tail = String(event[event.index(after: dot)...])
+      let base = arm.groupUsed?[id] ?? 0
+      var used = st.appUsed ?? [:]
+      if tail == "end" {
+        let left = arm.groupLeft?[id] ?? 0
+        if plausible(left, since: arm.at, now: now) {
+          used[id] = max(used[id] ?? 0, base + left)
+        } else if arm.rearms < 3 {
+          saveState(st)
+          armLimit(used: max(arm.used, st.usedMin), rearms: arm.rearms + 1)
+          reapply()
+          return
+        }
+      } else if let m = Int(tail), plausible(m, since: arm.at, now: now) {
+        used[id] = max(used[id] ?? 0, base + m)
+      }
+      st.appUsed = used
+    } else if activity == "st.limit", let arm = limitArm, arm.day == dayKey(now) {
       if event == "limit" {
         if plausible(arm.left, since: arm.at, now: now) {
           st.limitReached = true

@@ -5,7 +5,11 @@ import android.app.ApplicationExitInfo
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.provider.Telephony
+import android.telecom.TelecomManager
 import android.os.Build
 import android.os.PowerManager
 import org.json.JSONArray
@@ -52,7 +56,29 @@ object STCore {
     val enabled: Boolean,
     val skipDate: String?,
     val apps: Sel?,
+    /** Blocks every app except the always-allowed ones. */
+    val allApps: Boolean = false,
   )
+
+  /** A per-app limit, with what the app knew about today when it wrote the plan. */
+  data class AppLim(
+    val id: String,
+    val name: String,
+    val apps: Sel,
+    val dailyMin: Int?,
+    val opensPerDay: Int?,
+    val usedMin: Int,
+    val opens: Int,
+  )
+
+  data class Pause(val enabled: Boolean, val seconds: Int, val step: Int, val max: Int, val passMin: Int, val passes: Int) {
+    /** The wait for the next pass, given the passes taken today. */
+    fun wait(passesToday: Int) = minOf(max, seconds + step * passesToday)
+
+    companion object {
+      val OFF = Pause(false, 10, 5, 60, 5, 0)
+    }
+  }
 
   data class Plan(
     val day: String,
@@ -77,6 +103,12 @@ object STCore {
     val locks: List<Lock>,
     val blocked: Sel,
     val allowed: Sel,
+    /** The running focus blocks every app except the always-allowed ones. */
+    val focusAll: Boolean = false,
+    val appLimits: List<AppLim> = emptyList(),
+    val pause: Pause = Pause.OFF,
+    /** Hide notifications from apps while they're blocked. */
+    val silence: Boolean = false,
   )
 
   fun parsePlan(json: String): Plan {
@@ -99,9 +131,27 @@ object STCore {
           enabled = l.optBoolean("enabled", true),
           skipDate = if (l.isNull("skipDate")) null else l.optString("skipDate"),
           apps = if (l.optBoolean("ownApps")) Sel.from(l.optJSONObject("apps")) else null,
+          allApps = l.optBoolean("allApps"),
         ),
       )
     }
+    val limits = mutableListOf<AppLim>()
+    val la = o.optJSONArray("appLimits") ?: JSONArray()
+    for (i in 0 until la.length()) {
+      val l = la.getJSONObject(i)
+      limits.add(
+        AppLim(
+          id = l.getString("id"),
+          name = l.optString("name", "App limit"),
+          apps = Sel.from(l.optJSONObject("apps")),
+          dailyMin = if (l.isNull("dailyMin")) null else l.optInt("dailyMin"),
+          opensPerDay = if (l.isNull("opensPerDay")) null else l.optInt("opensPerDay"),
+          usedMin = l.optInt("usedMin"),
+          opens = l.optInt("opens"),
+        ),
+      )
+    }
+    val pz = o.optJSONObject("pause")
     return Plan(
       day = o.optString("day"),
       dailyLimitMin = if (o.isNull("dailyLimitMin")) null else o.optInt("dailyLimitMin"),
@@ -122,6 +172,17 @@ object STCore {
       locks = locks,
       blocked = Sel.from(o.optJSONObject("blocked")),
       allowed = Sel.from(o.optJSONObject("allowed")),
+      focusAll = o.optBoolean("focusAll"),
+      appLimits = limits,
+      pause = if (pz == null) Pause.OFF else Pause(
+        enabled = pz.optBoolean("enabled"),
+        seconds = pz.optInt("seconds", 10),
+        step = pz.optInt("step", 5),
+        max = pz.optInt("max", 60),
+        passMin = pz.optInt("passMin", 5),
+        passes = pz.optInt("passes"),
+      ),
+      silence = o.optBoolean("silence"),
     )
   }
 
@@ -144,6 +205,12 @@ object STCore {
     val unlocks: MutableList<Unlock> = mutableListOf(),
     var openEarn: Boolean = false,
     val gaps: MutableList<Gap> = mutableListOf(),
+    /** Per-app limits: seconds used and opens today, by limit id. */
+    val appUsedSec: MutableMap<String, Long> = mutableMapOf(),
+    val appOpens: MutableMap<String, Int> = mutableMapOf(),
+    /** Passes taken through the pause screen today, and which apps are open on a pass until when. */
+    var pauses: Int = 0,
+    val passes: MutableMap<String, Long> = mutableMapOf(),
   ) {
     fun toJson(): JSONObject {
       val u = JSONArray()
@@ -160,6 +227,11 @@ object STCore {
         .put("earnedSpentSec", earnedSpentSec)
         .put("unlocks", u)
         .put("openEarn", openEarn)
+        .put("appUsed", JSONObject().apply { appUsedSec.forEach { (k, v) -> put(k, v / 60) } })
+        .put("appUsedSec", JSONObject().apply { appUsedSec.forEach { (k, v) -> put(k, v) } })
+        .put("appOpens", JSONObject().apply { appOpens.forEach { (k, v) -> put(k, v) } })
+        .put("pauses", pauses)
+        .put("passes", JSONObject().apply { passes.forEach { (k, v) -> put(k, v) } })
     }
   }
 
@@ -184,13 +256,17 @@ object STCore {
           val x = g.getJSONObject(i)
           s.gaps.add(Gap(x.optLong("from"), x.optLong("to"), x.optString("kind")))
         }
+        o.optJSONObject("appUsedSec")?.let { m -> m.keys().forEach { s.appUsedSec[it] = m.optLong(it) } }
+        o.optJSONObject("appOpens")?.let { m -> m.keys().forEach { s.appOpens[it] = m.optInt(it) } }
+        s.pauses = o.optInt("pauses")
+        o.optJSONObject("passes")?.let { m -> m.keys().forEach { s.passes[it] = m.optLong(it) } }
       }
     }
     val today = dayKey(now)
     if (today > s.day) {
       // A new day: usage and earned time start over (unlocks and an "earn" tap wait for the app).
       // Only a later day counts: if the clock is moved back, the day already used up stays used up.
-      return State(day = today, unlocks = s.unlocks, openEarn = s.openEarn, gaps = s.gaps)
+      return State(day = today, unlocks = s.unlocks, openEarn = s.openEarn, gaps = s.gaps, passes = s.passes)
     }
     return s
   }
@@ -252,7 +328,18 @@ object STCore {
     val ownBlocked: List<Lock> = emptyList(),
     /** An emergency unlock or "1 more minute" is running until then. */
     val unlockedUntil: Long? = null,
+    /** The block covers every app except the always-allowed ones. */
+    val blockAll: Boolean = false,
+    /** Per-app limits used up today, and why ("time" or "opens"). */
+    val limitBlocked: List<Pair<AppLim, String>> = emptyList(),
   )
+
+  /** Seconds used today against a per-app limit: the most the app or the service has counted. */
+  fun limitUsedSec(p: Plan, st: State, l: AppLim, today: String): Long =
+    maxOf(st.appUsedSec[l.id] ?: 0L, if (p.day == today) l.usedMin * 60L else 0L)
+
+  fun limitOpens(p: Plan, st: State, l: AppLim, today: String): Int =
+    maxOf(st.appOpens[l.id] ?: 0, if (p.day == today) l.opens else 0)
 
   fun status(p: Plan?, st: State, now: Long): Status {
     if (p == null) return Status()
@@ -266,6 +353,7 @@ object STCore {
     val unlocked = unlockedUntil != null
 
     val running = p.locks.mapNotNull { l -> active(l, now)?.let { l to it } }
+    // "Everything" lock times decide like main ones (they block the main apps, and more).
     val main = running.filter { it.first.apps == null }
     val hard = main.filter { !it.first.earnable }
     val soft = main.filter { it.first.earnable }
@@ -293,7 +381,15 @@ object STCore {
     val ownBlocked = running.filter { it.first.apps != null && !unlocked && !(it.first.earnable && earnedLeftSec > 0) }.map { it.first }
     val blocked = reason != null
     val canEarn = blocked && reason != "focus" && p.earningEnabled && p.earnCapLeftMin > 0 && (reason == "limit" || blocking.all { it.first.earnable })
-    val any = blocked || ownBlocked.isNotEmpty()
+    val blockAll = if (reason == "focus") p.focusAll else reason == "lock" && blocking.any { it.first.allApps }
+    val limitBlocked = if (unlocked) emptyList() else p.appLimits.mapNotNull { l ->
+      when {
+        l.dailyMin != null && limitUsedSec(p, st, l, today) >= l.dailyMin * 60L -> l to "time"
+        l.opensPerDay != null && limitOpens(p, st, l, today) >= l.opensPerDay -> l to "opens"
+        else -> null
+      }
+    }
+    val any = blocked || ownBlocked.isNotEmpty() || limitBlocked.isNotEmpty()
     // The plan's "left" counts are for the day it was made. On a later day the app hasn't seen yet,
     // the allowance starts again, and only unlocks taken today count against it.
     val newDay = today > p.day
@@ -314,15 +410,36 @@ object STCore {
       oneMore = any && p.mode == "nudge" && oneMoresLeft - usedOneMores > 0,
       ownBlocked = ownBlocked,
       unlockedUntil = unlockedUntil,
+      blockAll = blockAll,
+      limitBlocked = limitBlocked,
     )
   }
 
-  /** Is this app (in front right now) blocked? Allowed apps never are; Trueline itself never is. */
-  fun blocks(p: Plan, s: Status, pkg: String, category: String, self: String): Boolean {
+  /**
+   * Is this app (in front right now) blocked? Allowed apps never are; Trueline itself never is.
+   * `everyday` says whether an app counts for "block everything": an app the user opens from the
+   * launcher, and not one the phone needs (home screen, phone, messages, settings, keyboard).
+   */
+  fun blocks(p: Plan, s: Status, pkg: String, category: String, self: String, everyday: (String) -> Boolean): Boolean {
     if (pkg == self || pkg in p.allowed.apps) return false
-    if (s.blocked && p.blocked.contains(pkg, category)) return true
+    if (s.blocked && (p.blocked.contains(pkg, category) || (s.blockAll && everyday(pkg)))) return true
+    if (s.limitBlocked.any { it.first.apps.contains(pkg, category) }) return true
     return s.ownBlocked.any { it.apps?.contains(pkg, category) == true }
   }
+
+  /** Why this app is blocked, for the blocked screen: a per-app limit's name, or null for the main reasons. */
+  fun limitFor(s: Status, pkg: String, category: String): Pair<AppLim, String>? =
+    s.limitBlocked.firstOrNull { it.first.apps.contains(pkg, category) }
+
+  /** Should this app show the pause screen first? (Outside blocks, for the main list, without a pass.) */
+  fun pauses(p: Plan, s: Status, st: State, pkg: String, category: String, self: String, now: Long): Boolean {
+    if (!p.pause.enabled || s.blocked || pkg == self || pkg in p.allowed.apps) return false
+    if (!p.blocked.contains(pkg, category)) return false
+    return (st.passes[pkg] ?: 0L) <= now
+  }
+
+  /** The per-app limits an app belongs to (its time and opens count towards each). */
+  fun limitsOf(p: Plan, pkg: String, category: String) = p.appLimits.filter { it.apps.contains(pkg, category) }
 
   /** Counts against the daily limit (the main blocked list, minus allowed apps). */
   fun counts(p: Plan, pkg: String, category: String, self: String) =
@@ -399,6 +516,36 @@ object STCore {
         it.timestamp >= since && it.reason == ApplicationExitInfo.REASON_USER_REQUESTED
       }
     }.getOrDefault(false)
+  }
+
+  /** Passes taken today, as far as the app or the phone knows (each makes the next wait longer). */
+  fun pausePasses(p: Plan, st: State, now: Long) = maxOf(st.pauses, if (p.day == dayKey(now)) p.pause.passes else 0)
+
+  /** The user waited out the pause: this app is open for the pass length, and the next wait grows. */
+  fun grantPass(ctx: Context, pkg: String, now: Long = System.currentTimeMillis()) {
+    val p = plan(ctx) ?: return
+    val st = state(ctx, now)
+    st.passes.entries.removeAll { it.value <= now }
+    st.passes[pkg] = now + p.pause.passMin * 60_000L
+    st.pauses = pausePasses(p, st, now) + 1
+    saveState(ctx, st)
+  }
+
+  /**
+   * For "block everything": apps the user opens from the launcher, minus the ones the phone needs
+   * (home screen, phone, messages, Settings) and Trueline itself.
+   */
+  fun everydayApps(ctx: Context): Set<String> {
+    val pm = ctx.packageManager
+    val launchable = runCatching {
+      pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0).map { it.activityInfo.packageName }.toSet()
+    }.getOrDefault(emptySet())
+    val needed = mutableSetOf(ctx.packageName, "com.android.settings")
+    runCatching { pm.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY) }
+      .getOrNull()?.activityInfo?.packageName?.let { needed.add(it) }
+    runCatching { ctx.getSystemService(TelecomManager::class.java)?.defaultDialerPackage }.getOrNull()?.let { needed.add(it) }
+    runCatching { Telephony.Sms.getDefaultSmsPackage(ctx) }.getOrNull()?.let { needed.add(it) }
+    return launchable - needed
   }
 
   fun takeUnlock(ctx: Context, kind: String, minutes: Int, now: Long = System.currentTimeMillis()) {

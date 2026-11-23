@@ -12,7 +12,9 @@ export function useScreenTimeSync() {
   useEffect(() => {
     const run = () => {
       try {
-        if (syncScreenTime().openEarn) router.push('/earn');
+        const r = syncScreenTime();
+        if (r.openScan) router.push('/screen-time/scan');
+        else if (r.openEarn) router.push('/earn');
       } catch {
         // Never let screen time break the workout app.
       }

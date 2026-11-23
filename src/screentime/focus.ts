@@ -22,30 +22,51 @@ const MIN_MS = 60_000;
 
 export type FocusChoice = 'set' | (typeof FOCUS_CHOICES)[number];
 
+/**
+ * Key lock: blocked until the user scans their key (a QR code they printed or saved), like a
+ * physical "brick". It still has a safety end the phone knows about.
+ */
+export const KEY_LOCK_HOURS = [1, 2, 4, 8] as const;
+export const KEY_LOCK_MAX_MIN = 8 * 60;
+
 export function focusActive(f: Focus | null, now: number): boolean {
   return !!f && f.startedAt <= now && now < f.until;
 }
 
 /** Start a focus now. A focus already running is extended, never shortened. */
-export function startFocus(rules: ScreenTimeRules, current: Focus | null, choice: FocusChoice, now: number): Focus {
+export function startFocus(rules: ScreenTimeRules, current: Focus | null, choice: FocusChoice, now: number, blockAll = false): Focus {
   const minutes = choice === 'set' ? SET_FOCUS_CAP_MIN : Math.max(1, Math.min(FOCUS_MAX_MIN, Math.round(choice)));
   const next: Focus = {
     kind: choice === 'set' ? 'set' : 'timed',
     startedAt: now,
     until: now + minutes * MIN_MS,
     strict: effectiveStrictness(rules, now) === 'strict',
+    blockAll,
   };
+  return merge(current, next, now);
+}
+
+/** Start a key lock: until the key is scanned, or `hours` at most. It can't be ended by hand. */
+export function startKeyLock(current: Focus | null, hours: number, now: number, blockAll = false): Focus {
+  const minutes = Math.max(15, Math.min(KEY_LOCK_MAX_MIN, Math.round(hours * 60)));
+  return merge(current, { kind: 'key', startedAt: now, until: now + minutes * MIN_MS, strict: true, blockAll }, now);
+}
+
+const RANK: Record<Focus['kind'], number> = { set: 0, timed: 1, key: 2 };
+
+function merge(current: Focus | null, next: Focus, now: number): Focus {
   if (!current || !focusActive(current, now)) return next;
   // Running already: keep the later end, the stricter setting, and a timed focus stays timed.
   return {
-    kind: current.kind === 'timed' || next.kind === 'timed' ? 'timed' : 'set',
+    kind: RANK[current.kind] >= RANK[next.kind] ? current.kind : next.kind,
     startedAt: current.startedAt,
     until: Math.max(current.until, next.until),
     strict: current.strict || next.strict,
+    blockAll: current.blockAll === true || next.blockAll === true,
   };
 }
 
-export type EndReason = 'completed' | 'abandoned' | 'manual';
+export type EndReason = 'completed' | 'abandoned' | 'manual' | 'key';
 
 export type EndResult =
   | { ended: true; focus: null; record: FocusRecord }
@@ -60,6 +81,8 @@ export function endFocus(f: Focus | null, reason: EndReason, now: number): EndRe
   if (!f) return { ended: false, focus: null, why: 'none' };
   if (!focusActive(f, now)) return { ended: true, focus: null, record: { from: f.startedAt, to: Math.min(now, f.until), outcome: 'expired' } };
   const record = (outcome: FocusRecord['outcome']): EndResult => ({ ended: true, focus: null, record: { from: f.startedAt, to: now, outcome } });
+  // Scanning the key ends anything, even in Strict: that's what the key is for.
+  if (reason === 'key') return record('ended');
   if (reason === 'completed') return f.kind === 'set' ? record('completed') : { ended: false, focus: f, why: 'timed' };
   if (f.strict) return { ended: false, focus: f, why: 'strict' };
   return record(reason === 'abandoned' ? 'abandoned' : 'ended');

@@ -4,7 +4,7 @@ import type { SessionSummary } from '@/engine/session';
 import { ScreenTime } from '../../modules/screen-time/src';
 import { decide, rollDay, takeUnlock as takeUnlockRule } from './decide';
 import { earnFromSet, type EarnResult } from './earn';
-import { endFocus, logFocus, settleFocus, startFocus, type EndReason, type EndResult, type FocusChoice } from './focus';
+import { endFocus, KEY_LOCK_MAX_MIN, logFocus, settleFocus, startFocus, startKeyLock, type EndReason, type EndResult, type FocusChoice } from './focus';
 import { mergeGaps, mergeReport, parseReport, toNativePlan } from './plan';
 import { applyPending, clearOldSkips, normalizeRules, DEFAULT_RULES } from './rules';
 import { deviceZone } from './time';
@@ -46,9 +46,22 @@ export interface Meta {
   tokensExpired: boolean;
   /** Workout focus on the exercise screen: off (null), for the set, or a number of minutes. */
   focusChoice: FocusChoice | null;
+  /** A workout focus blocks every app except the always-allowed ones, not just the blocked list. */
+  focusBlockAll: boolean;
+  /** The QR key that ends a key lock (its secret is what the code holds). */
+  key: { secret: string; createdAt: number } | null;
 }
 
-const DEFAULT_META: Meta = { setUp: false, permissionLost: false, lastSync: null, lostSince: null, tokensExpired: false, focusChoice: null };
+const DEFAULT_META: Meta = {
+  setUp: false,
+  permissionLost: false,
+  lastSync: null,
+  lostSince: null,
+  tokensExpired: false,
+  focusChoice: null,
+  focusBlockAll: false,
+  key: null,
+};
 
 function read<T>(key: string, parse: (raw: unknown) => T, fallback: T): T {
   try {
@@ -87,10 +100,11 @@ export function loadMeta(): Meta {
 
 function parseFocus(raw: unknown): Focus | null {
   const o = raw as Focus | null;
-  if (!o || (o.kind !== 'set' && o.kind !== 'timed') || typeof o.startedAt !== 'number' || typeof o.until !== 'number') return null;
-  // Never trust a stored focus longer than the hard cap.
-  if (o.until - o.startedAt > 3 * 60 * 60_000 || o.until <= o.startedAt) return null;
-  return { kind: o.kind, startedAt: o.startedAt, until: o.until, strict: o.strict === true };
+  if (!o || (o.kind !== 'set' && o.kind !== 'timed' && o.kind !== 'key') || typeof o.startedAt !== 'number' || typeof o.until !== 'number') return null;
+  // Never trust a stored focus longer than its hard cap (a key lock may run longer than a workout).
+  const cap = o.kind === 'key' ? KEY_LOCK_MAX_MIN * 60_000 : 3 * 60 * 60_000;
+  if (o.until - o.startedAt > cap || o.until <= o.startedAt) return null;
+  return { kind: o.kind, startedAt: o.startedAt, until: o.until, strict: o.strict === true, blockAll: o.blockAll === true };
 }
 
 export function loadFocus(): Focus | null {
@@ -163,6 +177,8 @@ function publish(next: ScreenTimeState) {
 export interface SyncResult {
   /** "Earn time" was tapped on the blocked screen: open the earn screen. */
   openEarn: boolean;
+  /** "Scan my key" was tapped on the blocked screen: open the scanner. */
+  openScan: boolean;
 }
 
 /**
@@ -175,6 +191,7 @@ export function syncScreenTime(now = Date.now()): SyncResult {
   let today = rollDay(deviceZone, s.days[0] ?? null, now);
   const meta = { ...s.meta };
   let openEarn = false;
+  let openScan = false;
   let problems: string[] = [];
   // A focus whose time is up goes into history.
   const settled = settleFocus(s.focus, now);
@@ -195,6 +212,7 @@ export function syncScreenTime(now = Date.now()): SyncResult {
     const report = parseReport(ScreenTime.takeState());
     today = mergeReport(deviceZone, rules, today, report, now);
     openEarn = report?.openEarn === true;
+    openScan = report?.openScan === true;
     if (report?.tokensExpired) meta.tokensExpired = true;
     if (meta.setUp) {
       problems = ScreenTime.sync(JSON.stringify(toNativePlan(deviceZone, rules, today, now, focus)));
@@ -203,7 +221,7 @@ export function syncScreenTime(now = Date.now()): SyncResult {
   }
   rules = normalizeRules(rules);
   publish(build(rules, withToday(s.days, today), meta, problems, focus, now));
-  return { openEarn };
+  return { openEarn, openScan };
 }
 
 /**
@@ -213,10 +231,47 @@ export function syncScreenTime(now = Date.now()): SyncResult {
 export function startFocusNow(choice: FocusChoice, now = Date.now()): Focus | null {
   const s = getScreenTime();
   if (!s.meta.setUp) return null;
-  const focus = startFocus(s.rules, s.focus, choice, now);
+  const focus = startFocus(s.rules, s.focus, choice, now, s.meta.focusBlockAll);
   publish({ ...s, focus });
   syncScreenTime(now);
   return focus;
+}
+
+/** Lock the apps until the key is scanned (or `hours` at most). Needs a key. */
+export function startKeyLockNow(hours: number, blockAll: boolean, now = Date.now()): Focus | null {
+  const s = getScreenTime();
+  if (!s.meta.setUp || !s.meta.key) return null;
+  const focus = startKeyLock(s.focus, hours, now, blockAll);
+  publish({ ...s, focus });
+  syncScreenTime(now);
+  return focus;
+}
+
+/** The text a key's QR code holds. */
+export const keyText = (secret: string) => `trueline-key:${secret}`;
+
+/** A scanned code: ends the running focus or key lock if it's this phone's key. */
+export function scanKey(text: string, now = Date.now()): 'ended' | 'wrong-key' | 'nothing-running' {
+  const s = getScreenTime();
+  if (!s.meta.key || text.trim() !== keyText(s.meta.key.secret)) return 'wrong-key';
+  if (!s.focus || s.focus.until <= now) return 'nothing-running';
+  endFocusNow('key', now);
+  return 'ended';
+}
+
+/** Make a new key (the old one stops working). Refused while a key lock runs: that key is the way out. */
+export function newKey(now = Date.now()): boolean {
+  const s = getScreenTime();
+  if (s.focus?.kind === 'key' && s.focus.until > now) return false;
+  const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
+  const secret = bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+  publish({ ...s, meta: { ...s.meta, key: { secret, createdAt: now } } });
+  return true;
+}
+
+export function setFocusBlockAll(on: boolean) {
+  const s = getScreenTime();
+  publish({ ...s, meta: { ...s.meta, focusBlockAll: on } });
 }
 
 /**

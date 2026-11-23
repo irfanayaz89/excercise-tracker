@@ -167,7 +167,11 @@ export default function ScreenTimeSetup() {
 
       {step === 'blocked' && (
         <Block title="Which apps eat your time?">
-          <Body tone="muted">Pick apps or whole categories (Social, Games, Entertainment…). You can change this later.</Body>
+          <Body tone="muted">
+            {Platform.OS === 'ios'
+              ? 'Pick apps, whole categories (Social, Games, Entertainment…) or websites (Websites tab). You can change this later.'
+              : 'Pick apps or whole categories (Social, Games, Entertainment…). You can change this later.'}
+          </Body>
           <Strong>{countLabel(rules.blocked)}</Strong>
           <Button
             variant="ghost"

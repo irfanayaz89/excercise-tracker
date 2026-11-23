@@ -288,6 +288,24 @@ Time features). Full design: [docs/SCREEN_TIME_PLAN.md](docs/SCREEN_TIME_PLAN.md
   (making things easier waits until midnight, one 10-minute emergency unlock a day),
   Strict (for 1–30 days: no unlocks, apps can't come off the list, easing waits 24 h; end
   early with 100 verified push-ups).
+- **App limits** (up to three): a daily limit of its own for one app or a group, such as
+  "Instagram 20 min". On Android it can also limit opens ("YouTube 5 times a day"). Earned
+  time doesn't open them.
+- **Everything except**: a lock time, a workout focus or a key lock can block every app except
+  the always-allowed ones (and, on Android, the home screen, phone, messages and Settings).
+- **Pause before opening**: outside blocks, a blocked app first shows a short wait (5–30 s,
+  5 s longer with every pass taken that day), then opens for 5 minutes. On iPhone it's the
+  blocked screen: wait, then tap Open.
+- **Key lock**: make a QR key, print it or keep it on another device, and lock your apps until
+  you scan it (with a safety end of 1–8 hours). Backing out or End doesn't lift it.
+- **Websites** (iPhone): Apple's picker has a Websites tab; picked sites are blocked in Safari.
+- **Hide notifications** (Android, optional): while an app is blocked, its notifications are
+  cancelled (needs Notification access).
+- **Your use**: a 7-day chart. Android shows all phone use and today's top apps from its own
+  records; iPhone shows the blocked apps' minutes it has seen.
+- **Home screen widget** on both: what's blocked now and until when.
+- **Strict on iPhone** suggests asking a friend to hold a Screen Time passcode, which makes
+  switching protection off in Settings much harder.
 - **History** shows time in focus and any time protection was off (access revoked, or the
   Android app stopped from Settings or the Task Manager).
 - **Blocked screen** with "Earn time" (opens Trueline's earn screen), the strictness level's
@@ -302,6 +320,8 @@ reads back what happened while it was closed (`store.ts`). The native side only 
 | Module | `modules/screen-time/ios` (FamilyControls, ManagedSettings, DeviceActivity) | `modules/screen-time/android` (usage access + foreground service) |
 | Blocking | Apple's shield, applied by the monitor extension at lock-time edges and usage thresholds (`targets/st-monitor`) | `BlockService` checks the app in front each second and shows `BlockActivity` |
 | Blocked screen | `targets/st-shield-config` (text), `targets/st-shield-action` (buttons) | `BlockActivity` |
+| Widget | `targets/st-widget` (WidgetKit, app group only) | `STWidget` |
+| Notifications | (no API) | `STNotifyListener` |
 | Needs | iOS 17.4+, a **paid** Apple Developer team, build with `SCREEN_TIME=1` | Android 10+, Usage access, Display over other apps |
 
 ### Building with screen time on iPhone

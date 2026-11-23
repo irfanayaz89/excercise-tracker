@@ -28,8 +28,8 @@ export interface LockTime {
   /** Local wall-clock "HH:MM". End may be earlier than start: the window then crosses midnight. */
   start: string;
   end: string;
-  /** The main blocked apps, or its own selection. */
-  apps: 'main' | Selection;
+  /** The main blocked apps, every app except the always-allowed ones, or its own selection. */
+  apps: 'main' | 'all' | Selection;
   /** Earned time may open the apps during this window (off = truly locked). */
   earnable: boolean;
   enabled: boolean;
@@ -53,6 +53,28 @@ export interface EarningRules {
   dailyCapMin: number;
 }
 
+/**
+ * A daily limit for a group of apps of its own ("Instagram 20 min", "YouTube 1 h"), on top of
+ * the main daily limit. Earned time doesn't open them: the limit is the limit.
+ */
+export interface AppLimit {
+  id: string;
+  name: string;
+  apps: Selection;
+  /** Minutes a day (null = no time limit). */
+  dailyMin: number | null;
+  /** Opens a day (null = no limit). Android only: iPhone can't count opens. */
+  opensPerDay: number | null;
+  enabled: boolean;
+}
+
+/** A pause before a blocked app opens outside lock times and limits (a speed bump, not a block). */
+export interface PauseRules {
+  enabled: boolean;
+  /** The first wait of the day; each pass taken adds 5 s, up to a minute. */
+  seconds: number;
+}
+
 /** The part of the rules a change can affect (pending changes store a full copy of it). */
 export interface RulesCore {
   blocked: Selection;
@@ -62,6 +84,11 @@ export interface RulesCore {
   lockTimes: LockTime[];
   earning: EarningRules;
   strictness: Strictness;
+  /** Per-app daily limits (at most MAX_APP_LIMITS). */
+  appLimits: AppLimit[];
+  pause: PauseRules;
+  /** Android: hide notifications from apps while they're blocked. */
+  silenceNotifications: boolean;
 }
 
 export interface ScreenTimeRules extends RulesCore {
@@ -94,13 +121,18 @@ export interface Unlock {
  * abandoned workout can never leave someone locked out.
  */
 export interface Focus {
-  /** "set": ends when the set ends. "timed": stays for the chosen minutes. */
-  kind: 'set' | 'timed';
+  /**
+   * "set": ends when the set ends. "timed": stays for the chosen minutes. "key": stays until the
+   * user scans their key (or the safety end).
+   */
+  kind: 'set' | 'timed' | 'key';
   startedAt: number;
   /** Planned end (epoch ms). For "set", a safety cap. */
   until: number;
   /** Started in Strict mode: can't be ended early by backing out or by hand. */
   strict: boolean;
+  /** Blocks every app except the always-allowed ones, not just the blocked list. */
+  blockAll?: boolean;
 }
 
 /** A finished focus, for history and the summary. */
@@ -132,6 +164,11 @@ export interface DayLog {
   focuses?: FocusRecord[];
   /** Times protection was off today. */
   gaps?: Gap[];
+  /** Per-app limits: minutes used and opens today, by limit id. */
+  appUsed?: Record<string, number>;
+  appOpens?: Record<string, number>;
+  /** Passes taken through the pause screen today (each makes the next wait longer). */
+  pauses?: number;
 }
 
 /** Why the blocked apps are closed right now. */
@@ -160,6 +197,10 @@ export interface Decision {
   ownLocks: { id: string; name: string; until: number; apps: Selection }[];
   /** A workout focus is running (it blocks the main apps, earned time doesn't open them). */
   focus: { kind: Focus['kind']; until: number; strict: boolean } | null;
+  /** The block covers every app except the always-allowed ones. */
+  blockAll: boolean;
+  /** Per-app limits used up today (time or opens). */
+  limitBlocks: { id: string; name: string; apps: Selection; why: 'time' | 'opens' }[];
   /** The next moment the decision may change on its own (lock start/end, unlock end, midnight). */
   nextChange: number;
 }

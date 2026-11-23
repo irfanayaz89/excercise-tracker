@@ -4,6 +4,14 @@ import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EXERCISE_IDS, EXERCISES } from '@/engine/exercises';
 import { DayTimeline } from '@/features/screentime/DayTimeline';
+import {
+  AppLimitsSection,
+  FriendPasscodeNote,
+  KeyLockSection,
+  NotificationsSection,
+  PauseSection,
+  UsageSection,
+} from '@/features/screentime/ScreenTimeExtras';
 import { changeRules, countLabel, describeChange, pickApps, selectionProblem } from '@/screentime/edit';
 import {
   cancelPending,
@@ -273,7 +281,7 @@ export default function ScreenTimeScreen() {
               <Body tone="muted" size={13}>
                 {describeLock(l)}
                 {l.earnable ? ' · earned time works' : ''}
-                {l.apps !== 'main' ? ` · ${countLabel(l.apps)}` : ''}
+                {l.apps === 'all' ? ' · everything except always allowed' : l.apps !== 'main' ? ` · ${countLabel(l.apps)}` : ''}
               </Body>
               {l.skipDate && (
                 <Mono size={11} tone="cue">
@@ -310,9 +318,19 @@ export default function ScreenTimeScreen() {
         />
       </Section>
 
+      <AppLimitsSection st={st} guard={guard} />
+
+      <PauseSection st={st} change={change} />
+
+      <KeyLockSection st={st} guard={guard} onMessage={setMessage} />
+
+      <NotificationsSection st={st} change={change} />
+
       <EarningSection st={st} change={change} />
 
       <StrictnessSection st={st} now={now} mode={mode} apply={apply} change={change} />
+
+      <UsageSection st={st} />
 
       <HistorySection st={st} />
 
@@ -419,7 +437,10 @@ function StrictnessSection({
     const days = `${strictDays} day${strictDays === 1 ? '' : 's'}`;
     Alert.alert(
       `Turn on Strict for ${days}?`,
-      `Until then you can't take apps off the list, shorten a running lock time, use unlocks or turn screen time off. Ending it early takes ${STRICT_OFF_PUSHUPS} verified push-ups or a 24-hour wait.`,
+      `Until then you can't take apps off the list, shorten a running lock time, use unlocks or turn screen time off. Ending it early takes ${STRICT_OFF_PUSHUPS} verified push-ups or a 24-hour wait.` +
+        (Platform.OS === 'ios'
+          ? '\n\nTo make it harder to switch off in Settings, ask a friend to set a Screen Time passcode on this iPhone.'
+          : ''),
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Turn on Strict', onPress: () => saveRules(startStrict(getScreenTime().rules, Date.now(), strictDays)) },
@@ -455,6 +476,7 @@ function StrictnessSection({
         {strictOn && (
           <View style={{ gap: space.sm }}>
             <Strong size={14}>{`Strict until ${formatClock(deviceZone, r.strictUntil!, now)}`}</Strong>
+            <FriendPasscodeNote />
             {askedAt === null ? (
               <Button
                 size="sm"

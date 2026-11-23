@@ -20,7 +20,7 @@ const strict = rules({ dailyLimitMin: 60, strictness: 'strict', strictUntil: NOO
 describe('starting a focus', () => {
   it('"for this set" gets a safety end the phone knows about', () => {
     const f = startFocus(standard, null, 'set', NOON);
-    expect(f).toEqual({ kind: 'set', startedAt: NOON, until: NOON + SET_FOCUS_CAP_MIN * MIN, strict: false });
+    expect(f).toEqual({ kind: 'set', startedAt: NOON, until: NOON + SET_FOCUS_CAP_MIN * MIN, strict: false, blockAll: false });
   });
 
   it('a timed focus lasts the chosen minutes, never more than the hard cap', () => {

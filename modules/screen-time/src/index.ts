@@ -45,7 +45,18 @@ interface ScreenTimeNative {
   /** Android: battery optimisation is already off for Trueline. */
   batteryUnrestricted?(): boolean;
   /** Android: open the settings screen for a permission. */
-  openSettings?(which: 'usage' | 'overlay' | 'battery'): void;
+  openSettings?(which: 'usage' | 'overlay' | 'battery' | 'notifications'): void;
+  /** Android: Trueline may hide notifications (Notification access is on). */
+  notificationAccess?(): boolean;
+  /** Android: minutes of phone use per day (last 7 days, oldest first) and today's top apps. */
+  usageSummary?(): Promise<UsageSummary>;
+  /** iOS: refresh the home screen widget after the app changed what's blocked. */
+  reloadWidget?(): void;
+}
+
+export interface UsageSummary {
+  days: { day: string; minutes: number }[];
+  top: { packageName: string; label: string; minutes: number }[];
 }
 
 export const ScreenTime = requireOptionalNativeModule<ScreenTimeNative>('ScreenTime');

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="st_widget_description">What screen time is doing now: a lock time, a focus, or the minutes left today.</string>
+</resources>

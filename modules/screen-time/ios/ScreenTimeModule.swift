@@ -99,12 +99,17 @@ public class ScreenTimeModule: Module {
       var cleared = st
       cleared.unlocks = []
       cleared.openEarn = false
+      cleared.openScan = nil
       STShared.saveState(cleared)
       return out
     }
 
     Function("takeUnlock") { (kind: String, minutes: Int) in
       STShared.takeUnlock(kind: kind, minutes: minutes)
+    }
+
+    Function("reloadWidget") {
+      STShared.writeWidget(STShared.plan == nil ? nil : STShared.status())
     }
 
     Function("stopAll") {

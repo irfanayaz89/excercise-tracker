@@ -1,7 +1,7 @@
 import { EXERCISE_IDS } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { activeOccurrence, addDays, lockLengthMin, nextMidnight, occurrences, parseHHMM, type Zone } from './time';
-import type { EarningRules, LockTime, Rate, RulesCore, ScreenTimeRules, Selection, Strictness } from './types';
+import type { AppLimit, EarningRules, LockTime, PauseRules, Rate, RulesCore, ScreenTimeRules, Selection, Strictness } from './types';
 
 /**
  * Apple monitors at most 20 schedules per app. Lock times use 2 each (start and end);
@@ -18,6 +18,17 @@ export const STRICT_WAIT_MS = 24 * 60 * 60 * 1000;
 /** Strict: turning it off early costs this many verified push-ups (or the 24 h wait). */
 export const STRICT_OFF_PUSHUPS = 100;
 export const DEFAULT_STRICT_DAYS = 7;
+/**
+ * Per-app limits. On iPhone each one adds threshold events to the daily-limit schedule (not a
+ * schedule of its own, so the 20-schedule budget above is unchanged); three keeps that small.
+ */
+export const MAX_APP_LIMITS = 3;
+export const PAUSE_CHOICES = [5, 10, 20, 30] as const;
+/** Each pass taken through the pause screen adds this much to the next wait, up to PAUSE_MAX_S. */
+export const PAUSE_STEP_S = 5;
+export const PAUSE_MAX_S = 60;
+/** How long the app stays open after a pause. */
+export const PAUSE_PASS_MIN = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const EMPTY_SELECTION: Selection = { apps: [], categories: [], domains: [] };
@@ -37,9 +48,17 @@ export const DEFAULT_RULES: ScreenTimeRules = {
   lockTimes: [],
   earning: { enabled: true, rates: DEFAULT_RATES, dailyCapMin: 120 },
   strictness: 'standard',
+  appLimits: [],
+  pause: { enabled: false, seconds: 10 },
+  silenceNotifications: false,
   strictUntil: null,
   pending: null,
 };
+
+/** The wait before a paused app opens, after `passesToday` passes. */
+export function pauseSeconds(p: PauseRules, passesToday: number): number {
+  return Math.min(PAUSE_MAX_S, p.seconds + PAUSE_STEP_S * Math.max(0, passesToday));
+}
 
 /** Ready-made lock times offered when adding one. */
 export const LOCK_PRESETS: Omit<LockTime, 'id'>[] = [
@@ -89,12 +108,31 @@ function lockTime(v: unknown): LockTime | null {
     days,
     start: typeof o.start === 'string' ? o.start : '',
     end: typeof o.end === 'string' ? o.end : '',
-    apps: o.apps === 'main' || o.apps === undefined ? 'main' : selection(o.apps),
+    apps: o.apps === 'main' || o.apps === undefined ? 'main' : o.apps === 'all' ? 'all' : selection(o.apps),
     earnable: o.earnable === true,
     enabled: o.enabled !== false,
     skipDate: typeof o.skipDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.skipDate) ? o.skipDate : null,
   };
   return lockProblem(lock) ? null : lock;
+}
+
+function appLimit(v: unknown): AppLimit | null {
+  const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+  if (!o || typeof o.id !== 'string' || !o.id) return null;
+  const l: AppLimit = {
+    id: o.id,
+    name: typeof o.name === 'string' && o.name.trim() ? o.name.trim().slice(0, 40) : 'App limit',
+    apps: selection(o.apps),
+    dailyMin: num(o.dailyMin, 1, 24 * 60),
+    opensPerDay: num(o.opensPerDay, 1, 500),
+    enabled: o.enabled !== false,
+  };
+  return appLimitProblem(l) ? null : l;
+}
+
+function pause(v: unknown): PauseRules {
+  const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  return { enabled: o.enabled === true, seconds: num(o.seconds, 1, PAUSE_MAX_S) ?? DEFAULT_RULES.pause.seconds };
 }
 
 function earning(v: unknown): EarningRules {
@@ -128,6 +166,9 @@ function core(o: Record<string, unknown>): RulesCore {
     ),
     earning: earning(o.earning),
     strictness: o.strictness === 'nudge' || o.strictness === 'strict' ? o.strictness : 'standard',
+    appLimits: (Array.isArray(o.appLimits) ? o.appLimits.map(appLimit).filter((l): l is AppLimit => l !== null) : []).slice(0, MAX_APP_LIMITS),
+    pause: pause(o.pause),
+    silenceNotifications: o.silenceNotifications === true,
   };
 }
 
@@ -153,6 +194,15 @@ export function normalizeRules(raw: unknown): ScreenTimeRules {
 }
 
 // ─── Validation ─────────────────────────────────────────────────────────────
+
+export type AppLimitProblem = 'no-apps' | 'no-limit';
+
+/** Why a per-app limit can't be saved, or null if it can. */
+export function appLimitProblem(l: Pick<AppLimit, 'apps' | 'dailyMin' | 'opensPerDay'>): AppLimitProblem | null {
+  if (!l.apps.apps.length && !l.apps.categories.length && !l.apps.domains.length) return 'no-apps';
+  if (l.dailyMin === null && l.opensPerDay === null) return 'no-limit';
+  return null;
+}
 
 export type LockProblem = 'no-days' | 'bad-time' | 'too-short';
 
@@ -242,9 +292,24 @@ export function loosens(prev: RulesCore, next: RulesCore): boolean {
   for (const p of prev.lockTimes) {
     if (p.apps === 'main' || !p.enabled) continue;
     const n = next.lockTimes.find((x) => x.id === p.id);
-    if (!n || n.apps === 'main' || !subset(asSet(p.apps), asSet(n.apps))) return true;
+    if (p.apps === 'all') {
+      // "Everything" narrowed back to the blocked list (or removed) gives apps back.
+      if (!n || n.apps !== 'all') return true;
+    } else if (!n || n.apps === 'main' || n.apps === 'all' || !subset(asSet(p.apps), asSet(n.apps))) {
+      return true;
+    }
     if (!subset(weekCoverage([p], true), weekCoverage([n], true))) return true;
   }
+  // Per-app limits: each one must still be there, cover at least the same apps, and be no longer.
+  for (const p of prev.appLimits) {
+    if (!p.enabled) continue;
+    const n = next.appLimits.find((x) => x.id === p.id);
+    if (!n || !n.enabled || !subset(asSet(p.apps), asSet(n.apps))) return true;
+    if (p.dailyMin !== null && (n.dailyMin === null || n.dailyMin > p.dailyMin)) return true;
+    if (p.opensPerDay !== null && (n.opensPerDay === null || n.opensPerDay > p.opensPerDay)) return true;
+  }
+  if (prev.pause.enabled && (!next.pause.enabled || next.pause.seconds < prev.pause.seconds)) return true;
+  if (prev.silenceNotifications && !next.silenceNotifications) return true;
   const order: Strictness[] = ['nudge', 'standard', 'strict'];
   if (order.indexOf(next.strictness) < order.indexOf(prev.strictness)) return true;
   if (next.earning.enabled && !prev.earning.enabled) return true;
@@ -274,6 +339,9 @@ export function coreOf(r: ScreenTimeRules): RulesCore {
     lockTimes: r.lockTimes,
     earning: r.earning,
     strictness: r.strictness,
+    appLimits: r.appLimits,
+    pause: r.pause,
+    silenceNotifications: r.silenceNotifications,
   };
 }
 
@@ -286,7 +354,8 @@ function touchesRunningLock(zone: Zone, prev: RulesCore, next: RulesCore, now: n
     if (!n) return true;
     const still = activeOccurrence(zone, n, now);
     if (!still || still.end < occ.end || (n.earnable && !p.earnable)) return true;
-    if (p.apps !== 'main' && (n.apps === 'main' || !subset(asSet(p.apps), asSet(n.apps)))) return true;
+    if (p.apps === 'all' && n.apps !== 'all') return true;
+    if (p.apps !== 'main' && p.apps !== 'all' && (n.apps === 'main' || n.apps === 'all' || !subset(asSet(p.apps), asSet(n.apps)))) return true;
   }
   return false;
 }
@@ -303,7 +372,12 @@ function touchesRunningLock(zone: Zone, prev: RulesCore, next: RulesCore, now: n
  */
 export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore, now: number): ChangeResult {
   const next: RulesCore = core(nextIn as unknown as Record<string, unknown>);
-  if (nextIn.lockTimes.some((l) => lockProblem(l) !== null) || nextIn.lockTimes.length > MAX_LOCK_TIMES) {
+  if (
+    nextIn.lockTimes.some((l) => lockProblem(l) !== null) ||
+    nextIn.lockTimes.length > MAX_LOCK_TIMES ||
+    (nextIn.appLimits ?? []).some((l) => appLimitProblem(l) !== null) ||
+    (nextIn.appLimits ?? []).length > MAX_APP_LIMITS
+  ) {
     return { result: 'refused', rules: r, reason: 'invalid' };
   }
   const prev = coreOf(r);
