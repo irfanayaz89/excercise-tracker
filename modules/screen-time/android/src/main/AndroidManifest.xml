@@ -1,0 +1,73 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
+  <!-- Which app is in front (Settings → Usage access; the user turns it on). -->
+  <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+  <!-- Show the blocked screen over other apps (Settings → Display over other apps). -->
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+  <!-- Launchable apps only (for the app picker), not every package on the phone; and the clock
+       apps, which "Block everything" leaves open so an alarm is never covered. -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SHOW_ALARMS" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SET_ALARM" />
+    </intent>
+  </queries>
+
+  <application>
+    <service
+      android:name="expo.modules.screentime.BlockService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="Blocks apps the user chose during the times the user set, and counts their use against the user's daily limit." />
+    </service>
+    <activity
+      android:name="expo.modules.screentime.BlockActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:launchMode="singleTask"
+      android:taskAffinity="expo.modules.screentime.block"
+      android:theme="@android:style/Theme.Material.NoActionBar" />
+    <!-- Optional: hides notifications from apps while they're blocked (the user grants Notification access). -->
+    <service
+      android:name="expo.modules.screentime.STNotifyListener"
+      android:exported="true"
+      android:label="Trueline: hide notifications from blocked apps"
+      android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+      <intent-filter>
+        <action android:name="android.service.notification.NotificationListenerService" />
+      </intent-filter>
+    </service>
+    <receiver
+      android:name="expo.modules.screentime.STWidget"
+      android:exported="false"
+      android:label="Trueline screen time">
+      <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+      </intent-filter>
+      <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/st_widget_info" />
+    </receiver>
+    <receiver
+      android:name="expo.modules.screentime.BootReceiver"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Screen Time and App Blocking: MVP Guide</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<section class="cover">
+  <div class="bar"></div>
+  <div class="brand">MVP GUIDE</div>
+  <h1>Screen Time &amp; App Blocking</h1>
+  <div class="sub">The minimum viable product for iOS and Android: ten features specified one by one, how strict they can be, how each platform enforces them, and what must be done before launch</div>
+  <div class="meta">
+    <b>Research guide for mobile engineering and product teams</b><br>
+    Current to 23 November 2026 (iOS 26.5 / iOS 27, Android 16 / Android 17)<br>
+    Version 3.1 · adds six features for after the MVP · replaces version 3.0
+  </div>
+</section>
+
+<section class="toc-page">
+  <h2 id="contents">Contents</h2>
+  <ul class="toc">
+    <li><span class="t">Executive summary</span><span class="pg" data-page="summary"></span></li>
+    <li class="part-h"><span class="t">Part A · The MVP</span></li>
+    <li><span class="t">1. Scope and how to read this guide</span><span class="pg" data-page="s1"></span></li>
+    <li><span class="t">2. How app blocking works on phones</span><span class="pg" data-page="s2"></span></li>
+    <li><span class="t">3. Feature catalogue: everything an app can build</span><span class="pg" data-page="s3"></span></li>
+    <li><span class="t">4. The MVP, feature by feature</span><span class="pg" data-page="mvp"></span></li>
+    <li class="part-h"><span class="t">Part B · Platform detail</span></li>
+    <li><span class="t">5. iOS in depth</span><span class="pg" data-page="s4"></span></li>
+    <li><span class="t">6. Android in depth</span><span class="pg" data-page="s5"></span></li>
+    <li class="part-h"><span class="t">Part C · Strictness and bypass</span></li>
+    <li><span class="t">7. Enforcement and strictness levels</span><span class="pg" data-page="s6"></span></li>
+    <li><span class="t">8. Bypass matrix: every way around a block</span><span class="pg" data-page="s7"></span></li>
+    <li><span class="t">9. iOS vs Android comparison</span><span class="pg" data-page="s8"></span></li>
+    <li class="part-h"><span class="t">Part D · Building and shipping it</span></li>
+    <li><span class="t">10. Technical architecture</span><span class="pg" data-page="s10"></span></li>
+    <li><span class="t">11. Security, privacy and store compliance</span><span class="pg" data-page="s12"></span></li>
+    <li><span class="t">12. Competitor and industry research</span><span class="pg" data-page="s13"></span></li>
+    <li><span class="t">13. Recommendations and roadmap</span><span class="pg" data-page="s14"></span></li>
+    <li class="part-h"><span class="t">Appendix</span></li>
+    <li><span class="t">Glossary</span><span class="pg" data-page="appc"></span></li>
+    <li><span class="t">References</span><span class="pg" data-page="refs"></span></li>
+  </ul>
+</section>
+
+<section class="summary">
+  <h2 id="summary">Executive summary</h2>
+  <div class="callout ok"><b>Short answer.</b> Any ordinary app, with no device management, can <b>really block</b> chosen apps on iOS and Android: during a focus session, on a schedule, or after a daily limit. It can then unlock them when the user completes a task the app verifies. What no app can do is stop an adult from switching protection off on their own phone. The right product is <b>a commitment device with real friction</b>, honestly described.</div>
+
+  <h3 id="sum-can">Can we do it?</h3>
+  <table>
+    <thead><tr><th style="width:36%">Feature</th><th style="width:32%">iOS</th><th>Android</th></tr></thead>
+    <tbody>
+      <tr><td>Block chosen apps or categories</td><td><span class="tag yes">Yes</span> system-enforced</td><td><span class="tag yes">Yes</span> app-enforced (~1 s delay)</td></tr>
+      <tr><td>Focus sessions, schedules, daily limits</td><td><span class="tag yes">Yes</span> (limits need a bug workaround)</td><td><span class="tag yes">Yes</span> exact</td></tr>
+      <tr><td>Earn time back with a verified task</td><td><span class="tag yes">Yes</span> (open app from block screen on 26.5+)</td><td><span class="tag yes">Yes</span></td></tr>
+      <tr><td>Block websites</td><td><span class="tag yes">Yes</span> Safari and browsers that report to Screen Time; some others leak</td><td><span class="tag no">No</span> without a VPN or accessibility</td></tr>
+      <tr><td>Exact usage minutes and app names</td><td><span class="tag no">No</span> (EU exception)</td><td><span class="tag yes">Yes</span></td></tr>
+      <tr><td>Silence distracting notifications</td><td><span class="tag no">No</span></td><td><span class="tag yes">Yes</span> (user-granted)</td></tr>
+      <tr><td>Survive app close, force-quit, reboot</td><td><span class="tag yes">Yes</span> (reboot: re-register schedules on launch)</td><td><span class="tag part">Partly</span> force stop defeats it</td></tr>
+      <tr><td>Prevent revoking access or uninstalling (adults)</td><td><span class="tag no">No</span> alone; a passcode someone else holds can gate both (7)</td><td><span class="tag no">No</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="sum-key">What decides the design</h3>
+  <ul>
+    <li><b>iOS</b> uses Apple's Screen Time API; iOS itself enforces the block <sup class="ref">[1][9][18]</sup>.
+      <ul>
+        <li>Needs a <b>paid</b> developer team, even to test on a phone <sup class="ref">[8]</sup>.</li>
+        <li>Apple must approve the app and each of its 3 extensions <sup class="ref">[6]</sup>.</li>
+        <li>Limits: 50 app tokens per store (one report says across all stores), 20 schedules, 15-minute minimum windows <sup class="ref">[10][16][27]</sup>.</li>
+      </ul></li>
+    <li><b>Android</b> has no blocking API: usage access + display over other apps + a foreground service. Exact and flexible, but a force stop ends it <sup class="ref">[34][37][42]</sup>. Avoid accessibility services (Play policy, and Android 17's Advanced Protection) <sup class="ref">[54][62]</sup>.</li>
+    <li><b>Biggest risk:</b> Apple's March 2026 rule requires the app's <i>primary purpose</i> to be focus or personal device-usage management <sup class="ref">[23]</sup>. An app with another main purpose must present the feature that way, and approval isn't guaranteed.</li>
+    <li><b>Known bug:</b> iOS usage-threshold events misfire (reported from iOS 17.6.1 through 26.x and 27), and Apple has promised no fix <sup class="ref">[90][25][91]</sup>. Schedules and focus sessions aren't affected.</li>
+  </ul>
+
+  <h3 id="sum-rec">The MVP (section 4)</h3>
+  <table>
+    <thead><tr><th style="width:50%">Ten features</th><th>What it promises, honestly</th></tr></thead>
+    <tbody><tr>
+      <td>Setup · app lists · focus session · lock times · daily limit · earn time with a task · block screen · three strictness modes · bypass detection · Home card, history and Turn off</td>
+      <td><i>"Blocks the apps you choose. Switching it off takes a deliberate trip to Settings, and the app shows when that happened."</i> Strictness Level 3, with Level 4 "Strict" as an opt-in. Never "can't be bypassed". Section 4.6 adds six features for after launch.</td>
+    </tr></tbody>
+  </table>
+  <p class="small"><b>Before launch</b> the work is mostly not code: a paid Apple team, Apple's approval for the app and each extension (reported waits from a few days to three weeks or more), Play declarations, and a pass on real phones.</p>
+</section>

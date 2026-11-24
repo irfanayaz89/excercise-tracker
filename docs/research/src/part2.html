@@ -1,0 +1,21 @@
+<section>
+  <h2 id="s3" class="flow"><span class="num">3</span>Feature catalogue: everything an app can build</h2>
+  <p>The main Screen Time features open to an ordinary App Store or Google Play app, with no device management. Detail is in sections 5 and 6. Type: <span class="tag yes">Enforce</span> actually prevents · <span class="tag part">Deter</span> possible but costly · <span class="tag info">Inform</span> shows or detects.</p>
+  <table>
+    <thead><tr><th style="width:15%">Feature</th><th style="width:34%">iOS</th><th style="width:25%">Android</th><th style="width:9%">Type</th><th>In the MVP?</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Usage report</td><td><span class="tag part">Partial</span> A chart drawn by the app's own sandboxed report extension; numbers unreadable outside the EU <sup class="ref">[5][19]</sup></td><td><span class="tag yes">Yes</span> Exact minutes per app <sup class="ref">[34]</sup></td><td><span class="tag info">Inform</span></td><td>14-day history (M10); chart M16</td></tr>
+      <tr><td class="k">Chosen apps</td><td><span class="tag yes">Yes</span> System shield, 50 app tokens per store <sup class="ref">[10]</sup></td><td><span class="tag yes">Yes</span> Block screen over the app</td><td><span class="tag yes">Enforce</span></td><td>M2</td></tr>
+      <tr><td class="k">Whole categories</td><td><span class="tag yes">Yes</span> Up to 50 category tokens and 50 exceptions per store <sup class="ref">[117]</sup></td><td><span class="tag part">Partial</span> Many apps declare none (6.2)</td><td><span class="tag yes">Enforce</span></td><td>M2, recommended</td></tr>
+      <tr><td class="k">Websites</td><td><span class="tag part">Partial</span> Safari and browsers that report to Screen Time; some browsers leak, and the <code>webContent</code> filter covers them (5.4)</td><td><span class="tag part">Partial</span> Only through a VPN or accessibility <sup class="ref">[54][58]</sup></td><td><span class="tag yes">Enforce</span></td><td>iOS in the picker; Android later (4.3)</td></tr>
+      <tr><td class="k">Focus session</td><td><span class="tag yes">Yes</span> Shield now + a schedule for the end <sup class="ref">[16]</sup></td><td><span class="tag yes">Yes</span> Exact</td><td><span class="tag yes">Enforce</span></td><td>M3</td></tr>
+      <tr><td class="k">Repeating schedules</td><td><span class="tag yes">Yes</span> 20 activities per app <sup class="ref">[16]</sup></td><td><span class="tag yes">Yes</span> Service clock</td><td><span class="tag yes">Enforce</span></td><td>M4</td></tr>
+      <tr><td class="k">Daily time limit</td><td><span class="tag part">Partial</span> Usage thresholds, which misfire (5.5)</td><td><span class="tag yes">Yes</span> Exact</td><td><span class="tag yes">Enforce</span></td><td>M5 (iOS approximate)</td></tr>
+      <tr><td class="k">Temporary unlock</td><td><span class="tag yes">Yes</span> Lift the shield and schedule the re-block</td><td><span class="tag yes">Yes</span></td><td><span class="tag part">Deter</span></td><td>M8</td></tr>
+      <tr><td class="k">Block-screen buttons</td><td><span class="tag yes">Yes</span> 2 buttons; 3 menu items (26.4); open the app (26.5) <sup class="ref">[13][14]</sup></td><td><span class="tag yes">Yes</span> Fully custom</td><td><span class="tag part">Deter</span></td><td>M7; menu later</td></tr>
+      <tr><td class="k">Earn time with a task</td><td><span class="tag yes">Yes</span> App logic + shields</td><td><span class="tag yes">Yes</span></td><td><span class="tag part">Deter</span></td><td>M6, optional</td></tr>
+      <tr><td class="k">Rule lock</td><td><span class="tag yes">Yes</span> In-app logic</td><td><span class="tag yes">Yes</span></td><td><span class="tag part">Deter</span></td><td>M8 Strict</td></tr>
+      <tr><td class="k">Detect bypass</td><td><span class="tag yes">Yes</span> <code>requestAuthorization</code> on each launch; "not determined" counts as revoked (5.2)</td><td><span class="tag yes">Yes</span> Permissions, exit reasons, heartbeat (6.3)</td><td><span class="tag info">Inform</span></td><td>M9</td></tr>
+    </tbody>
+  </table>
+</section>

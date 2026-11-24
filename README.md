@@ -265,6 +265,87 @@ the camera frames, the app falls back to normal tracking.
 Limit: a large screen on a stand, on a phone without depth (most Android
 phones), can still get past it.
 
+## Screen time: earn your scroll
+
+Block the apps that eat your day, and open them again with exercise. Everything runs on
+the phone: no account, no server, no paid API (Apple doesn't allow charging for Screen
+Time features). Full design: [docs/SCREEN_TIME_PLAN.md](docs/SCREEN_TIME_PLAN.md).
+
+- **Blocked apps** and **always allowed** apps (Apple's own picker on iPhone, so Trueline
+  only ever sees opaque tokens; Trueline's own list on Android).
+- **Daily limit**: after it, the apps open only with earned time.
+- **Lock times** (custom schedules such as Sleep 22:00–07:00 or Work Mon–Fri): the apps
+  don't open at all. Each one can use its own app list and can allow earned time or not.
+  "Skip next" skips one night or day.
+- **Workout Focus**: on an exercise's screen, choose Off, This set, or 15 / 30 / 45 / 60 min.
+  The blocked apps stay closed during the set (or for the chosen time); earned time doesn't
+  open them, and every focus has an end the phone knows about, so nobody stays locked out.
+  In Strict, leaving the set early doesn't end it.
+- **Earning**: every finished, verified set adds minutes for today (1 min per clean push-up,
+  ½ per crunch, 2 min per 10 s of plank in good form; flagged reps earn half; demo sets
+  never earn), up to a daily cap. The summary shows "+18 min screen time".
+- **Strictness**: Nudge (changes apply now, "1 more minute" three times a day), Standard
+  (making things easier waits until midnight, one 10-minute emergency unlock a day),
+  Strict (for 1–30 days: no unlocks, apps can't come off the list, easing waits 24 h; end
+  early with 100 verified push-ups).
+- **App limits** (up to three): a daily limit of its own for one app or a group, such as
+  "Instagram 20 min". On Android it can also limit opens ("YouTube 5 times a day"). Earned
+  time doesn't open them.
+- **Everything except**: a lock time, a workout focus or a key lock can block every app except
+  the always-allowed ones (and, on Android, the home screen, phone, messages and Settings).
+- **Pause before opening**: outside blocks, a blocked app first shows a short wait (5–30 s,
+  5 s longer with every pass taken that day), then opens for 5 minutes. On iPhone it's the
+  blocked screen: wait, then tap Open.
+- **Key lock**: make a QR key, print it or keep it on another device, and lock your apps until
+  you scan it (with a safety end of 1–8 hours). Backing out or End doesn't lift it.
+- **Websites** (iPhone): Apple's picker has a Websites tab; picked sites are blocked in Safari.
+- **Hide notifications** (Android, optional): while an app is blocked, its notifications are
+  cancelled (needs Notification access).
+- **Your use**: a 7-day chart. Android shows all phone use and today's top apps from its own
+  records; iPhone shows the blocked apps' minutes it has seen.
+- **Home screen widget** on both: what's blocked now and until when.
+- **Strict on iPhone** suggests asking a friend to hold a Screen Time passcode, which makes
+  switching protection off in Settings much harder.
+- **History** shows time in focus and any time protection was off (access revoked, or the
+  Android app stopped from Settings or the Task Manager).
+- **Blocked screen** with "Earn time" (opens Trueline's earn screen), the strictness level's
+  unlock, or Close. Home card, two weeks of history, and a red banner if access is switched off.
+
+How it's built: the TypeScript engine in `src/screentime/` decides everything and is tested
+in Node; the app hands the phone a plan (`plan.ts`) on every open, rule change and set, and
+reads back what happened while it was closed (`store.ts`). The native side only applies it:
+
+| | iPhone | Android |
+| --- | --- | --- |
+| Module | `modules/screen-time/ios` (FamilyControls, ManagedSettings, DeviceActivity) | `modules/screen-time/android` (usage access + foreground service) |
+| Blocking | Apple's shield, applied by the monitor extension at lock-time edges and usage thresholds (`targets/st-monitor`) | `BlockService` checks the app in front each second and shows `BlockActivity` |
+| Blocked screen | `targets/st-shield-config` (text), `targets/st-shield-action` (buttons) | `BlockActivity` |
+| Widget | `targets/st-widget` (WidgetKit, app group only) | `STWidget` |
+| Notifications | (no API) | `STNotifyListener` |
+| Needs | iOS 17.4+, a **paid** Apple Developer team, build with `SCREEN_TIME=1` | Android 10+, Usage access, Display over other apps |
+
+### Building with screen time on iPhone
+
+Apple only lets **paid** Apple Developer Program teams sign the Family Controls capability,
+even for debug builds on your own phone (a free Personal team gets "Personal development
+teams do not support the Family Controls (Development) capability"). So it's opt-in:
+
+```bash
+SCREEN_TIME=1 npx expo prebuild --clean --platform ios
+SCREEN_TIME=1 npx expo run:ios --device
+```
+
+Without `SCREEN_TIME=1` the app builds exactly as before and hides the feature on iPhone.
+
+**Without a paid team, use the iOS Simulator** (`SCREEN_TIME=1 npx expo prebuild --clean --platform ios`,
+then `npx expo run:ios`). It runs Apple's real permission prompt (type any passcode), Apple's
+app picker (categories only: it can't see individual apps there), setup, every Trueline screen
+and the scheduling. It does **not** block apps: Safari opens normally during a lock time.
+In dev builds, drag the floating Tools button away first: it sits over the picker's Done button.
+For TestFlight and the App Store, the account holder also has to request Family Controls
+(Distribution) for the app and its three extensions (draft request in the plan, §14).
+Android needs nothing extra.
+
 ## Stack
 
 | Layer | Choice |
@@ -293,7 +374,14 @@ src/features/session/      live-screen panels and HUD (rep count, plank clock), 
 src/features/exercise/     how-to steps, mistakes and safety for each exercise (technique.ts)
 src/ui/                    design tokens and components (exercise picker, level vial, hips gauge,
                            tally marks, depth gauge, overlay, diagrams, the guide animation)
-src/app/                   routes: home, guide, session, summary/[id], settings
+src/app/                   routes: home, guide, session, summary/[id], settings,
+                           screen-time/ (hub, setup, lock/[id], apps), earn
+src/screentime/            screen time rules engine, plan for the phone, saved state
+src/features/screentime/   Home card, day timeline
+modules/screen-time/       Expo module: Swift (STShared.swift is shared with the extensions)
+                           and Kotlin (service, blocked screen)
+targets/                   iPhone Screen Time extensions (monitor, blocked screen text, buttons)
+app.config.js              adds the Screen Time entitlements and extensions when SCREEN_TIME=1
 fixtures/recordings/       real recorded sets used as regression tests
 ```
 

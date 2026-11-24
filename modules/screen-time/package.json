@@ -1,0 +1,10 @@
+{
+  "name": "screen-time",
+  "version": "0.1.0",
+  "description": "Trueline Screen Time: app limits, lock times and earned time (iOS Screen Time API, Android usage access)",
+  "main": "src/index.ts",
+  "license": "UNLICENSED",
+  "author": "Trueline",
+  "homepage": "https://github.com/irfanayaz89/excercise-tracker",
+  "private": true
+}

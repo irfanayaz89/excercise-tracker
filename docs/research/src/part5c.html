@@ -1,0 +1,16 @@
+<section>
+  <h2 id="s8" class="flow"><span class="num">9</span>iOS vs Android comparison</h2>
+  <table>
+    <thead><tr><th style="width:17%">Capability</th><th style="width:36%">iOS (Screen Time API)</th><th style="width:33%">Android (usage access + overlay + service)</th><th>Stronger</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Usage accuracy</td><td>Threshold steps only, with misfires (5.5); numbers not readable outside the EU <sup class="ref">[5][19]</sup></td><td>To the second <sup class="ref">[35]</sup></td><td><span class="tag info">Android</span></td></tr>
+      <tr><td class="k">Websites</td><td>Safari and browsers that report to Screen Time; some browsers leak, and the <code>webContent</code> filter covers them (5.4)</td><td>VPN (unclear policy <sup class="ref">[58]</sup>) or accessibility (avoid)</td><td><span class="tag info">iOS</span></td></tr>
+      <tr><td class="k">Real-time enforcement</td><td>Immediate (system)</td><td>Up to about 1 s (polling)</td><td><span class="tag info">iOS</span></td></tr>
+      <tr><td class="k">Bypass resistance</td><td>Revoke or delete; a passcode someone else holds can gate both (from 26.4; a per-app path reported open through 26.6) <sup class="ref">[79]</sup> <span class="tag part">Community</span></td><td>Force stop, Task Manager, Safe Mode, profiles, ADB, revoke, uninstall (8)</td><td><span class="tag info">iOS</span></td></tr>
+      <tr><td class="k">Block-screen design</td><td>Title, subtitle, icon, colours, 2 buttons + 3 menu items <sup class="ref">[12][13]</sup></td><td>Fully custom</td><td><span class="tag info">Android</span></td></tr>
+      <tr><td class="k">Store hurdles</td><td>Paid team, approval per bundle, primary-purpose rule (11.1)</td><td>FGS declaration with video; disclosure <sup class="ref">[53][56]</sup></td><td><span class="tag info">Android</span></td></tr>
+      <tr><td class="k">Development complexity</td><td>High: 3–4 extensions, App Group, entitlements, tokens, OS bugs</td><td>Medium: one service, one activity, OEM quirks</td><td><span class="tag info">Android</span></td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn"><b>Where neither platform gives complete control:</b> an adult can always remove protection from their own phone. Promise "makes it hard and visible", never "impossible".</div>
+</section>

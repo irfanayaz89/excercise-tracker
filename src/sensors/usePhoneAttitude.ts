@@ -1,5 +1,6 @@
 import { DeviceMotion } from 'expo-sensors';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { attitudeFromGravity } from '@/engine/attitude';
 import type { PhoneAttitude, PhoneOrientation } from '@/engine/types';
 
@@ -36,7 +37,8 @@ export function usePhoneAttitude(
           return;
         }
         const perm = await DeviceMotion.getPermissionsAsync();
-        const granted = perm.granted || (perm.canAskAgain && (await DeviceMotion.requestPermissionsAsync()).granted);
+        // Android's motion sensors need no permission (expo-sensors would ask for "physical activity", which isn't needed).
+        const granted = Platform.OS === 'android' || perm.granted || (perm.canAskAgain && (await DeviceMotion.requestPermissionsAsync()).granted);
         if (!granted) {
           if (!cancelled) setStatus('denied');
           return;

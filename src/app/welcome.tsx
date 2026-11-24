@@ -448,7 +448,8 @@ function AccessStep({ next }: StepProps) {
     const ok = camera.hasPermission || (await camera.requestPermission());
     try {
       const m = await DeviceMotion.getPermissionsAsync();
-      const granted = m.granted || (m.canAskAgain && (await DeviceMotion.requestPermissionsAsync()).granted);
+      // Android's motion sensors need no permission (expo-sensors would ask for "physical activity", which isn't needed).
+        const granted = Platform.OS === 'android' || m.granted || (m.canAskAgain && (await DeviceMotion.requestPermissionsAsync()).granted);
       setMotion(granted ? 'granted' : 'denied');
     } catch {
       setMotion('denied');

@@ -1,0 +1,33 @@
+
+<section>
+  <div class="keep">
+  <h2 id="s6" class="flow"><span class="num">7</span>Enforcement and strictness levels</h2>
+  <p>Strictness has two independent parts: <b>what the platform enforces</b> (is the blocked app truly prevented from opening?) and <b>how hard protection is to switch off</b> (changing rules, revoking access, deleting the app). The five levels combine both.</p>
+  <figure>
+  <svg viewBox="0 0 680 150" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica Neue, Arial" font-size="11">
+    <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#dfe9ea"/><stop offset="1" stop-color="#0c1a1d"/></linearGradient></defs>
+    <rect x="10" y="98" width="660" height="10" rx="5" fill="url(#g)"/>
+    <g text-anchor="middle">
+      <g transform="translate(76,0)"><rect x="-62" y="20" width="124" height="64" rx="8" fill="#f2f5f4" stroke="#c9d6d6"/><text y="42" font-weight="700" fill="#0c1a1d">Level 1 · Basic</text><text y="60" fill="#56686b">Track and report</text><text y="75" fill="#56686b">usage</text></g>
+      <g transform="translate(208,0)"><rect x="-62" y="20" width="124" height="64" rx="8" fill="#f2f5f4" stroke="#c9d6d6"/><text y="42" font-weight="700" fill="#0c1a1d">Level 2 · Moderate</text><text y="60" fill="#56686b">Limits +</text><text y="75" fill="#56686b">notifications</text></g>
+      <g transform="translate(340,0)"><rect x="-62" y="20" width="124" height="64" rx="8" fill="#e8c62e" stroke="#c9a816"/><text y="42" font-weight="700" fill="#1d1a05">Level 3 · Strong</text><text y="60" fill="#1d1a05">Real blocking in</text><text y="75" fill="#1d1a05">sessions / schedules</text></g>
+      <g transform="translate(472,0)"><rect x="-62" y="20" width="124" height="64" rx="8" fill="#17363c"/><text y="42" font-weight="700" fill="#fff">Level 4 · Strict</text><text y="60" fill="#c9d3ce">Hard to loosen,</text><text y="75" fill="#c9d3ce">bypass detected</text></g>
+      <g transform="translate(604,0)"><rect x="-62" y="20" width="124" height="64" rx="8" fill="#0c1a1d"/><text y="42" font-weight="700" fill="#e8c62e">Level 5 · Maximum</text><text y="60" fill="#c9d3ce">Guardian or device</text><text y="75" fill="#c9d3ce">management</text></g>
+    </g>
+    <text x="10" y="128" fill="#56686b">Reminder</text><text x="250" y="128" fill="#56686b">Deterrence + enforcement</text><text x="670" y="128" text-anchor="end" fill="#56686b">Enforcement the user can't undo alone</text>
+    <text x="340" y="145" text-anchor="middle" fill="#0c1a1d" font-weight="700">Recommended launch: Level 3, with Level 4 as an opt-in "Strict"</text>
+  </svg>
+  <figcaption>Figure 3. The strictness ladder. Levels 1–4 are available to any adult on their own phone; Level 5 needs a guardian through Family Sharing, an MDM administrator or a Device Owner set at setup. Recommended launch: Level 3, with Level 4 as an opt-in "Strict".</figcaption>
+  </figure>
+  </div>
+  <table>
+    <thead><tr><th style="width:15%">Level</th><th style="width:27%">iOS</th><th style="width:25%">Android</th><th style="width:16%">Ways around it</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td class="k">1 · Basic<br><small>show usage</small></td><td>A chart from the sandboxed report extension; numbers unreadable outside the EU <sup class="ref">[5][19]</sup></td><td>Exact usage per app <sup class="ref">[34]</sup></td><td>Nothing is enforced</td><td>Phones already do this</td></tr>
+      <tr><td class="k">2 · Moderate<br><small>limit + notification</small></td><td>A notification at the threshold; can misfire <sup class="ref">[25]</sup></td><td>A notification, accurate to the second</td><td>Ignore it</td><td>Only as "Nudge"</td></tr>
+      <tr><td class="k">3 · Strong<br><small>real blocking</small></td><td><b>System shield</b>, held while the app isn't running <sup class="ref">[9][20]</sup>; schedules re-registered on launch (5.7)</td><td><b>The app's block screen</b> within about a second; resumes after a restart <sup class="ref">[41]</sup>, not after a force stop <sup class="ref">[42]</sup></td><td>Revoke or delete <sup class="ref">[3][21]</sup>; on Android also force stop, Task Manager, Safe Mode, a profile or ADB (8)</td><td><b>The MVP's core</b></td></tr>
+      <tr><td class="k">4 · Strict<br><small>rules locked, rationed unlocks</small></td><td>Level 3 plus rule logic. A friend holds the Screen Time passcode, with their own Apple Account for passcode recovery, and sets Deleting Apps to Don't Allow under Content &amp; Privacy Restrictions; from 26.4 it gates revoking, except a per-app Settings path reported open through 26.6 <sup class="ref">[68][79][128][129]</sup> <span class="tag part">Community</span></td><td>Level 3 plus rule logic. Play policy doesn't address blocking Settings <sup class="ref">[59]</sup>; competitors do it with accessibility <sup class="ref">[54][103]</sup>, so with an overlay only keep Settings reachable</td><td>As Level 3, but on iOS 26.4+ revoking or deleting needs the passcode holder; attempts show in history</td><td><b>Opt-in "Strict"</b>: costly and visible to quit</td></tr>
+      <tr><td class="k">5 · Maximum<br><small>user can't undo alone</small></td><td>Child authorization through Family Sharing <sup class="ref">[1][2]</sup>, or MDM <sup class="ref">[22][31]</sup></td><td>Device Owner, set at setup (QR or NFC) or with <code>adb</code> on a phone with no accounts; it can also block Safe Mode and factory reset <sup class="ref">[45][47][136]</sup></td><td>Only the guardian or administrator</td><td>Not for a first release</td></tr>
+    </tbody>
+  </table>
+</section>
