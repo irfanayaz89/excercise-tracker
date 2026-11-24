@@ -112,7 +112,7 @@ export default function AppPicker() {
       )}
       <View style={[styles.pad, { paddingBottom: insets.bottom + space.lg }]}>
         <Button
-          label={`Done · ${picked.size} app${picked.size === 1 ? '' : 's'}${cats.size ? `, ${cats.size} categor${cats.size === 1 ? 'y' : 'ies'}` : ''}`}
+          label={`Done, ${picked.size} app${picked.size === 1 ? '' : 's'}${cats.size ? `, ${cats.size} categor${cats.size === 1 ? 'y' : 'ies'}` : ''}`}
           onPress={() => {
             finishPick({ apps: [...picked].sort(), categories: [...cats].sort(), domains: [] });
             router.back();

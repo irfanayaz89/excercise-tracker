@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
   },
-  fill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: '#F3D64B1F' },
+  fill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: color.vialSoft },
   mark: { position: 'absolute', width: 2, top: 6, bottom: 6, backgroundColor: color.chalk2, opacity: 0.7 },
   bubble: { width: BUBBLE, height: BUBBLE - 10, borderRadius: radius.pill },
   readout: { flexDirection: 'row', alignItems: 'center', gap: 6 },

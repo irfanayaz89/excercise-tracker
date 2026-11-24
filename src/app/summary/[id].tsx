@@ -9,11 +9,13 @@ import type { HoldFault, HoldSummary } from '@/engine/holdTimer';
 import { DIFFICULTY_COPY, FAULT_COPY, HOLD_COPY, faultCopy, formatDuration, missCopy } from '@/session/copy';
 import { getLastSummary } from '@/session/lastSummary';
 import { getSession } from '@/storage/history';
+import { useProfile } from '@/storage/profile';
+import { fatGrams, netKcal } from '@/fitness/energy';
 import { useSettings } from '@/storage/settings';
 import { Body, Button, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Tally } from '@/ui/Tally';
-import { color, radius, space, type } from '@/ui/theme';
+import { color, radius, space, type, font } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 import { EXERCISES, isTimed } from '@/engine/exercises';
 
@@ -30,14 +32,14 @@ function EarnedNote({
   if (earned)
     parts.push(
       earned.minutes > 0
-        ? `+${earned.minutes} min screen time${earned.capped ? ' · today’s earning limit reached' : ''}`
+        ? `+${earned.minutes} min screen time${earned.capped ? ', today’s earning limit reached' : ''}`
         : 'Today’s earning limit is reached: this set earned no screen time.',
     );
   if (focus?.continuesUntil)
     parts.push(`Focus continues until ${new Date(focus.continuesUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
   else if (focus && focus.heldMin > 0) parts.push(`Focus held ${focus.heldMin} min`);
   if (!parts.length) return null;
-  const text = parts.join(' · ');
+  const text = parts.join(', ');
   return (
     <View style={styles.earned} accessible accessibilityLabel={text}>
       <Mono tone={earned && earned.minutes === 0 && !focus ? 'muted' : 'good'}>{text}</Mono>
@@ -101,7 +103,7 @@ export default function SummaryScreen() {
   const note = END_NOTE[s.endReason];
   const level = s.difficulty === 'easy' || s.difficulty === 'medium' || s.difficulty === 'hard' ? s.difficulty : null;
   const levelLabel = level ? `${DIFFICULTY_COPY[level].label} mode` : null;
-  const header = `${new Date(wallStart).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${formatDuration(s.activeMs)}${levelLabel ? ` · ${levelLabel}` : ''}`;
+  const header = `${new Date(wallStart).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}, ${formatDuration(s.activeMs)}${levelLabel ? `, ${levelLabel}` : ''}`;
 
   if (isTimed(s.exercise ?? 'pushup')) {
     return (
@@ -122,6 +124,7 @@ export default function SummaryScreen() {
           demo={demo}
           guided={guided}
           easy={level === 'easy'}
+          exercise={s.exercise ?? 'plank'}
         />
         <View style={{ gap: space.md }}>
           <Button
@@ -162,7 +165,7 @@ export default function SummaryScreen() {
       ) : (
         <View style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.md }}>
-            <Display size={type.hero * 1.8} style={{ fontFamily: 'BigShouldersDisplay_900Black' }}>
+            <Display size={type.hero * 1.8} style={{ fontFamily: font.displayBlack }}>
               {s.totalReps}
             </Display>
             <Body tone="muted" style={{ marginBottom: 18 }}>
@@ -170,12 +173,13 @@ export default function SummaryScreen() {
             </Body>
           </View>
           <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />
+          <Energy exercise={ex} activeMs={s.activeMs} reps={s.totalReps} />
         </View>
       )}
 
       {note && <Mono tone="vial">{note}</Mono>}
       {demo ? (
-        <Mono tone="muted">Demo set · not added to your history.</Mono>
+        <Mono tone="muted">Demo set, not added to your history.</Mono>
       ) : (
         !saved && s.totalReps > 0 && <Mono tone="cue">This set could not be saved to history.</Mono>
       )}
@@ -229,7 +233,7 @@ export default function SummaryScreen() {
 
       {misses.length > 0 && (
         <View style={{ gap: space.md }}>
-          <Label>{`Not counted · ${missTotal}`}</Label>
+          <Label>{`Not counted: ${missTotal}`}</Label>
           <View style={styles.list}>
             {misses.map(([m, n], i) => (
               <View key={m}>
@@ -270,7 +274,9 @@ function PlankResult({
   demo,
   guided,
   easy,
+  exercise,
 }: {
+  exercise: Exercise;
   hold: HoldSummary | undefined;
   /** Side plank: each side's hold; null for a regular plank. */
   sides: SessionSummary['holdSides'] | null;
@@ -287,7 +293,7 @@ function PlankResult({
         <Body tone="muted">
           Hold a plank on straight arms or forearms, side-on to the phone, with your body in view. The clock starts once you are steady.
         </Body>
-        {demo && <Mono tone="muted">Demo set · not added to your history.</Mono>}
+        {demo && <Mono tone="muted">Demo set, not added to your history.</Mono>}
       </View>
     );
   }
@@ -305,7 +311,7 @@ function PlankResult({
     <>
       <View style={{ gap: space.sm }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.md }}>
-          <Display size={type.hero * 1.5} style={{ fontFamily: 'BigShouldersDisplay_900Black' }}>
+          <Display size={type.hero * 1.5} style={{ fontFamily: font.displayBlack }}>
             {formatDuration(hold.goodMs)}
           </Display>
           <Body tone="muted" style={{ marginBottom: 16 }}>
@@ -315,13 +321,14 @@ function PlankResult({
         <View style={styles.formBar} accessible accessibilityLabel={`${pct} percent of the hold in good form`}>
           <View style={{ width: `${pct}%`, height: '100%', backgroundColor: color.good }} />
         </View>
+        <Energy exercise={exercise} activeMs={hold.goodMs} reps={null} />
       </View>
 
       {sides && <SideBalance sides={sides} />}
 
       {note && <Mono tone="vial">{note}</Mono>}
       {demo ? (
-        <Mono tone="muted">Demo set · not added to your history.</Mono>
+        <Mono tone="muted">Demo set, not added to your history.</Mono>
       ) : (
         !saved && <Mono tone="cue">This plank could not be saved to history.</Mono>
       )}
@@ -420,6 +427,21 @@ function NextTime({
   );
 }
 
+/** What the set burned, from the user's weight (only once a goal is set up). */
+function Energy({ exercise, activeMs, reps }: { exercise: Exercise; activeMs: number; reps: number | null }) {
+  const [profile] = useProfile();
+  if (!profile) return null;
+  const k = netKcal(exercise, activeMs, profile.weightKg, reps);
+  if (k < 0.5) return null;
+  const g = fatGrams(k);
+  return (
+    <Body size={15} tone="chalk2">
+      <Strong size={15}>{`About ${Math.round(k)} kcal`}</Strong>
+      {` above resting, the energy in ${g < 1 ? 'under 1 g' : `about ${Math.round(g)} g`} of fat.`}
+    </Body>
+  );
+}
+
 function Stat({ label, value, tone = 'chalk' }: { label: string; value: string; tone?: 'chalk' | 'good' | 'cue' }) {
   return (
     <View style={styles.stat}>
@@ -436,7 +458,7 @@ function TempoChart({ reps }: { reps: RepRecord[] }) {
   const max = Math.max(...reps.map((r) => r.durationMs));
   return (
     <View style={{ gap: space.sm }}>
-      <Label>Each rep · bar height is time taken</Label>
+      <Label>Each rep, bar height is time taken</Label>
       <View
         style={styles.chart}
         accessible

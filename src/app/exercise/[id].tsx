@@ -215,7 +215,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
       </View>
 
       <View style={{ gap: space.md }}>
-        <Label>{info.perSide ? 'Target · each side' : 'Target'}</Label>
+        <Label>{info.perSide ? 'Target, each side' : 'Target'}</Label>
         <View style={styles.chips}>
           {timed
             ? HOLD_TARGETS.map((t) => (

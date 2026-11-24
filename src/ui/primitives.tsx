@@ -12,10 +12,11 @@ import {
 } from 'react-native';
 import { color, font, radius, space, type } from './theme';
 
-type Tone = 'chalk' | 'muted' | 'faint' | 'vial' | 'good' | 'cue' | 'fault' | 'ink';
+type Tone = 'chalk' | 'chalk2' | 'muted' | 'faint' | 'vial' | 'good' | 'cue' | 'fault' | 'ink';
 
 const toneColor: Record<Tone, string> = {
   chalk: color.chalk,
+  chalk2: color.chalk2,
   muted: color.muted,
   faint: color.faint,
   vial: color.vial,
@@ -37,7 +38,7 @@ export function Display({ tone = 'chalk', size = type.headline, style, ...rest }
   return (
     <Text
       allowFontScaling={false}
-      style={[{ fontFamily: font.display, fontSize: size, lineHeight: Math.round(size * 1.08), color: toneColor[tone], letterSpacing: 0.5 }, style]}
+      style={[{ fontFamily: font.display, fontSize: size, lineHeight: Math.round(size * 1.04), color: toneColor[tone], letterSpacing: 0 }, style]}
       {...rest}
     />
   );
@@ -51,14 +52,9 @@ export function Strong({ tone = 'chalk', size = type.body, style, ...rest }: TPr
   return <Text style={[{ fontFamily: font.bodySemi, fontSize: size, lineHeight: size * 1.35, color: toneColor[tone] }, style]} {...rest} />;
 }
 
-/** Uppercase utility label, monospaced, letter-spaced. */
-export function Label({ tone = 'muted', size = type.micro, style, ...rest }: TProps) {
-  return (
-    <Text
-      style={[{ fontFamily: font.monoMed, fontSize: size, letterSpacing: 1.4, textTransform: 'uppercase', color: toneColor[tone] }, style]}
-      {...rest}
-    />
-  );
+/** A small section or field label: sentence case, semibold. */
+export function Label({ tone = 'muted', size = type.caption, style, ...rest }: TProps) {
+  return <Text style={[{ fontFamily: font.bodySemi, fontSize: size, letterSpacing: 0.1, color: toneColor[tone] }, style]} {...rest} />;
 }
 
 export function Mono({ tone = 'chalk', size = type.caption, style, ...rest }: TProps) {
@@ -102,10 +98,9 @@ export function Button({ label, variant = 'vial', size = 'md', icon, style, disa
       <Text
         style={{
           fontFamily: size === 'lg' ? font.display : font.bodySemi,
-          fontSize: size === 'lg' ? 26 : size === 'md' ? 16 : 14,
+          fontSize: size === 'lg' ? 24 : size === 'md' ? 16 : 14,
           color: fg,
-          letterSpacing: size === 'lg' ? 1 : 0.2,
-          textTransform: size === 'lg' ? 'uppercase' : 'none',
+          letterSpacing: 0.2,
         }}
       >
         {label}
@@ -123,7 +118,7 @@ export function Chip({ label, selected, onPress }: { label: string; selected: bo
       onPress={onPress}
       style={({ pressed }) => [styles.chip, selected && styles.chipOn, pressed && { opacity: 0.8 }]}
     >
-      <Text style={{ fontFamily: font.monoMed, fontSize: 14, color: selected ? color.vialInk : color.chalk2 }}>{label}</Text>
+      <Text style={{ fontFamily: font.bodySemi, fontSize: 15, color: selected ? color.vialInk : color.chalk2 }}>{label}</Text>
     </Pressable>
   );
 }
@@ -144,9 +139,9 @@ const styles = StyleSheet.create({
   },
   chip: {
     minWidth: 52,
-    height: 40,
+    height: 44,
     paddingHorizontal: space.md,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: color.line,
     alignItems: 'center',

@@ -527,7 +527,7 @@ function Hud({
         <View style={[styles.main, landscape && { flexDirection: 'row' }]} pointerEvents="box-none">
           {counting && landscape && (plank ? <LineColumn snap={snap} warnAt={ctrl.config.hold.warnRatio} /> : <DepthColumn snap={snap} />)}
           <View style={styles.mainBody} pointerEvents="box-none">
-            {demo && <Label tone="vial">Demo set · synthetic body, no camera</Label>}
+            {demo && <Label tone="vial">Demo set: a synthetic body, no camera</Label>}
             {loading && <Label tone="vial">Starting body tracker…</Label>}
             {usingFallbackCamera && <Label tone="cue">Preferred camera unavailable, using the other one</Label>}
             {snap.phase === 'phone-setup' && (

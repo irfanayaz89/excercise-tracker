@@ -43,9 +43,9 @@ export default function SettingsScreen() {
           onPress={() => router.push({ pathname: '/welcome', params: { redo: '1' } })}
           style={{ paddingVertical: space.sm }}
         >
-          <Strong>Redo setup ›</Strong>
+          <Strong>Your goal and plan ›</Strong>
           <Body tone="muted" size={14}>
-            Go through the first-launch questions again: exercises, strictness, daily goal, safety, voice and phone setup.
+            Change your aim, body details or goal and see the plan again. Your weigh-ins are kept.
           </Body>
         </Pressable>
         <ChoiceRow

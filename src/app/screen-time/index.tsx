@@ -285,8 +285,8 @@ export default function ScreenTimeScreen() {
               <Strong>{l.name}</Strong>
               <Body tone="muted" size={13}>
                 {describeLock(l)}
-                {l.earnable ? ' · earned time works' : ''}
-                {l.apps === 'all' ? ' · everything except always allowed' : l.apps !== 'main' ? ` · ${countLabel(l.apps)}` : ''}
+                {l.earnable ? ', earned time works' : ''}
+                {l.apps === 'all' ? ', everything except always allowed' : l.apps !== 'main' ? `, ${countLabel(l.apps)}` : ''}
               </Body>
               {l.skipDate && (
                 <Mono size={11} tone="cue">
@@ -415,7 +415,7 @@ function EarningSection({ st, change }: { st: ScreenTimeState; change: (p: Parti
               <View key={x} style={styles.rateRow}>
                 <Body size={14}>{EXERCISES[x].label}</Body>
                 <Mono size={12} tone="muted">
-                  {r.per10s !== undefined ? `${r.per10s} min per 10 s in good form` : `${r.perCleanRep} min per clean rep · ${r.perFlaggedRep} flagged`}
+                  {r.per10s !== undefined ? `${r.per10s} min per 10 s in good form` : `${r.perCleanRep} min per clean rep, ${r.perFlaggedRep} flagged`}
                 </Mono>
               </View>
             );
@@ -542,21 +542,21 @@ function HistorySection({ st }: { st: ScreenTimeState }) {
                 {`${formatMin(d.usedMin)} used`}
               </Mono>
               <Mono size={12} tone="good">
-                {` · +${formatMin(d.earnedMin)}`}
+                {`, +${formatMin(d.earnedMin)}`}
               </Mono>
               {d.unlocks > 0 && (
                 <Mono size={12} tone="muted">
-                  {` · ${d.unlocks} unlock${d.unlocks > 1 ? 's' : ''}`}
+                  {`, ${d.unlocks} unlock${d.unlocks > 1 ? 's' : ''}`}
                 </Mono>
               )}
               {d.focusMin > 0 && (
                 <Mono size={12} tone="vial">
-                  {` · focus ${formatMin(d.focusMin)}`}
+                  {`, focus ${formatMin(d.focusMin)}`}
                 </Mono>
               )}
               {d.offMin > 0 && (
                 <Mono size={12} tone="fault">
-                  {` · off ${formatMin(d.offMin)}`}
+                  {`, off ${formatMin(d.offMin)}`}
                 </Mono>
               )}
             </View>

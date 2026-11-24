@@ -105,7 +105,7 @@ export function AnimatedSplash({ onDone }: { onDone: () => void }) {
         </Animated.View>
       </View>
       <Animated.View style={[styles.words, wordStyle]}>
-        <Animated.Text style={styles.name}>TRUELINE</Animated.Text>
+        <Animated.Text style={styles.name}>Trueline</Animated.Text>
         <Animated.Text style={styles.tag}>Every rep, counted true</Animated.Text>
       </Animated.View>
     </Animated.View>
@@ -116,11 +116,11 @@ const styles = StyleSheet.create({
   root: { backgroundColor: color.ground, alignItems: 'center', justifyContent: 'center', zIndex: 100 },
   trueLine: { position: 'absolute', height: 2, backgroundColor: color.vial, opacity: 0.85 },
   stem: { position: 'absolute', backgroundColor: color.chalk },
-  vial: { position: 'absolute', backgroundColor: '#13292E', borderColor: color.chalk, overflow: 'hidden' },
-  tick: { position: 'absolute', backgroundColor: 'rgba(238,241,234,0.6)' },
+  vial: { position: 'absolute', backgroundColor: '#161E2A', borderColor: color.chalk, overflow: 'hidden' },
+  tick: { position: 'absolute', backgroundColor: 'rgba(248,250,252,0.6)' },
   bubble: { position: 'absolute', backgroundColor: color.vial },
-  glint: { position: 'absolute', backgroundColor: '#FFF7CC' },
+  glint: { position: 'absolute', backgroundColor: '#FFE2C7' },
   words: { position: 'absolute', bottom: '22%', alignItems: 'center', gap: 6 },
-  name: { fontFamily: font.display, fontSize: 34, letterSpacing: 8, color: color.chalk },
-  tag: { fontFamily: font.body, fontSize: 14, letterSpacing: 0.5, color: color.muted },
+  name: { fontFamily: font.displayBlack, fontSize: 48, color: color.chalk },
+  tag: { fontFamily: font.bodyMed, fontSize: 15, color: color.chalk2 },
 });

@@ -119,7 +119,7 @@ export default function LockEditor() {
           <Body tone={problem ? 'cue' : 'muted'} size={13}>
             {problem
               ? PROBLEM[problem]
-              : `${describeLock(lock)} · ${formatMin(len ?? 0)}${(parseHHMM(lock.end) ?? 0) <= (parseHHMM(lock.start) ?? 0) ? ' (ends the next day)' : ''}`}
+              : `${describeLock(lock)}, ${formatMin(len ?? 0)}${(parseHHMM(lock.end) ?? 0) <= (parseHHMM(lock.start) ?? 0) ? ' (ends the next day)' : ''}`}
           </Body>
         </View>
       </Section>

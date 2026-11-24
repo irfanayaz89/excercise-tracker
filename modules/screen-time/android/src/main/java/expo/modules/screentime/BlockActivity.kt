@@ -44,16 +44,16 @@ import java.util.Date
  * the block the user is: Trueline's own mark, so the screen is recognisably the app's.
  */
 class BlockActivity : Activity() {
-  private val ground = Color.parseColor("#0C1A1D")
-  private val ground2 = Color.parseColor("#11262B")
-  private val surface = Color.parseColor("#132A2F")
-  private val raised = Color.parseColor("#1A363C")
-  private val line = Color.parseColor("#24464D")
-  private val chalk = Color.parseColor("#EEF1EA")
-  private val chalk2 = Color.parseColor("#C9D3CE")
-  private val muted = Color.parseColor("#86A1A4")
-  private val vial = Color.parseColor("#F3D64B")
-  private val vialInk = Color.parseColor("#1D1A05")
+  private val ground = Color.parseColor("#1F2937")
+  private val ground2 = Color.parseColor("#263243")
+  private val surface = Color.parseColor("#29313F")
+  private val raised = Color.parseColor("#313742")
+  private val line = Color.parseColor("#374151")
+  private val chalk = Color.parseColor("#F8FAFC")
+  private val chalk2 = Color.parseColor("#CBD5E1")
+  private val muted = Color.parseColor("#9AA6B8")
+  private val vial = Color.parseColor("#F97316")
+  private val vialInk = Color.parseColor("#0F172A")
 
   private val faceDisplay by lazy { font("display.ttf", Typeface.DEFAULT_BOLD) }
   private val body by lazy { font("body.ttf", Typeface.DEFAULT) }
@@ -251,7 +251,7 @@ class BlockActivity : Activity() {
     val box = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       setPadding(dp(18), dp(16), dp(18), dp(16))
-      background = rounded(surface, 18f, stroke = line)
+      background = rounded(surface, 12f, stroke = line)
     }
     trueLine = null
     remainingView = null
@@ -349,8 +349,7 @@ class BlockActivity : Activity() {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
       addView(VialMark(this@BlockActivity).apply { layoutParams = LinearLayout.LayoutParams(dp(30), dp(16)) })
-      addView(text("TRUELINE", 12f, muted, bodySemi).apply {
-        letterSpacing = 0.28f
+      addView(text("Trueline", 18f, chalk2, faceDisplay).apply {
         setPadding(dp(10), 0, 0, 0)
       })
     }
@@ -377,16 +376,14 @@ class BlockActivity : Activity() {
   }
 
   private fun chip(t: String) =
-    text(t.uppercase(), 11.5f, vial, bodySemi).apply {
-      letterSpacing = 0.14f
+    text(t, 13.5f, vial, bodySemi).apply {
       setPadding(dp(12), dp(6), dp(12), dp(6))
-      background = rounded(Color.TRANSPARENT, 99f, stroke = vial)
+      background = rounded(Color.TRANSPARENT, 4f, stroke = vial)
       layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
   private fun label(t: String) =
-    text(t.uppercase(), 11.5f, muted, bodySemi).apply {
-      letterSpacing = 0.2f
+    text(t, 14f, muted, bodySemi).apply {
       setPadding(0, 0, 0, dp(4))
     }
 
@@ -396,13 +393,13 @@ class BlockActivity : Activity() {
     return LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       setPadding(dp(18), dp(14), dp(18), dp(14))
-      background = RippleDrawable(ColorStateList.valueOf(if (primary) Color.parseColor("#33000000") else Color.parseColor("#22FFFFFF")), rounded(bg, 16f), null)
+      background = RippleDrawable(ColorStateList.valueOf(if (primary) Color.parseColor("#33000000") else Color.parseColor("#22FFFFFF")), rounded(bg, 8f), null)
       layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) }
       isClickable = true
       isFocusable = true
       contentDescription = "${o.label}. ${o.hint}"
       addView(text(o.label, 17f, if (primary) vialInk else chalk, bodySemi))
-      addView(text(o.hint, 13.5f, if (primary) Color.parseColor("#5C531A") else muted, body).apply { setPadding(0, dp(3), 0, 0) })
+      addView(text(o.hint, 13.5f, if (primary) Color.parseColor("#3B1A06") else muted, body).apply { setPadding(0, dp(3), 0, 0) })
       setOnClickListener { o.act() }
     }
   }
@@ -515,8 +512,8 @@ class BlockActivity : Activity() {
     private val done = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = vial; strokeWidth = dp(3).toFloat(); strokeCap = Paint.Cap.ROUND }
     private val tickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = muted; strokeWidth = dp(2).toFloat(); strokeCap = Paint.Cap.ROUND }
     private val bubble = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = vial }
-    private val glint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FFF6C2") }
-    private val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#33F3D64B") }
+    private val glint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#FFE2C7") }
+    private val halo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#33F97316") }
 
     fun settle() {
       ValueAnimator.ofFloat(0f, 1f).apply {
@@ -600,7 +597,7 @@ class BlockActivity : Activity() {
     var count = ""
     private var phase = 0f
     private val outer = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = line; strokeWidth = dp(2f) }
-    private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#22F3D64B") }
+    private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#22F97316") }
     private val core = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = vial }
     private val num = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = vialInk; textAlign = Paint.Align.CENTER; typeface = faceDisplay; textSize = dp(52f) }
     private val anim = ValueAnimator.ofFloat(0f, 1f).apply {

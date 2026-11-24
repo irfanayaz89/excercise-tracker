@@ -46,8 +46,8 @@ export function HistoryList({
               <View style={{ flex: 1, gap: 2 }}>
                 <Strong size={15}>{formatWhen(r.startedAt)}</Strong>
                 <Mono size={12} tone="muted">
-                  {`${showExercise ? `${EXERCISES[r.exercise].label} · ` : ''}${
-                    timed ? `${Math.round(share * 100)}% good form` : `${r.cleanReps} clean · ${formatDuration(r.activeMs)}`
+                  {`${showExercise ? `${EXERCISES[r.exercise].label}, ` : ''}${
+                    timed ? `${Math.round(share * 100)}% good form` : `${r.cleanReps} clean in ${formatDuration(r.activeMs)}`
                   }`}
                 </Mono>
               </View>
