@@ -116,7 +116,7 @@ export default function AppLimitEditor() {
           </View>
           <Body tone="muted" size={13}>
             {Platform.OS === 'ios'
-              ? 'iPhone reports use in 15-minute steps, so a short limit can end a few minutes late.'
+              ? 'iPhone counts this itself and can be a few minutes off either way, so treat it as approximate.'
               : 'Counted to the second while the apps are on screen.'}
           </Body>
         </View>
