@@ -2,7 +2,7 @@ import type { Exercise } from '@/engine/types';
 
 /**
  * Figure poses for the guide animation: a stick figure doing each exercise as
- * the phone sees it (side-on; facing it for the side plank). Pure functions of
+ * the phone sees it (side-on; facing it for the side plank and pull-ups). Pure functions of
  * progress 0..1 through one loop, marked as worklets so they run on the UI
  * thread every frame. Drawn in the animation's box (320 wide, y 44–160): the
  * camera view spans x 8–222 and y 60–152, the floor is at y 142.
@@ -30,6 +30,7 @@ export const FLOOR_Y = 142;
 /** One loop of the animation, in ms: a rep, a few breaths, or both sides of a side plank. */
 export const MOTION_MS: Record<Exercise, number> = {
   pushup: 2600,
+  pullup: 3200,
   crunch: 3000,
   plank: 4000,
   sidePlank: 12000,
@@ -118,6 +119,66 @@ function crunch(p: number): Figure {
   };
 }
 
+/** Where the bar sits in the pull-up picture. */
+export const BAR_Y = 70;
+
+/**
+ * Pull-up, facing the phone: from a dead hang the elbows bend out and down until
+ * the chin clears the bar, then back to straight arms. Arms are two equal links
+ * from the shoulders to the hands on the bar, as in the engine's synthetic poses.
+ */
+function pullup(p: number): Figure {
+  'worklet';
+  const w = repWave(p);
+  const cx = 115;
+  // Sized to hang inside the camera view: bar at y 70, feet just above the floor at a dead hang.
+  const sw = 15;
+  const L = 0.8 * sw;
+  const shY = BAR_Y + (1.6 - 1.25 * w) * sw;
+  const ls = { x: cx - sw / 2, y: shY };
+  const rs = { x: cx + sw / 2, y: shY };
+  const elbowOf = (s: P, hand: P, out: number): P => {
+    const dx = hand.x - s.x;
+    const dy = hand.y - s.y;
+    const full = Math.hypot(dx, dy);
+    const d = Math.min(2 * L - 0.001, full);
+    const m = { x: s.x + (dx / full) * (d / 2), y: s.y + (dy / full) * (d / 2) };
+    const h = Math.sqrt(Math.max(0, L * L - (d / 2) * (d / 2)));
+    // Perpendicular to the upper-arm line, pointing away from the body.
+    let nx = -dy / full;
+    let ny = dx / full;
+    if (nx * out < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+    return { x: m.x + nx * h, y: m.y + ny * h };
+  };
+  const lw = { x: cx - 0.75 * sw, y: BAR_Y };
+  const rw = { x: cx + 0.75 * sw, y: BAR_Y };
+  const le = elbowOf(ls, lw, -1);
+  const re = elbowOf(rs, rw, 1);
+  const neck = { x: cx, y: shY };
+  const hip = { x: cx, y: shY + 1.3 * sw };
+  const lk = { x: cx - 4, y: hip.y + 16 };
+  const rk = { x: cx + 4, y: hip.y + 16 };
+  const la = { x: cx - 3.5, y: lk.y + 12 };
+  const ra = { x: cx + 3.5, y: rk.y + 12 };
+  return {
+    pts: { shoulder: ls, elbow: le, wrist: lw, hip, ankle: la },
+    body:
+      line([ls, rs]) +
+      ' ' +
+      line([neck, hip]) +
+      ' ' +
+      line([{ x: cx - 5, y: hip.y }, lk, la]) +
+      ' ' +
+      line([{ x: cx + 5, y: hip.y }, rk, ra]),
+    arm: line([ls, le, lw]),
+    extra: line([rs, re, rw]),
+    head: { x: cx, y: shY - 11 },
+  };
+}
+
 /** Forearm plank: held still, breathing. */
 function plank(p: number): Figure {
   'worklet';
@@ -175,11 +236,13 @@ export function figureAt(exercise: Exercise, p: number): Figure {
       return plank(p);
     case 'sidePlank':
       return sidePlank(p);
+    case 'pullup':
+      return pullup(p);
   }
 }
 
 /** A still frame for reduced motion: the exercise's working position. */
-export const STILL_P: Record<Exercise, number> = { pushup: 0.5, crunch: 0.5, plank: 0.25, sidePlank: 0.3 };
+export const STILL_P: Record<Exercise, number> = { pushup: 0.5, pullup: 0.5, crunch: 0.5, plank: 0.25, sidePlank: 0.3 };
 
 /**
  * Head-on figures (front view: push-ups and the plank), as the phone sees you

@@ -44,6 +44,17 @@ const PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
  * the whole time, so even Easy checks the hips, just with wide limits; the
  * start check uses the same line limit so a hold never starts already broken.
  */
+/**
+ * Pull-ups, on top of the level above. Easy just counts chin-over-bar reps (a kip
+ * counts too); Medium loosens the hang and the form limits; Hard is the strict
+ * standard (the config defaults).
+ */
+const PULLUP_PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
+  easy: { pullup: { hangElbowDeg: 140, kipKneeRise: 99, topElbowDeg: 120 } },
+  medium: { pullup: { hangElbowDeg: 145, kipKneeRise: 0.6, swingFault: 0.75, tiltFault: 0.22, dropMs: 300 } },
+  hard: {},
+};
+
 /** Side plank only, on top of the plank changes: how square the stack must be. */
 const SIDE_PLANK_PRESETS: Record<Difficulty, DeepPartial<EngineConfig>> = {
   easy: { sidePlank: { startStack: 0.3, minStack: 0.18 } },
@@ -146,6 +157,7 @@ export function difficultyOverrides(d: Difficulty, opts: DifficultyOptions = {})
   let base = opts.exercise && isTimed(opts.exercise) ? combine(PRESETS[d], PLANK_PRESETS[d]) : PRESETS[d];
   if (opts.exercise === 'sidePlank') base = combine(base, SIDE_PLANK_PRESETS[d]);
   if (opts.exercise === 'crunch') base = combine(base, CRUNCH_PRESETS[d]);
+  if (opts.exercise === 'pullup') base = combine(base, PULLUP_PRESETS[d]);
   if (opts.view === 'front' && opts.exercise && EXERCISES[opts.exercise].frontView) base = combine(base, frontPreset(d, opts.exercise));
   return { ...base, allowKneeling: d === 'easy' ? true : (opts.allowKneeling ?? false) };
 }

@@ -17,6 +17,7 @@ import { RealityCheck, type DepthProbe, type RealityIssue } from './reality';
 import { MetricMedian } from './smoothing';
 import { HINT_FAULTS, RepCounter, type MissRecord, type RepFault, type RepPhase, type RepRecord } from './repCounter';
 import { CrunchCounter, type CrunchPhase } from './crunchCounter';
+import { checkHangStart, PullupCounter, PullupFramingGate, pullupMetrics, readPullup, type PullupPhase, type PullupReading } from './pullup';
 import { checkFrontStart, frontContacts, frontMetrics, FrontFramingGate } from './front';
 import { buildChain, computeMetrics, PoseTracker, SideSelector, SupportSideSelector, type TrackedPose } from './tracker';
 import { LM, type BodyMetrics, type Exercise, type PhoneAttitude, type PlankVariant, type PoseSample, type Side } from './types';
@@ -78,7 +79,7 @@ export interface SessionSnapshot {
   plankProgress: number;
   reps: number;
   cleanReps: number;
-  repPhase: RepPhase | CrunchPhase | null;
+  repPhase: RepPhase | CrunchPhase | PullupPhase | null;
   /** Push-ups: 0 at lockout, 1 at full depth. Crunches: 0 resting, 1 curled up high enough. */
   depth: number | null;
   metrics: BodyMetrics | null;
@@ -205,7 +206,11 @@ export class PushupSession {
   private checkSmoother = new MetricMedian();
   /** Same, for the form readings during reps (body line, hips, neck). */
   private formSmoother = new MetricMedian();
-  private counter: RepCounter | CrunchCounter | null = null;
+  private counter: RepCounter | CrunchCounter | PullupCounter | null = null;
+  private pullupGate: PullupFramingGate;
+  /** Pull-ups: this frame's reading (both arms, the head and the bar). */
+  private pull: PullupReading | null = null;
+  private offBarSince: number | null = null;
   /** The hold clock being timed now (side plank: the active side's). */
   private holdTimer: HoldTimer | null = null;
   /** Side plank: a clock per side, plus its time calls and countdown so far. */
@@ -264,9 +269,11 @@ export class PushupSession {
   private difficulty: string | undefined;
 
   constructor(opts: SessionOptions = {}) {
-    this.cfg = opts.config ?? DEFAULT_CONFIG;
-    this.difficulty = opts.difficulty;
+    const base = opts.config ?? DEFAULT_CONFIG;
     this.exercise = opts.exercise ?? 'pushup';
+    // Pull-ups: the phone leans back (or stands higher) to see the bar.
+    this.cfg = this.exercise === 'pullup' ? { ...base, phone: { ...base.phone, maxPitchDeg: base.pullup.maxPitchDeg } } : base;
+    this.difficulty = opts.difficulty;
     this.targetReps = !isTimed(this.exercise) && opts.targetReps && opts.targetReps > 0 ? Math.floor(opts.targetReps) : null;
     this.targetHoldMs = isTimed(this.exercise) && opts.targetHoldMs && opts.targetHoldMs > 0 ? opts.targetHoldMs : null;
     this.tracker = new PoseTracker(this.cfg);
@@ -274,6 +281,7 @@ export class PushupSession {
     this.phoneGate = new PhoneGate(this.cfg);
     this.framingGate = new FramingGate(this.cfg);
     this.frontGate = new FrontFramingGate(this.cfg);
+    this.pullupGate = new PullupFramingGate(this.cfg);
     this.plankHold = new PlankHold(this.cfg);
     this.reality = new RealityCheck(this.cfg);
     this.supportSides = new SupportSideSelector(this.cfg);
@@ -281,6 +289,8 @@ export class PushupSession {
 
   /** Seen head-on: push-ups and the plank (see EXERCISES.frontView). */
   private get front(): boolean {
+    // Pull-ups are always seen from the front (or a diagonal).
+    if (this.exercise === 'pullup') return true;
     return this.cfg.view === 'front' && EXERCISES[this.exercise].frontView;
   }
 
@@ -290,6 +300,10 @@ export class PushupSession {
     side: Side | null,
   ): { framing: FramingCheck; metrics: BodyMetrics | null; chain: ReturnType<typeof buildChain> | null } {
     const chain = side && pose.detected ? buildChain(pose, side) : null;
+    if (this.exercise === 'pullup') {
+      this.pull = readPullup(pose, this.cfg);
+      return { framing: this.pullupGate.check(pose), metrics: this.pull ? pullupMetrics(this.pull, pose) : null, chain };
+    }
     if (this.front) {
       const framing = this.frontGate.check(pose);
       return { framing, metrics: pose.detected ? frontMetrics(pose, this.cfg, this.exercise) : null, chain };
@@ -467,6 +481,13 @@ export class PushupSession {
     return this.phase;
   }
 
+  /** Pull-ups: the bar's height as a share of the picture height (where the hands rest), once known. */
+  get pullupBar(): number | null {
+    if (!(this.counter instanceof PullupCounter) || !this.lastPose || !(this.lastPose.height > 0)) return null;
+    const y = this.counter.barY;
+    return y === null ? null : y / this.lastPose.height;
+  }
+
   get currentSide(): Side | null {
     return this.exercise === 'sidePlank' ? this.supportSides.current : this.sides.current;
   }
@@ -488,6 +509,7 @@ export class PushupSession {
       const st = this.holdTimer?.currentState;
       return st === 'broken' ? 2 : st === 'warning' ? 1 : 0;
     }
+    if (this.exercise === 'pullup') return this.phase === 'body-check' && this.plankIssues.length > 0 ? 1 : 0;
     // Count-only mode (Easy) never colours the body as a fault.
     if (this.exercise === 'crunch') {
       if (this.phase === 'body-check') return this.plankIssues.length > 0 ? 1 : 0;
@@ -603,7 +625,12 @@ export class PushupSession {
 
     this.framingBadSince = null;
     const smoothed = this.checkSmoother.push(metrics);
-    const plank = this.front ? checkFrontStart(pose, smoothed, this.cfg, this.exercise) : checkPlank(smoothed, this.cfg, this.exercise);
+    const plank =
+      this.exercise === 'pullup'
+        ? checkHangStart(this.pull, this.cfg)
+        : this.front
+          ? checkFrontStart(pose, smoothed, this.cfg, this.exercise)
+          : checkPlank(smoothed, this.cfg, this.exercise);
     this.plankIssues = plank.issues;
     if (plank.ok) this.startVariant = plank.variant;
     if (!act) return;
@@ -656,7 +683,13 @@ export class PushupSession {
       if (this.holdTimer) this.holdTimer.restart(cal);
       else this.holdTimer = new HoldTimer(this.cfg, cal, this.startVariant);
     } else if (this.counter) this.counter.restart(cal);
-    else this.counter = this.exercise === 'crunch' ? new CrunchCounter(this.cfg, cal) : new RepCounter(this.cfg, cal);
+    else
+      this.counter =
+        this.exercise === 'crunch'
+          ? new CrunchCounter(this.cfg, cal)
+          : this.exercise === 'pullup'
+            ? new PullupCounter(this.cfg, cal)
+            : new RepCounter(this.cfg, cal);
     if (this.startedAt === null) this.startedAt = t;
     this.lostSince = null;
     this.outOfPositionSince = null;
@@ -668,6 +701,7 @@ export class PushupSession {
     this.plankHold.reset();
     this.plankProgress = 0;
     this.formSmoother.reset();
+    this.offBarSince = null;
     // Idle timer restarts on resume so a long rest is not counted as idle.
     this.idleSince = t;
     this.lastActiveT = t;
@@ -695,7 +729,11 @@ export class PushupSession {
 
     const usable =
       metrics !== null &&
-      (this.exercise === 'crunch' ? metrics.trunkLiftDeg !== null : metrics.elbowDeg !== null || metrics.shoulderHeight !== null);
+      (this.exercise === 'crunch'
+        ? metrics.trunkLiftDeg !== null
+        : this.exercise === 'pullup'
+          ? this.pull !== null && this.pull.mouthY !== null && this.pull.wrist !== null
+          : metrics.elbowDeg !== null || metrics.shoulderHeight !== null);
     this.noteCoverage(t, usable);
     // Say what is out of view, mid-set too (rate-limited like every cue).
     if (!framing.ok && framing.issue && this.counter) this.cue({ kind: 'framing', issue: framing.issue });
@@ -733,6 +771,10 @@ export class PushupSession {
       this.evaluateCrunch(metrics, t);
       return;
     }
+    if (this.exercise === 'pullup') {
+      this.evaluatePullup(this.pull!, t);
+      return;
+    }
 
     // Out of push-up position (stood up, sat back on knees) for a while → pause.
     const upright = metrics.trunkTiltDeg !== null && metrics.trunkTiltDeg > this.cfg.plank.maxTrunkTiltDeg + 20;
@@ -748,7 +790,7 @@ export class PushupSession {
     }
     this.outOfPositionSince = null;
 
-    const counter = this.counter!;
+    const counter = this.counter as RepCounter;
     this.depth = counter.depthProgress(metrics);
     // Counting uses the raw elbow and shoulder signals (no lag on fast reps);
     // form is judged on median-smoothed body line, hips and neck.
@@ -779,9 +821,23 @@ export class PushupSession {
     } else {
       this.outOfPositionSince = null;
     }
-    const counter = this.counter!;
+    const counter = this.counter as CrunchCounter;
     this.depth = counter.depthProgress(smooth);
     this.handleRepEvent(counter.update(smooth), t);
+  }
+
+  /** Pull-ups: off the bar for a while is a rest (the set pauses); otherwise count. */
+  private evaluatePullup(r: PullupReading, t: number): void {
+    if (!r.overhead) {
+      if (this.offBarSince === null) this.offBarSince = t;
+      if (t - this.offBarSince >= this.cfg.pullup.offBarMs) {
+        this.pause('left-position');
+        return;
+      }
+    } else this.offBarSince = null;
+    const counter = this.counter as PullupCounter;
+    this.depth = counter.depthProgress(r);
+    this.handleRepEvent(counter.update(r), t);
   }
 
   private handleRepEvent(ev: ReturnType<RepCounter['update']>, t: number): void {
@@ -797,6 +853,9 @@ export class PushupSession {
         this.cue({ kind: 'target-reached' }, true);
         this.end('target');
       }
+    } else if (ev.type === 'late-fault') {
+      // Seen after the count (pull-ups: dropping on the way down); the rep record already carries it.
+      this.cue({ kind: 'fault', fault: ev.fault });
     } else if (ev.type === 'miss') {
       this.misses.push(ev.miss);
       this.emit({ type: 'miss', miss: ev.miss });

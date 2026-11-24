@@ -291,6 +291,8 @@ export type PlankIssue =
   | 'feet-forward'
   /** Crunch: feet up in the air instead of flat on the floor. */
   | 'feet-on-floor'
+  /** Pull-ups: hands not up on the bar above the head. */
+  | 'grab-bar'
   | 'hold-still';
 
 export interface PlankCheck {

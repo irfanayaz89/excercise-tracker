@@ -30,7 +30,10 @@ const flip = (s: PoseSample): PoseSample => ({ ...s, landmarks: s.landmarks.map(
 const framingCues = (h: ReturnType<typeof harness>, issue: string) =>
   h.events.filter((e) => e.type === 'cue' && e.cue.kind === 'framing' && e.cue.issue === issue).length;
 
-describe.each(EXERCISE_IDS)('%s', (exercise) => {
+// Pull-ups hang from a bar head-on, with their own synthetic body: see pullup.test.ts.
+const SIDE_BODIES = EXERCISE_IDS.filter((e) => e !== 'pullup');
+
+describe.each(SIDE_BODIES)('%s', (exercise) => {
   describe.each(DIFFICULTIES)('%s', (level) => {
     it.each(Object.entries(FRAMES))('an upside-down picture never starts the set, and says why (%s)', (_, frame) => {
       const h = harness({ config: difficultyConfig(level, { exercise }), exercise, base: frame });
@@ -90,7 +93,7 @@ describe('upside down in other situations', () => {
     },
   );
 
-  it.each(EXERCISE_IDS)('%s: phone knocked mid-set and put back the other way up never resumes', (exercise) => {
+  it.each(SIDE_BODIES)('%s: phone knocked mid-set and put back the other way up never resumes', (exercise) => {
     const h = harness({ config: difficultyConfig('medium', { exercise }), exercise });
     h.segments(setOf(exercise));
     expect(h.session.snapshot().phase).toBe('counting');
@@ -108,7 +111,7 @@ describe('upside down in other situations', () => {
   });
 
   it('standing or kneeling with the arms up, feet out of view, is never upside down', () => {
-    for (const exercise of EXERCISE_IDS) {
+    for (const exercise of SIDE_BODIES) {
       const h = harness({ config: difficultyConfig('easy', { exercise }), exercise, base: { hide: { ankle: 0.1 } } });
       // A push-up body stood up (80°) with the arm reaching past the head.
       h.segments([hold(4000, { bodyTiltDeg: 80, elbowDeg: 60 })]);

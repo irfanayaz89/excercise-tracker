@@ -27,6 +27,16 @@ export interface ExerciseInfo {
 
 export const EXERCISES: Record<Exercise, ExerciseInfo> = {
   pushup: { id: 'pushup', label: 'Push-ups', unit: 'push-ups', kind: 'reps', perSide: false, tagline: 'Counted reps', frontView: true },
+  pullup: {
+    id: 'pullup',
+    label: 'Pull-ups',
+    unit: 'pull-ups',
+    kind: 'reps',
+    perSide: false,
+    tagline: 'Counted reps, at a bar',
+    // Always seen from the front or a diagonal (see engine/pullup.ts); there is no side-on choice.
+    frontView: false,
+  },
   crunch: { id: 'crunch', label: 'Crunches', unit: 'crunches', kind: 'reps', perSide: false, tagline: 'Counted reps', frontView: false },
   plank: { id: 'plank', label: 'Plank', unit: 'plank', kind: 'hold', perSide: false, tagline: 'Timed hold', frontView: true },
   sidePlank: {
@@ -41,7 +51,7 @@ export const EXERCISES: Record<Exercise, ExerciseInfo> = {
 };
 
 /** Display order. */
-export const EXERCISE_IDS: Exercise[] = ['pushup', 'crunch', 'plank', 'sidePlank'];
+export const EXERCISE_IDS: Exercise[] = ['pushup', 'pullup', 'crunch', 'plank', 'sidePlank'];
 
 export function isExercise(v: unknown): v is Exercise {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(EXERCISES, v);

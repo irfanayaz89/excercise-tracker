@@ -48,7 +48,9 @@ export default function SessionScreen() {
   const scenario = demoScenario(params.demo);
   const demo = scenario !== null;
   const [settings] = useState<Settings>(() => {
-    if (!demo) return liveSettings;
+    // Pull-ups: the phone stands upright (portrait) to fit the bar and the body, whatever the usual pick.
+    const upright = (s: Settings): Settings => (s.exercise === 'pullup' ? { ...s, orientation: 'portrait' } : s);
+    if (!demo) return upright(liveSettings);
     const s: Settings = {
       ...liveSettings,
       ...(isExercise(params.ex) ? { exercise: params.ex } : {}),
@@ -56,7 +58,7 @@ export default function SessionScreen() {
     };
     // A demo's view override applies to the exercise it plays.
     // (front only applies where the exercise supports it; see viewFor)
-    return params.view === 'front' || params.view === 'side' ? { ...s, views: { ...s.views, [s.exercise]: params.view } } : s;
+    return upright(params.view === 'front' || params.view === 'side' ? { ...s, views: { ...s.views, [s.exercise]: params.view } } : s);
   });
   const permission = useCameraPermission();
   const preferred = useCameraDevice(settings.camera);

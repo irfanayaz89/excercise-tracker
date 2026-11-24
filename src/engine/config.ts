@@ -227,6 +227,48 @@ export interface EngineConfig {
   };
 
   /**
+   * Pull-ups, seen from the front or a diagonal, the phone 2–2.5 m away at about
+   * waist height (or on the floor leaning back). Heights are measured against the
+   * bar, which is where the hands rest: they stay on it the whole set. Lengths are
+   * in shoulder widths. Rules follow the strict standard (dead hang, chin over the
+   * bar, back to straight arms, no kip) and published pull-up counters: mouth over
+   * the bar for "up"; straight elbows with the eyes below the elbows for "down".
+   */
+  pullup: {
+    /** The phone may lean back this far to see the bar (degrees). */
+    maxPitchDeg: number;
+    /** Dead hang: elbows at least this straight (degrees). */
+    hangElbowDeg: number;
+    /**
+     * Hands this far above the shoulders (shoulder widths) means holding the bar. Measured against
+     * the shoulders, not the head: at the top of a pull the head is level with the hands.
+     */
+    handsOverShoulders: number;
+    /** Up: mouth this far above the bar or higher (shoulder widths; 0 = level with the bar). */
+    topClearance: number;
+    /** Up: elbows bent to at least this (degrees); only checked when the elbows are seen. */
+    topElbowDeg: number;
+    /** A pull has started once the mouth rises this far above its hanging height (shoulder widths). */
+    leaveRise: number;
+    /** Rose at least this far before turning back without reaching the bar: a half rep (miss). */
+    partialRise: number;
+    /** Left the top once the mouth drops this far below the bar (shoulder widths). */
+    leaveTop: number;
+    /** Kip: knees driven up towards the hips by this share of the hanging hip–knee gap. */
+    kipKneeRise: number;
+    /** Swing: hips travelling sideways more than this during a pull (shoulder widths). */
+    swingFault: number;
+    /** One shoulder higher than the other by more than this at the top (shoulder widths). */
+    tiltFault: number;
+    /** Top to dead hang faster than this is a drop, not a controlled lowering (ms). */
+    dropMs: number;
+    /** Hands down from the bar for this long pauses the set (ms). */
+    offBarMs: number;
+    minRepMs: number;
+    maxRepMs: number;
+  };
+
+  /**
    * Front view (facing the phone: push-ups and the plank). Everything is measured in shoulder widths,
    * which stay steady head-on at any distance. Starting values from geometry
    * and the head-on research; tune them with recorded sets.
@@ -408,6 +450,26 @@ export const DEFAULT_CONFIG: EngineConfig = {
     // whole crunch: 800 ms here is a crunch of roughly 1.1 s (test pace is 3 s).
     minRepMs: 350,
     rushedRepMs: 800,
+    maxRepMs: 10000,
+  },
+  pullup: {
+    // A phone on the floor 2 m away sees up to about 1.6 m; leaning back or
+    // standing on a chair brings the bar (about 2.2–2.4 m) into the picture.
+    maxPitchDeg: 35,
+    hangElbowDeg: 150,
+    handsOverShoulders: 0.2,
+    topClearance: 0,
+    topElbowDeg: 110,
+    leaveRise: 0.35,
+    partialRise: 0.6,
+    leaveTop: 0.25,
+    kipKneeRise: 0.55,
+    swingFault: 0.6,
+    tiltFault: 0.18,
+    dropMs: 350,
+    offBarMs: 1500,
+    // Measured from leaving the hang to the bar: a quick strict pull is ~0.4 s, so this only drops glitches.
+    minRepMs: 250,
     maxRepMs: 10000,
   },
   front: {

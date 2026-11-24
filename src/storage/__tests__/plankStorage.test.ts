@@ -261,7 +261,7 @@ describe('side plank storage', () => {
       1,
       now,
     );
-    expect(today.byExercise).toEqual({ pushup: 10, crunch: 15, plank: 40000, sidePlank: 50000 });
+    expect(today.byExercise).toEqual({ pushup: 10, pullup: 0, crunch: 15, plank: 40000, sidePlank: 50000 });
     expect(today.reps).toBe(10);
     expect(today.holdMs).toBe(90000);
   });

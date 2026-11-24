@@ -38,9 +38,9 @@ export function PhonePanel({
   const p = snap.phone;
   const noSensor = p.issue === 'no-sensor' || motionUnavailable;
   const copy = noSensor
-    ? phoneCopy('no-sensor', orientation)
+    ? phoneCopy('no-sensor', orientation, snap.exercise)
     : p.issue
-      ? phoneCopy(p.issue, orientation)
+      ? phoneCopy(p.issue, orientation, snap.exercise)
       : { short: 'Hold still…', detail: 'Let the phone settle on the floor.' };
   return (
     <View style={styles.panel}>
@@ -147,11 +147,13 @@ export function BodyPanel({
   const headline = snap.reality
     ? REALITY_COPY[snap.reality]
     : !framed && f.issue
-      ? framingCopy(f.issue, orientation)
+      ? framingCopy(f.issue, orientation, snap.exercise)
       : first
         ? plankIssueCopy(first, snap.exercise, snap.view)
         : snap.exercise === 'crunch'
           ? { short: 'Lie still…', detail: 'Starting as soon as you are still.' }
+          : snap.exercise === 'pullup'
+            ? { short: 'Hang still…', detail: 'Starting as soon as you hang still.' }
           : { short: 'Hold it…', detail: 'Starting as soon as you are steady.' };
   return (
     <View style={styles.panel}>

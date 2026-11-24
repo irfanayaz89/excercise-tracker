@@ -12,7 +12,7 @@ import Animated, {
 import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { EXERCISES } from '@/engine/exercises';
 import type { CameraView, Exercise, PhoneOrientation } from '@/engine/types';
-import { FLOOR_Y, MOTION_MS, STILL_P, figureAt, figureFrontAt } from './exerciseMotion';
+import { BAR_Y, FLOOR_Y, MOTION_MS, STILL_P, figureAt, figureFrontAt } from './exerciseMotion';
 import { color, font } from './theme';
 
 const APath = Animated.createAnimatedComponent(Path);
@@ -37,6 +37,8 @@ export function ExerciseAnimation({
   view?: CameraView;
 }) {
   const front = view === 'front' && EXERCISES[exercise].frontView;
+  // Pull-ups are always seen facing the phone, hanging from a bar.
+  const pull = exercise === 'pullup';
   const reduce = useReducedMotion();
   const p = useSharedValue(STILL_P[exercise]);
   const period = MOTION_MS[exercise];
@@ -59,8 +61,8 @@ export function ExerciseAnimation({
 
   const counter = useLoopCounter(exercise, period, reduce);
   const portrait = orientation === 'portrait';
-  const distance = front ? '1.2–2 m' : portrait ? '2.5–3 m' : '1.5–2 m';
-  const facing = exercise === 'sidePlank' || front;
+  const distance = pull ? '2–2.5 m' : front ? '1.2–2 m' : portrait ? '2.5–3 m' : '1.5–2 m';
+  const facing = exercise === 'sidePlank' || front || pull;
 
   return (
     <Svg
@@ -68,14 +70,16 @@ export function ExerciseAnimation({
       height={(width * 116) / 320}
       viewBox="0 44 320 116"
       accessibilityLabel={
-        front
+        pull
+          ? `Animation of a pull-up, seen from the front: from a dead hang to the chin over the bar and back. The phone stands ${distance} from the bar, about waist high, facing you.`
+          : front
           ? `Animation of ${label(exercise)}, seen head-on. The phone stands on the floor beyond your hands, ${distance} away, facing you.`
           : `Animation of ${label(exercise)}. The phone stands on the floor ${distance} away, level with your hips and at a right angle to your body, so it sees you ${exercise === 'sidePlank' ? 'from the front, lying on your side' : 'side-on'}.`
       }
     >
       {/* ── camera view ── */}
       <SvgText x="10" y="54" fontSize={8} fill={color.vial} fontFamily={font.mono}>
-        {front ? 'CAMERA VIEW · FACING YOU' : facing ? 'CAMERA VIEW · FACING IT' : 'CAMERA VIEW · SIDE-ON'}
+        {front || pull ? 'CAMERA VIEW · FACING YOU' : facing ? 'CAMERA VIEW · FACING IT' : 'CAMERA VIEW · SIDE-ON'}
       </SvgText>
       <G stroke={color.muted} strokeWidth={1.5} fill="none" strokeLinecap="round">
         <Path d="M8 70 L8 60 L18 60" />
@@ -91,6 +95,7 @@ export function ExerciseAnimation({
       {exercise === 'plank' && !front && (
         <Line x1="34" y1={FLOOR_Y - 28} x2="208" y2={FLOOR_Y - 3} stroke={color.vial} strokeWidth={1} strokeDasharray="4 4" opacity={0.6} />
       )}
+      {pull && <Line x1="70" y1={BAR_Y} x2="160" y2={BAR_Y} stroke={color.muted} strokeWidth={3} strokeLinecap="round" />}
       <G stroke={color.chalk} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" fill="none">
         <APath animatedProps={body} />
         <APath animatedProps={arm} />
@@ -103,7 +108,13 @@ export function ExerciseAnimation({
       <SvgText x="275" y="54" fontSize={8} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
         FROM ABOVE
       </SvgText>
-      {front ? <FrontMap distance={distance} portrait={portrait} /> : <SideMap distance={distance} portrait={portrait} />}
+      {pull ? (
+        <BarMap distance={distance} />
+      ) : front ? (
+        <FrontMap distance={distance} portrait={portrait} />
+      ) : (
+        <SideMap distance={distance} portrait={portrait} />
+      )}
     </Svg>
   );
 }
@@ -166,8 +177,31 @@ function FrontMap({ distance, portrait }: { distance: string; portrait: boolean 
   );
 }
 
+/** From above, pull-ups: the bar, you under it, and the phone in front at about waist height. */
+function BarMap({ distance }: { distance: string }) {
+  const barY = 82;
+  const phoneY = 128;
+  return (
+    <>
+      <Line x1="246" y1={barY} x2="294" y2={barY} stroke={color.muted} strokeWidth={3} strokeLinecap="round" />
+      <Circle cx="270" cy={barY + 7} r="4" fill={color.chalk} />
+      <SvgText x="275" y="68" fontSize={7} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        YOU, UNDER THE BAR
+      </SvgText>
+      <Line x1="270" y1={phoneY - 9} x2="270" y2={barY + 13} stroke={color.vial} strokeWidth={1.5} strokeDasharray="4 3" />
+      <SvgText x="276" y={(phoneY + barY) / 2 + 6} fontSize={8} fill={color.chalk} fontFamily={font.mono}>
+        {distance}
+      </SvgText>
+      <Rect x="265.5" y={phoneY - 8} width="9" height="16" rx="2" fill={color.raised} stroke={color.vial} strokeWidth={1.5} />
+      <SvgText x="270" y="148" fontSize={7} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        PHONE · WAIST HIGH
+      </SvgText>
+    </>
+  );
+}
+
 function label(e: Exercise): string {
-  return e === 'pushup' ? 'a push-up' : e === 'crunch' ? 'a crunch' : e === 'plank' ? 'a plank' : 'a side plank on each side';
+  return e === 'pullup' ? 'a pull-up' : e === 'pushup' ? 'a push-up' : e === 'crunch' ? 'a crunch' : e === 'plank' ? 'a plank' : 'a side plank on each side';
 }
 
 /** The number in the corner: reps counted, seconds held, or the side being held. */

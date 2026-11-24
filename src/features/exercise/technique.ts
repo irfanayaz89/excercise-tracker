@@ -4,7 +4,7 @@ import type { Exercise } from '@/engine/types';
  * How to do each exercise, step by step, shown before a set (the guide) and
  * on each exercise's screen. Plain, short sentences: read once, then done.
  *
- * Sources: ACE exercise library (crunch, push-up, plank, side plank), ACSM
+ * Sources: ACE exercise library (crunch, push-up, plank, side plank, pull-up), ACSM
  * resistance training guidance (sets and reps), McGill's curl-up and
  * side-bridge work, Harvard Health and Mayo Clinic safety notes.
  */
@@ -21,6 +21,30 @@ export interface Technique {
 }
 
 export const TECHNIQUE: Record<Exercise, Technique> = {
+  pullup: {
+    steps: [
+      {
+        title: 'Grip the bar',
+        body: 'Hands a little wider than your shoulders, palms facing away (or towards you for chin-ups), thumbs wrapped around the bar.',
+      },
+      {
+        title: 'Start from a dead hang',
+        body: 'Hang with straight arms and still legs. Draw your shoulders down a little, away from your ears.',
+      },
+      { title: 'Pull', body: 'Drive your elbows down towards your ribs until your chin clears the bar. Keep your legs still.' },
+      { title: 'Lower with control', body: 'Lower over a second or two, all the way to straight arms. That is one rep.' },
+    ],
+    avoid: [
+      'Kicking or swinging your legs to get up (kipping)',
+      'Half reps: chin short of the bar, or not straightening at the bottom',
+      'Dropping fast from the top',
+      'Shrugging your shoulders up to your ears',
+    ],
+    breathe: 'Breathe out as you pull up, in as you lower.',
+    dose: 'Start with 3 sets of as many good reps as you can, resting 1–2 minutes. Can’t do one yet? Practise dead hangs and slow lowering from the top.',
+    safety:
+      'Make sure the bar is secure and holds your weight, and high enough that your feet clear the floor. Stop if your shoulders, elbows or wrists hurt.',
+  },
   pushup: {
     steps: [
       { title: 'Hands under your shoulders', body: 'Hands on the floor a little wider than your shoulders, fingers pointing forward.' },
