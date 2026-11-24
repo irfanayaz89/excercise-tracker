@@ -57,6 +57,7 @@ class BlockService : Service() {
   private var lastEventAt = 0L
   private var lastNote: String? = null
   private var lastBeat = 0L
+  private var hasAccess = true
   private val categories = mutableMapOf<String, String>()
 
   private val tick = object : Runnable {
@@ -130,6 +131,9 @@ class BlockService : Service() {
     if (now - lastBeat >= 5_000) {
       lastBeat = now
       STCore.heartbeat(this, now)
+      // Usage access or "display over other apps" switched off: nothing can be blocked, so say so
+      // where the user will see it, not only inside Trueline.
+      hasAccess = ScreenTimeModule.hasAccess(this)
     }
     if (!interactive) {
       carryMs = 0
@@ -166,6 +170,7 @@ class BlockService : Service() {
     }
     val clock = { at: Long -> DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at)) }
     val text = when {
+      !hasAccess -> "Blocking is off: Trueline lost its access. Tap to turn it back on."
       s.unlockedUntil != null -> "Unlocked until ${clock(s.unlockedUntil)}"
       // A lock time or a workout focus: both have a name and an end.
       s.blocked && s.until != null && p.focusKind == "key" && s.reason == "focus" -> "Key lock until you scan your key (at most ${clock(s.until)})"

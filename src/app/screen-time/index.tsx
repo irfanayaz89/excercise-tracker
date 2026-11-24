@@ -78,7 +78,12 @@ export default function ScreenTimeScreen() {
   const { rules, decision: d, today, now } = st;
   const mode = effectiveStrictness(rules, now);
 
-  const apply = useCallback((res: ChangeResult) => setMessage(describeChange(res)), []);
+  const apply = useCallback((res: ChangeResult) => {
+    const m = describeChange(res);
+    setMessage(m);
+    // A change that waits or is refused is shown where the user is, not only in the note at the top.
+    if (m && res.result !== 'applied') Alert.alert(res.result === 'refused' ? 'Can’t change that now' : 'Starts later', m);
+  }, []);
   const change = useCallback((patch: Partial<RulesCore>) => apply(changeRules({ ...coreOf(getScreenTime().rules), ...patch })), [apply]);
 
   // Clear the note when leaving, not when coming back: on Android the app picker is its own screen,

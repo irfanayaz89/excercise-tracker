@@ -297,6 +297,10 @@ enum STShared {
     var blockAll = false
     /// Per-app limits used up today (ids).
     var limitBlocked: [String] = []
+    /// An emergency unlock or "1 more minute" is running: no pause either.
+    var unlocked = false
+    /// Strictness in force now (for the blocked screen's wording).
+    var mode = "standard"
   }
 
   /// Minutes used today against a per-app limit: the most the app or the extensions have counted.
@@ -316,6 +320,7 @@ enum STShared {
 
     var s = Status()
     s.earnedLeft = earnedLeft
+    s.unlocked = unlocked
     let running = p.locks.compactMap { l in active(l, at: now).map { (l, $0) } }
     let main = running.filter { !$0.0.ownApps }
     let hard = main.filter { !$0.0.earnable }
@@ -360,6 +365,7 @@ enum STShared {
     let any = s.blocked || !s.ownBlocked.isEmpty || !s.limitBlocked.isEmpty
     // Strict reads as Standard once its period is over (decide.ts: effectiveStrictness).
     let mode = p.mode == "strict" && (p.strictUntil.map { nowMs >= $0 } ?? false) ? "standard" : p.mode
+    s.mode = mode
     let mine = st.unlocks.filter { !newDay || dayKey(Date(timeIntervalSince1970: $0.from / 1000)) == today }
     let usedEmergencies = mine.filter { $0.kind == "emergency" }.count
     let usedOneMores = mine.filter { $0.kind == "one-more" }.count
@@ -562,7 +568,7 @@ enum STShared {
   /// The pause is shown for the blocked list when nothing else blocks it: a shield of its own
   /// ("st.pause") with the apps and sites on a pass left out.
   static func applyPause(_ p: Plan, _ s: Status, allowed: FamilyActivitySelection?, now: Date) {
-    guard let pause = p.pause, pause.enabled, !s.blocked, let main = selection("main") else {
+    guard let pause = p.pause, pause.enabled, !s.blocked, !s.unlocked, let main = selection("main") else {
       unblock("st.pause")
       return
     }

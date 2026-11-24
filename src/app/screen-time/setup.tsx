@@ -145,10 +145,16 @@ export default function ScreenTimeSetup() {
           </Body>
           {access === 'needs-permission' && asked && !busy && (
             <Body tone="cue" size={14}>
-              Access isn&apos;t on yet. Without it Trueline can&apos;t block anything.
+              {Platform.OS === 'android'
+                ? 'One is still off. Tap Allow access again and turn on the next screen too (Usage access and Display over other apps).'
+                : 'Access isn\u2019t on yet. Without it Trueline can\u2019t block anything.'}
             </Body>
           )}
-          <Button label={busy ? 'Waiting…' : 'Allow access'} disabled={busy || access === 'unsupported'} onPress={guard(askAccess)} />
+          {access === 'ready' ? (
+            <Strong>Access is on.</Strong>
+          ) : (
+            <Button label={busy ? 'Waiting…' : 'Allow access'} disabled={busy || access === 'unsupported'} onPress={guard(askAccess)} />
+          )}
           {access === 'ready' && Platform.OS === 'android' && (
             <>
               <Body tone="muted" size={14}>
@@ -162,6 +168,7 @@ export default function ScreenTimeSetup() {
             </>
           )}
           {access === 'ready' && !reconnect && <Button variant="ghost" label="Next" onPress={next} />}
+          {access === 'ready' && reconnect && <Button label="Done" onPress={() => router.back()} />}
         </Block>
       )}
 

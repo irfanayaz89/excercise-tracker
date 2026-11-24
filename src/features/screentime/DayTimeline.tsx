@@ -14,7 +14,7 @@ export function DayTimeline({ rules, now }: { rules: ScreenTimeRules; now: numbe
     <View
       accessible
       accessibilityLabel={
-        windows.length ? `Lock times today: ${windows.map((w) => w.name).join(', ')}` : 'No lock times today'
+        windows.length ? `Lock times today: ${[...new Set(windows.map((w) => w.name))].join(', ')}` : 'No lock times today'
       }
     >
       <View style={styles.track}>

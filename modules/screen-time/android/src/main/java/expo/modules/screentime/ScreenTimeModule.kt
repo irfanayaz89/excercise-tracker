@@ -55,6 +55,24 @@ class ScreenTimeModule : Module() {
       }
     }
 
+    /** Launchable apps, for Trueline's own picker (iPhone uses Apple's). */
+    AsyncFunction("installedApps") {
+      val pm = ctx.packageManager
+      val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+      pm.queryIntentActivities(launcher, 0)
+        .map { it.activityInfo.applicationInfo }
+        .distinctBy { it.packageName }
+        .filter { it.packageName != ctx.packageName }
+        .map {
+          mapOf(
+            "packageName" to it.packageName,
+            "label" to pm.getApplicationLabel(it).toString(),
+            "category" to BlockService.categoryName(it.category),
+          )
+        }
+        .sortedBy { (it["label"] as String).lowercase() }
+    }
+
     /** Trueline may hide notifications (Settings → Notification access is on for it). */
     Function("notificationAccess") {
       NotificationManagerCompatLite.enabledListeners(ctx).contains(ctx.packageName)

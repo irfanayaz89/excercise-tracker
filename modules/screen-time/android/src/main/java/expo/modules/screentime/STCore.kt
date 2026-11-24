@@ -384,6 +384,10 @@ object STCore {
     val blockAll: Boolean = false,
     /** Per-app limits used up today, and why ("time" or "opens"). */
     val limitBlocked: List<Pair<AppLim, String>> = emptyList(),
+    /** Strictness in force now, and the unlocks left today (for the blocked screen's wording). */
+    val mode: String = "standard",
+    val emergenciesLeft: Int = 0,
+    val oneMoresLeft: Int = 0,
   )
 
   /** Seconds used today against a per-app limit: the most the app or the service has counted. */
@@ -467,6 +471,9 @@ object STCore {
       unlockedUntil = unlockedUntil,
       blockAll = blockAll,
       limitBlocked = limitBlocked,
+      mode = mode,
+      emergenciesLeft = maxOf(0, emergenciesLeft - usedEmergencies),
+      oneMoresLeft = maxOf(0, oneMoresLeft - usedOneMores),
     )
   }
 
@@ -488,7 +495,8 @@ object STCore {
 
   /** Should this app show the pause screen first? (Outside blocks, for the main list, without a pass.) */
   fun pauses(p: Plan, s: Status, st: State, pkg: String, category: String, self: String, now: Long): Boolean {
-    if (!p.pause.enabled || s.blocked || pkg == self || pkg in p.allowed.apps) return false
+    // An emergency unlock or "1 more minute" opens the apps straight away: no pause either.
+    if (!p.pause.enabled || s.blocked || s.unlockedUntil != null || pkg == self || pkg in p.allowed.apps) return false
     if (!p.blocked.contains(pkg, category)) return false
     return (st.passes[pkg] ?: 0L) <= now
   }
