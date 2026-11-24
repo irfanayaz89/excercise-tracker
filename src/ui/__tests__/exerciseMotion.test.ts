@@ -5,7 +5,7 @@
  * the exercise does.
  */
 import { EXERCISE_IDS } from '@/engine/exercises';
-import { FLOOR_Y, STILL_P, figureAt, figureFrontAt } from '../exerciseMotion';
+import { BAR_Y, FLOOR_Y, STILL_P, figureAt, figureFrontAt } from '../exerciseMotion';
 
 const frames = (n = 120) => Array.from({ length: n + 1 }, (_, i) => i / n);
 const angle = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }) => {
@@ -16,7 +16,8 @@ const angle = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x:
   return d;
 };
 
-describe.each(EXERCISE_IDS)('%s animation', (exercise) => {
+// Floor exercises; the pull-up hangs from a bar and has its own checks below.
+describe.each(EXERCISE_IDS.filter((e) => e !== 'pullup'))('%s animation', (exercise) => {
   it('stays inside the camera view, with valid paths, on every frame', () => {
     for (const p of frames()) {
       const f = figureAt(exercise, p);
@@ -113,5 +114,38 @@ describe('head-on figures (front view)', () => {
     const pl = frames().map((p) => figureFrontAt('plank', p).pts.shoulder.y);
     expect(Math.max(...pl) - Math.min(...pl)).toBeLessThan(3);
     for (const p of frames()) expect(FLOOR_Y - figureFrontAt('pushup', p).pts.wrist.y).toBeLessThan(3);
+  });
+});
+
+describe('pull-up animation', () => {
+  it('stays inside the camera view, hands on the bar, feet just off the floor', () => {
+    for (const p of frames()) {
+      const f = figureAt('pullup', p);
+      for (const q of [...Object.values(f.pts), f.head]) {
+        expect(q.x).toBeGreaterThan(10);
+        expect(q.x).toBeLessThan(220);
+        expect(q.y).toBeGreaterThan(60);
+        expect(q.y).toBeLessThanOrEqual(FLOOR_Y);
+      }
+      expect(f.pts.wrist.y).toBe(BAR_Y);
+      expect(f.arm).toMatch(/^M/);
+      expect(f.extra).toMatch(/^M/);
+    }
+  });
+
+  it('dead hang to chin over the bar: straight arms at the bottom, bent at the top', () => {
+    const hang = figureAt('pullup', 0);
+    const top = figureAt('pullup', 0.5);
+    expect(angle(hang.pts.shoulder, hang.pts.elbow, hang.pts.wrist)).toBeGreaterThan(165);
+    expect(angle(top.pts.shoulder, top.pts.elbow, top.pts.wrist)).toBeLessThan(110);
+    expect(hang.head.y).toBeGreaterThan(BAR_Y);
+    expect(top.head.y).toBeLessThan(BAR_Y);
+  });
+
+  it('loops without a jump and has a still frame at the top', () => {
+    const a = figureAt('pullup', 0).pts;
+    const b = figureAt('pullup', 0.9999).pts;
+    for (const k of Object.keys(a)) expect(Math.hypot(a[k].x - b[k].x, a[k].y - b[k].y)).toBeLessThan(0.5);
+    expect(figureAt('pullup', STILL_P.pullup).head.y).toBeLessThan(BAR_Y);
   });
 });

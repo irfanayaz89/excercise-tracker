@@ -20,16 +20,19 @@ const NOTES: Record<SafetyFlag, Partial<Record<Exercise, string>>> = {
     pushup: 'Keep your body in one line and stop if your back hurts. Knee push-ups (Easy) take load off.',
     plank: 'Start with short holds and stop if your back hurts.',
     sidePlank: 'Start on your knees (Easy) and stop if your back hurts.',
+    pullup: 'Pull without swinging or kicking, and stop if your back hurts.',
   },
   neck: {
     crunch: 'Cross your arms on your chest instead of hands by your head, and keep a fist of space under your chin.',
     pushup: 'Keep your head in line with your body. Stop if your shoulder hurts.',
     sidePlank: 'Side planks load the shoulder a lot; start on your knees (Easy).',
+    pullup: 'Pull-ups load the shoulders a lot. Start with short dead hangs or slow lowering from the top, and stop if your shoulder hurts.',
   },
   wrist: {
     pushup: 'Knuckle push-ups or push-up handles keep the wrist straight. Stop if it hurts.',
     plank: 'A forearm plank keeps the weight off your wrists.',
     sidePlank: 'Use your forearm, not a straight arm.',
+    pullup: 'A palms-facing grip (chin-ups, or a neutral grip) is often easier on the wrists. Stop if it hurts.',
   },
   pregnancy: {
     crunch:
@@ -37,12 +40,14 @@ const NOTES: Record<SafetyFlag, Partial<Record<Exercise, string>>> = {
     plank: 'Check with your midwife or doctor before planks, and stop if you feel any doming of the tummy.',
     pushup: 'Check with your midwife or doctor first; incline or knee push-ups are often easier.',
     sidePlank: 'Check with your midwife or doctor first.',
+    pullup: 'Check with your midwife or doctor first; hanging and hard pulling may not suit pregnancy or the months after birth.',
   },
   injury: {
     pushup: 'Check with your clinician that this exercise is fine for you now.',
     crunch: 'Check with your clinician that this exercise is fine for you now.',
     plank: 'Check with your clinician that this exercise is fine for you now.',
     sidePlank: 'Check with your clinician that this exercise is fine for you now.',
+    pullup: 'Check with your clinician that this exercise is fine for you now.',
   },
 };
 

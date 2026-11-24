@@ -50,7 +50,13 @@ export const PLACEMENT: Record<PhoneOrientation, { label: string; distance: stri
   },
 };
 
-export function phoneCopy(issue: PhoneIssue, o: PhoneOrientation): Copy {
+export function phoneCopy(issue: PhoneIssue, o: PhoneOrientation, exercise?: Exercise): Copy {
+  if (exercise === 'pullup' && issue === 'no-sensor') {
+    return {
+      short: 'Place your phone',
+      detail: 'Stand it upright on a chair or shelf about waist high, 2–2.5 m from the bar and facing it, then tap "Phone is set".',
+    };
+  }
   if (issue === 'wrong-orientation') {
     return o === 'landscape'
       ? {
@@ -73,7 +79,23 @@ export function phoneCopy(issue: PhoneIssue, o: PhoneOrientation): Copy {
   return PHONE_COPY[issue];
 }
 
-export function framingCopy(issue: FramingIssue, o: PhoneOrientation): Copy {
+export function framingCopy(issue: FramingIssue, o: PhoneOrientation, exercise?: Exercise): Copy {
+  if (exercise === 'pullup') {
+    switch (issue) {
+      case 'move-closer':
+        return { ...FRAMING_COPY[issue], detail: 'You look small. Move the phone to about 2 to 2.5 metres from the bar.' };
+      case 'move-back':
+        return { ...FRAMING_COPY[issue], detail: 'Move the phone further from the bar until your hands on the bar and your hips both fit.' };
+      case 'show-hands':
+        return {
+          short: 'Show the bar',
+          detail: 'Both hands on the bar must be in the picture. Raise the phone, or lean it back, so the bar is in view.',
+          say: 'Show the bar',
+        };
+      default:
+        break;
+    }
+  }
   if (issue === 'move-closer') {
     return { ...FRAMING_COPY[issue], detail: `You look small. Move to about ${PLACEMENT[o].spoken} from the phone.` };
   }
@@ -127,6 +149,25 @@ export const PLANK_DIFFICULTY_COPY: Record<Difficulty, { label: string; short: s
   },
 };
 
+/** Pull-up levels. */
+export const PULLUP_DIFFICULTY_COPY: Record<Difficulty, { label: string; short: string; detail: string }> = {
+  easy: {
+    label: 'Easy',
+    short: 'Just count my pull-ups',
+    detail: 'Chin over the bar counts. No form checks.',
+  },
+  medium: {
+    label: 'Medium',
+    short: 'Count and check main form',
+    detail: 'Dead hang to chin over the bar. Flags half reps, kipping, swinging and dropping, with some slack.',
+  },
+  hard: {
+    label: 'Hard',
+    short: 'Strict form',
+    detail: 'Strict pull-ups: a dead hang every rep, chin over the bar, no kip or swing, a controlled way down.',
+  },
+};
+
 /** Crunch levels. */
 export const CRUNCH_DIFFICULTY_COPY: Record<Difficulty, { label: string; short: string; detail: string }> = {
   easy: {
@@ -148,6 +189,7 @@ export const CRUNCH_DIFFICULTY_COPY: Record<Difficulty, { label: string; short: 
 
 export function difficultyCopy(d: Difficulty, exercise: Exercise) {
   if (exercise === 'crunch') return CRUNCH_DIFFICULTY_COPY[d];
+  if (exercise === 'pullup') return PULLUP_DIFFICULTY_COPY[d];
   return isTimed(exercise) ? PLANK_DIFFICULTY_COPY[d] : DIFFICULTY_COPY[d];
 }
 
@@ -213,6 +255,11 @@ export const PLANK_COPY: Record<PlankIssue, Copy> = {
     say: 'Get into push-up position',
   },
   'straighten-arms': { short: 'Push up to start', detail: 'Start at the top, with your arms straight.', say: 'Push up to start' },
+  'grab-bar': {
+    short: 'Grab the bar',
+    detail: 'Hang from the bar with both hands, arms straight, facing the phone.',
+    say: 'Grab the bar',
+  },
   'straighten-legs': {
     short: 'Legs straight',
     detail: 'Come off your knees. Knee push-ups can be turned on in settings.',
@@ -288,6 +335,13 @@ function frontIssueCopy(issue: PlankIssue, exercise: Exercise): Copy | null {
 
 /** The start-check messages, worded for the exercise being set up (and how the phone sees it). */
 export function plankIssueCopy(issue: PlankIssue, exercise: Exercise, view: CameraView = 'side'): Copy {
+  if (exercise === 'pullup') {
+    if (issue === 'straighten-arms') {
+      return { short: 'Hang with straight arms', detail: 'Start from a dead hang: arms straight, shoulders relaxed.', say: 'Hang with straight arms' };
+    }
+    if (issue === 'hold-still') return { short: 'Hang still', detail: 'Hang still for a second so the count can start.' };
+    return PLANK_COPY[issue];
+  }
   if (view === 'front' && EXERCISES[exercise].frontView) {
     const c = frontIssueCopy(issue, exercise);
     if (c) return c;
@@ -371,6 +425,16 @@ export const FAULT_COPY: Record<RepFault, Copy> = {
     detail: 'One side dropped lower than the other. Push evenly through both hands.',
     say: 'Keep it level',
   },
+  swinging: {
+    short: 'Stop the swing',
+    detail: 'Keep your legs still and your body under the bar. Brace your core so the pull comes from your back and arms.',
+    say: 'No swinging',
+  },
+  dropping: {
+    short: 'Lower slowly',
+    detail: 'Lower yourself under control to straight arms. Dropping strains your elbows and shoulders.',
+    say: 'Lower slowly',
+  },
   'neck-pulling': {
     short: 'Relax your neck',
     detail: 'Keep a fist of space under your chin and lift with your abs, not by pulling on your head.',
@@ -379,6 +443,9 @@ export const FAULT_COPY: Record<RepFault, Copy> = {
 
 /** Rep faults, worded for the exercise. */
 export function faultCopy(f: RepFault, exercise: Exercise): Copy {
+  if (exercise === 'pullup' && f === 'uneven') {
+    return { short: 'Pull evenly', detail: 'One shoulder rose higher than the other. Pull with both arms equally.', say: 'Pull evenly' };
+  }
   if (exercise === 'crunch' && f === 'rushed') {
     return { short: 'Slow down', detail: 'Curl up over about a second and lower with control. No bouncing.', say: 'Slow it down' };
   }
@@ -395,10 +462,27 @@ export const MISS_COPY: Record<MissReason, Copy> = {
     detail: 'Lower your shoulders back to the floor (or just above it) between crunches.',
     say: 'All the way down',
   },
+  kipped: {
+    short: 'No kipping',
+    detail: 'Driving your knees up to swing over the bar isn’t a strict pull-up. Keep your legs still and pull.',
+    say: 'No kipping',
+  },
 };
 
 /** Missed reps, worded for the exercise. */
 export function missCopy(m: MissReason, exercise: Exercise): Copy {
+  if (exercise === 'pullup') {
+    switch (m) {
+      case 'not-high-enough':
+        return { short: 'Chin over the bar', detail: 'Pull until your chin is over the bar.', say: 'Chin over the bar' };
+      case 'not-back-down':
+        return { short: 'Straighten your arms', detail: 'Lower all the way to a dead hang, arms straight, before the next pull.', say: 'All the way down' };
+      case 'too-slow':
+        return { short: 'Reset', detail: 'That one took too long to count. Lower to a dead hang to start again.' };
+      default:
+        break;
+    }
+  }
   if (exercise === 'crunch' && m === 'too-slow') {
     return { short: 'Reset', detail: 'That one took too long to count. Lower your shoulders to the floor to start again.' };
   }
@@ -478,6 +562,20 @@ export const REALITY_COPY: Record<RealityIssue, Copy> = {
 /** Pause messages, worded for the exercise (a plank keeps its time, push-ups their count). */
 export function pauseCopy(reason: PauseReason, exercise: Exercise): Copy {
   const c = PAUSE_COPY[reason];
+  if (exercise === 'pullup') {
+    switch (reason) {
+      case 'lost-tracking':
+        return { ...c, detail: 'Get back into view and hang from the bar to carry on.' };
+      case 'left-position':
+        return { ...c, detail: 'Hang from the bar with straight arms when you are ready. Your count is saved.' };
+      case 'phone-moved':
+        return { ...c, detail: 'The phone was knocked. Set it up again, then hang from the bar.' };
+      case 'interrupted':
+        return { ...c, detail: 'Welcome back. Hang from the bar to continue.' };
+      default:
+        return c;
+    }
+  }
   if (exercise === 'crunch') {
     switch (reason) {
       case 'lost-tracking':
@@ -535,9 +633,9 @@ export function cueSpeech(cue: Cue, o: SpeechOptions): { text: string; priority:
   const exercise = o.exercise ?? 'pushup';
   switch (cue.kind) {
     case 'phone':
-      return setupLine(phoneCopy(cue.issue, orientation), guided);
+      return setupLine(phoneCopy(cue.issue, orientation, exercise), guided);
     case 'framing':
-      return setupLine(framingCopy(cue.issue, orientation), guided);
+      return setupLine(framingCopy(cue.issue, orientation, exercise), guided);
     case 'plank':
       return setupLine(plankIssueCopy(cue.issue, exercise, o.view), guided);
     case 'start':
@@ -545,6 +643,9 @@ export function cueSpeech(cue: Cue, o: SpeechOptions): { text: string; priority:
       if (isTimed(exercise)) return { text: guided ? 'Go. The clock runs while your body stays in one line.' : 'Go', priority: 'high' };
       if (exercise === 'crunch') {
         return { text: guided ? 'Go. Curl up until your shoulder blades leave the floor, then lower back down.' : 'Go', priority: 'high' };
+      }
+      if (exercise === 'pullup') {
+        return { text: guided ? 'Go. A pull-up counts when your chin clears the bar. Lower to straight arms each time.' : 'Go', priority: 'high' };
       }
       return { text: guided ? 'Go. Reps count when your arms lock out at the top.' : 'Go', priority: 'high' };
     case 'resume':
@@ -611,7 +712,9 @@ export function cueBanner(cue: Cue, exercise: Exercise = 'pushup'): (Copy & { to
         ? { short: 'Go', detail: 'Timing. The clock runs while your body stays in one line.', tone: 'good' }
         : exercise === 'crunch'
           ? { short: 'Go', detail: 'Counting. A crunch counts when you curl up and lower back down.', tone: 'good' }
-          : { short: 'Go', detail: 'Counting. Push-ups count when you lock out at the top.', tone: 'good' };
+          : exercise === 'pullup'
+            ? { short: 'Go', detail: 'Counting. A pull-up counts when your chin clears the bar, from a dead hang.', tone: 'good' }
+            : { short: 'Go', detail: 'Counting. Push-ups count when you lock out at the top.', tone: 'good' };
     case 'resume':
       return { short: 'Carry on', detail: isTimed(exercise) ? 'Timing again.' : 'Counting again.', tone: 'good' };
     default:

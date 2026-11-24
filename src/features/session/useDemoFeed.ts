@@ -13,6 +13,7 @@ import {
   type BodyParams,
   type Segment,
 } from '@/engine/testing/synth';
+import { pullupFrames, pullupRep, type PullupKey } from '@/engine/testing/pullupSynth';
 import { timelineFront } from '@/engine/testing/synth3d';
 import type { CameraView, Exercise, PhoneAttitude, PoseSample } from '@/engine/types';
 import { EXERCISES, isTimed } from '@/engine/exercises';
@@ -30,7 +31,8 @@ import { EXERCISES, isTimed } from '@/engine/exercises';
  * - `shake`: a video of the set held up to the camera (picture shakes, phone still).
  * - `tv`: a video of the set on a TV (flat depth readings), then the real person again.
  * - `faults`: push-ups: half reps, no lockout, sagging, rushing. Plank: sag break,
- *   raised hips, soft knees, a switch to the forearms.
+ *   raised hips, soft knees, a switch to the forearms. Pull-ups: a half rep, a
+ *   second pull without a dead hang, a kip, a swing, an uneven pull, a drop.
  */
 export type DemoScenario = 'basic' | 'nofeet' | 'standup' | 'lost' | 'swap' | 'knocked' | 'shake' | 'tv' | 'faults';
 
@@ -258,6 +260,101 @@ function script(ex: Exercise, s: DemoScenario): Part[] {
   }
 }
 
+/** One stretch of a pull-up scenario (pull-ups have their own head-on body, hanging from a bar). */
+interface PullPart {
+  keys: PullupKey[];
+  nobody?: boolean;
+  roll?: number;
+  depth?: 'real' | 'flat';
+  shake?: boolean;
+}
+
+/** Pull-ups: each scenario as key poses for the hanging body. */
+function pullupScript(s: DemoScenario): PullPart[] {
+  const hang = (ms = 3000): PullupKey[] => [{ rise: 0, ms }];
+  const reps = (n: number): PullupKey[] => Array.from({ length: n }, () => pullupRep()).flat();
+  const swing: PullupKey[] = [
+    { rise: 0.5, swing: 0.5, ms: 450 },
+    { rise: 1, swing: -0.4, ms: 450 },
+    { rise: 1, ms: 200 },
+    { rise: 0, ms: 1100 },
+    { rise: 0, ms: 500 },
+  ];
+  const noHang: PullupKey[] = [
+    { rise: 1, ms: 900 },
+    { rise: 1, ms: 200 },
+    { rise: 0.5, ms: 600 },
+    { rise: 1, ms: 700 },
+    { rise: 1, ms: 200 },
+    { rise: 0, ms: 1100 },
+    { rise: 0, ms: 500 },
+  ];
+  const set = (n: number, first = 3000): PullupKey[] => [...hang(first), ...reps(n)];
+  switch (s) {
+    case 'basic':
+      return [{ keys: [...hang(), ...reps(3), ...swing, ...pullupRep({ peak: 0.6 }), ...reps(2), ...hang(1500)] }];
+    case 'nofeet':
+      // A low ceiling or a close phone: no legs in the picture. Pull-ups don't need them.
+      return [{ keys: set(6).map((k) => ({ ...k, hideLegs: true })) }];
+    case 'standup':
+      return [{ keys: set(3) }, { keys: [{ rise: 0, offBar: true, ms: 4000 }] }, { keys: set(3, 2500) }];
+    case 'lost':
+      return [{ keys: set(3) }, { keys: hang(4000), nobody: true }, { keys: set(3, 2500) }];
+    case 'swap':
+      // Someone else, smaller and off to one side, takes the bar for a few reps.
+      return [{ keys: set(3) }, { keys: reps(2).map((k) => ({ ...k, sw: 85, dx: 140 })) }, { keys: set(3, 2500) }];
+    case 'knocked':
+      return [{ keys: set(3) }, { keys: reps(2), roll: 50 }, { keys: set(3) }];
+    case 'shake':
+      return [{ keys: set(3) }, { keys: reps(4), shake: true }, { keys: set(3) }];
+    case 'tv':
+      return [
+        { keys: set(3), depth: 'real' },
+        { keys: reps(4), depth: 'flat' },
+        { keys: set(3, 3500), depth: 'real' },
+      ];
+    case 'faults':
+      return [
+        {
+          keys: [
+            ...hang(),
+            ...reps(1),
+            ...pullupRep({ peak: 0.6 }), // half rep: not counted
+            ...noHang, // the second pull starts without a dead hang: not counted
+            ...pullupRep({ kneeLift: 0.8 }), // kip: not counted on Medium/Hard
+            ...swing, // swinging: flagged
+            ...pullupRep({ tilt: 0.3 }), // one shoulder high: flagged
+            ...pullupRep({ downMs: 200 }), // dropped from the bar: flagged
+            ...reps(1),
+            ...hang(1500),
+          ],
+        },
+      ];
+  }
+}
+
+function pullupDemoFrames(scenario: DemoScenario): { frames: DemoFrame[]; length: number } {
+  const frames: DemoFrame[] = [];
+  let t = 0;
+  for (const part of pullupScript(scenario)) {
+    const samples = pullupFrames(t - 33, part.keys).map((s) => ({
+      ...s,
+      landmarks: s.landmarks.map((l, i) => {
+        // A little camera jitter, plus the whole picture shaking for a handheld video.
+        const j = 0.0015 * Math.sin(s.t / 37 + i * 1.7);
+        const sx = part.shake ? 0.012 * Math.sin((2 * Math.PI * 3 * s.t) / 1000) : 0;
+        const sy = part.shake ? 0.008 * Math.cos((2 * Math.PI * 2.3 * s.t) / 1000) : 0;
+        return { ...l, x: l.x + j + sx, y: l.y + j + sy };
+      }),
+    }));
+    for (const s of samples) {
+      frames.push({ sample: part.nobody ? emptySample(s.t, s.width, s.height) : s, roll: part.roll ?? 0, depth: part.depth });
+    }
+    t = samples[samples.length - 1].t + 33;
+  }
+  return { frames, length: t };
+}
+
 /** A real person 2 m away with a wall behind, or a flat screen. */
 function probe(t: number, kind: 'real' | 'flat'): DepthProbe {
   const j = (a: number) => (Math.random() - 0.5) * 2 * a;
@@ -279,6 +376,7 @@ export function demoFrames(
   portrait: boolean,
   view: CameraView = 'side',
 ): { frames: DemoFrame[]; length: number } {
+  if (exercise === 'pullup') return pullupDemoFrames(scenario);
   // Head-on demos (push-ups, plank) are photographed from the front.
   const front = view === 'front' && EXERCISES[exercise].frontView;
   // Portrait frames are tall and narrow, like a real upright camera.

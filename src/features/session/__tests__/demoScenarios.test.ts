@@ -51,7 +51,8 @@ describe.each(EXERCISE_IDS)('%s: every demo scenario at every level', (exercise)
     expect(summary.exercise).toBe(exercise);
     // An upright demo body is never taken for an upside-down picture.
     expect(framing).not.toContain('upside-down');
-    if (scenario === 'nofeet' && level !== 'easy') {
+    // Pull-ups don't need the feet in view (only the hands, head and hips).
+    if (scenario === 'nofeet' && level !== 'easy' && exercise !== 'pullup') {
       // Medium and Hard need the feet: the set never starts, and says why.
       expect(summary.activeMs).toBe(0);
       expect(framing).toContain('show-feet');
@@ -115,5 +116,31 @@ describe.each(['pushup', 'plank'] as const)('%s demo seen head-on', (exercise) =
     expect(summary.hold ? summary.hold.goodMs : reps.length).toBeGreaterThan(0);
     expect(pauses).toEqual([]);
     expect(framing).not.toContain('upside-down');
+  });
+});
+
+describe.each(DIFFICULTIES)('pull-up demos at %s', (level) => {
+  const formOn = level !== 'easy';
+
+  it('basic: six pull-ups, one half rep, one swing flagged', () => {
+    const { reps, misses } = play('pullup', 'basic', level);
+    expect(reps).toHaveLength(6);
+    expect(misses).toEqual(['not-high-enough']);
+    expect(reps.filter((r) => r.faults.includes('swinging'))).toHaveLength(formOn ? 1 : 0);
+  });
+
+  it('faults: each fault shows as described', () => {
+    const { reps, misses } = play('pullup', 'faults', level);
+    const has = (f: string) => reps.filter((r) => r.faults.includes(f as never)).length;
+    expect(has('swinging')).toBe(formOn ? 1 : 0);
+    expect(has('uneven')).toBe(formOn ? 1 : 0);
+    expect(has('dropping')).toBe(formOn ? 1 : 0);
+    // Easy just counts: a kip counts there; Medium and Hard want strict pull-ups.
+    expect(misses).toEqual(formOn ? ['not-high-enough', 'not-back-down', 'kipped'] : ['not-high-enough', 'not-back-down']);
+    expect(reps).toHaveLength(formOn ? 6 : 7);
+  });
+
+  it('nofeet: counts without the legs in view', () => {
+    expect(play('pullup', 'nofeet', level).reps).toHaveLength(6);
   });
 });

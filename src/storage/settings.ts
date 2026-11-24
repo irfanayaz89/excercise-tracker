@@ -23,7 +23,7 @@ export const GOAL_TARGETS: Record<Exclude<DailyGoal, 'none'>, { reps: number; ho
 };
 
 /** Default camera view per exercise: side-on. Push-ups and the plank can be switched to front (see EXERCISES.frontView). */
-export const DEFAULT_VIEWS: Record<Exercise, CameraView> = { pushup: 'side', crunch: 'side', plank: 'side', sidePlank: 'side' };
+export const DEFAULT_VIEWS: Record<Exercise, CameraView> = { pullup: 'front', pushup: 'side', crunch: 'side', plank: 'side', sidePlank: 'side' };
 
 export interface Settings {
   /** Push-ups (counted) or plank (timed). */

@@ -37,6 +37,8 @@ export const EMPTY_SELECTION: Selection = { apps: [], categories: [], domains: [
 
 export const DEFAULT_RATES: Record<Exercise, Rate> = {
   pushup: { perCleanRep: 1, perFlaggedRep: 0.5 },
+  // A pull-up is far harder than a push-up for most people: worth twice the time.
+  pullup: { perCleanRep: 2, perFlaggedRep: 1 },
   crunch: { perCleanRep: 0.5, perFlaggedRep: 0.25 },
   plank: { per10s: 2 },
   sidePlank: { per10s: 2 },

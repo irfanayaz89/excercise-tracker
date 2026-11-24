@@ -18,6 +18,10 @@ export interface OverlayData {
   visible: boolean;
   /** Head-on: points 7–10 are the other shoulder, elbow, wrist and hip. */
   front?: boolean;
+  /** Pull-ups, the whole body: points 11–13 are the other knee and ankle, and the nose. */
+  full?: boolean;
+  /** Pull-ups: the bar, as a share of the frame height (null until found). */
+  barY?: number | null;
 }
 
 export const EMPTY_OVERLAY: OverlayData = { frameW: 1280, frameH: 720, pts: [], bodyState: 3, visible: false };
@@ -72,6 +76,7 @@ export function SkeletonOverlay({
 }) {
   // Side-on. Arm: shoulder → elbow → wrist. Body line: ear → shoulder → hip → knee → ankle.
   // Head-on: both arms, and the shoulder line with the trunk down to the hips.
+  // Pull-ups: both arms; shoulders, both sides of the trunk, hips and both legs; a ring for the head.
   const arm = useDerivedValue(() => {
     if (!data.value.visible) return Skia.Path.Make();
     if (!data.value.front) return chain(data.value, width, height, [0, 1, 2], fit);
@@ -88,6 +93,19 @@ export function SkeletonOverlay({
   });
   const body = useDerivedValue(() => {
     if (!data.value.visible) return Skia.Path.Make();
+    if (data.value.full)
+      return chain(
+        data.value,
+        width,
+        height,
+        [
+          [0, 7],
+          [0, 3, 4, 5],
+          [7, 10, 11, 12],
+          [3, 10],
+        ],
+        fit,
+      );
     if (!data.value.front) return chain(data.value, width, height, [6, 0, 3, 4, 5], fit);
     return chain(
       data.value,
@@ -104,10 +122,29 @@ export function SkeletonOverlay({
   const joints = useDerivedValue(() => {
     const p = Skia.PathBuilder.Make();
     if (data.value.visible) {
-      for (const i of data.value.front ? [0, 1, 2, 7, 8, 9] : [0, 1, 2, 3, 4, 5]) {
+      for (const i of data.value.full ? [0, 1, 2, 7, 8, 9, 3, 10, 4, 11, 5, 12] : data.value.front ? [0, 1, 2, 7, 8, 9] : [0, 1, 2, 3, 4, 5]) {
         const q = project(data.value, width, height, i, fit);
         if (q) p.addCircle(q.x, q.y, 7);
       }
+    }
+    return p.build();
+  });
+  const head = useDerivedValue(() => {
+    const p = Skia.PathBuilder.Make();
+    const q = data.value.visible && data.value.full ? project(data.value, width, height, 13, fit) : null;
+    if (q) p.addCircle(q.x, q.y, 16);
+    return p.build();
+  });
+  // The bar the engine found (where the hands rest), as a true line across the picture.
+  const bar = useDerivedValue(() => {
+    const p = Skia.PathBuilder.Make();
+    const d = data.value;
+    const y0 = d.barY;
+    if (d.visible && d.full && y0 !== null && y0 !== undefined) {
+      const scale = fit === 'contain' ? Math.min(width / d.frameW, height / d.frameH) : Math.max(width / d.frameW, height / d.frameH);
+      const y = y0 * d.frameH * scale + (height - d.frameH * scale) / 2;
+      p.moveTo(0, y);
+      p.lineTo(width, y);
     }
     return p.build();
   });
@@ -118,8 +155,10 @@ export function SkeletonOverlay({
   return (
     <Canvas style={[StyleSheet.absoluteFill, { width, height }]} pointerEvents="none">
       <Group>
+        <Path path={bar} color={color.vial} style="stroke" strokeWidth={3} opacity={0.85} />
         <Path path={body} color={bodyColor} style="stroke" strokeWidth={9} strokeCap="round" strokeJoin="round" opacity={0.95} />
         <Path path={arm} color={color.chalk} style="stroke" strokeWidth={7} strokeCap="round" strokeJoin="round" />
+        <Path path={head} color={color.chalk} style="stroke" strokeWidth={6} />
         <Path path={joints} color={color.ground} />
         <Circle cx={ex} cy={ey} r={12} color={color.vial} style="stroke" strokeWidth={4} />
       </Group>

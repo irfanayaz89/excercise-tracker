@@ -33,6 +33,23 @@ const CHAIN = {
     LM.rightWrist,
     LM.rightHip,
   ],
+  /** Pull-ups, the whole body head-on: the front points, then the right leg and the nose (indices 11–13). */
+  full: [
+    LM.leftShoulder,
+    LM.leftElbow,
+    LM.leftWrist,
+    LM.leftHip,
+    LM.leftKnee,
+    LM.leftAnkle,
+    LM.leftEar,
+    LM.rightShoulder,
+    LM.rightElbow,
+    LM.rightWrist,
+    LM.rightHip,
+    LM.rightKnee,
+    LM.rightAnkle,
+    LM.nose,
+  ],
 };
 
 export type Banner = Copy & { tone: 'good' | 'cue' | 'fault'; id: number };
@@ -198,12 +215,22 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
         return;
       }
       const pts: number[] = [];
-      const front = session.cfg.view === 'front' && EXERCISES[session.exercise].frontView;
-      for (const i of CHAIN[front ? 'front' : side]) {
+      const full = session.exercise === 'pullup';
+      const front = full || (session.cfg.view === 'front' && EXERCISES[session.exercise].frontView);
+      for (const i of CHAIN[full ? 'full' : front ? 'front' : side]) {
         if (tracked.vis[i] > 0) pts.push(tracked.points[i].x / tracked.width, tracked.points[i].y / tracked.height);
         else pts.push(NaN, NaN);
       }
-      overlay.set({ frameW: tracked.width, frameH: tracked.height, pts, bodyState: session.bodyState, visible: true, front });
+      overlay.set({
+        frameW: tracked.width,
+        frameH: tracked.height,
+        pts,
+        bodyState: session.bodyState,
+        visible: true,
+        front,
+        full,
+        barY: full ? session.pullupBar : null,
+      });
     },
     [session, overlay],
   );

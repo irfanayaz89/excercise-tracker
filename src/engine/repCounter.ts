@@ -19,7 +19,11 @@ export type RepFault =
   /** Front view: elbows flared out wide at the bottom. */
   | 'elbows-flaring'
   /** Front view: one side lower than the other. */
-  | 'uneven';
+  | 'uneven'
+  /** Pull-ups: the body swung (hips travelling sideways or back and forth) during the pull. */
+  | 'swinging'
+  /** Pull-ups: dropped from the bar instead of lowering under control. */
+  | 'dropping';
 
 /** Small hints: they cost a few points but never make a rep unclean. */
 export const HINT_FAULTS: RepFault[] = ['head-dropping', 'neck-pulling'];
@@ -28,7 +32,14 @@ export const HINT_FAULTS: RepFault[] = ['head-dropping', 'neck-pulling'];
  * Why an attempt was not counted. Push-ups: not-deep-enough, no-lockout.
  * Crunches: not-high-enough, not-back-down. Both: too-slow.
  */
-export type MissReason = 'not-deep-enough' | 'no-lockout' | 'too-slow' | 'not-high-enough' | 'not-back-down';
+export type MissReason =
+  | 'not-deep-enough'
+  | 'no-lockout'
+  | 'too-slow'
+  | 'not-high-enough'
+  | 'not-back-down'
+  /** Pull-ups: the knees were driven up to swing the body over the bar (a kip), not a strict pull. */
+  | 'kipped';
 
 export interface RepRecord {
   index: number;
@@ -49,6 +60,8 @@ export interface RepRecord {
   clean: boolean;
   /** Crunch: highest shoulder lift above rest, in degrees. */
   peakLiftDeg?: number | null;
+  /** Pull-ups: how far the mouth rose above the bar at the top, in shoulder widths (negative: below it). */
+  topClearance?: number | null;
 }
 
 export interface MissRecord {
@@ -59,7 +72,12 @@ export interface MissRecord {
   peakLiftDeg?: number | null;
 }
 
-export type RepEvent = { type: 'rep'; rep: RepRecord } | { type: 'miss'; miss: MissRecord } | { type: 'noise'; t: number };
+export type RepEvent =
+  | { type: 'rep'; rep: RepRecord }
+  | { type: 'miss'; miss: MissRecord }
+  | { type: 'noise'; t: number }
+  /** A fault seen after the rep was already counted (pull-ups: dropping on the way down). */
+  | { type: 'late-fault'; rep: RepRecord; fault: RepFault };
 
 export interface RepCalibration {
   topShoulderHeight: number | null;

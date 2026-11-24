@@ -8,8 +8,12 @@
 /** BlazePose / MediaPipe Pose Landmarker indices (33 points). */
 export const LM = {
   nose: 0,
+  leftEye: 2,
+  rightEye: 5,
   leftEar: 7,
   rightEar: 8,
+  mouthLeft: 9,
+  mouthRight: 10,
   leftShoulder: 11,
   rightShoulder: 12,
   leftElbow: 13,
@@ -156,8 +160,8 @@ export type PhoneOrientation = 'landscape' | 'portrait';
  */
 export type CameraView = 'side' | 'front';
 
-/** What the set is: push-ups and crunches are counted, planks are timed. */
-export type Exercise = 'pushup' | 'crunch' | 'plank' | 'sidePlank';
+/** What the set is: push-ups, crunches and pull-ups are counted, planks are timed. */
+export type Exercise = 'pushup' | 'crunch' | 'plank' | 'sidePlank' | 'pullup';
 
 /** High plank on straight arms, or forearm plank with the forearms on the floor. */
 export type PlankVariant = 'high' | 'forearm';

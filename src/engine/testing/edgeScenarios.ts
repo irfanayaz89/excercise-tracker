@@ -53,6 +53,9 @@ export function setFor(e: Exercise, n: number, extra: Partial<BodyParams> = {}):
       return { segs: [forearmPlank(3000 + n * 1600, extra)], reps: 0, holdMs: n * 1600 };
     case 'sidePlank':
       return { segs: [sidePlank(3000 + n * 1600, extra)], reps: 0, holdMs: n * 1600 };
+    case 'pullup':
+      // Pull-ups hang from a bar, head-on: their poses come from testing/pullupSynth.
+      throw new Error('setFor: pull-ups use pullupSynth, not side-view segments');
   }
 }
 

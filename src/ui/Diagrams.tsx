@@ -16,6 +16,7 @@ export function SetupDiagram({
   orientation?: PhoneOrientation;
   exercise?: Exercise;
 }) {
+  if (exercise === 'pullup') return <PullupSetupDiagram width={width} />;
   const h = width * 0.3;
   const portrait = orientation === 'portrait';
   const distance = portrait ? '2.5–3 m' : '1.5–2 m';
@@ -98,9 +99,40 @@ export function SetupDiagram({
   );
 }
 
+/** Pull-up setup: the phone upright on a stand about waist high, 2–2.5 m from the bar, looking up at it. */
+function PullupSetupDiagram({ width }: { width: number }) {
+  return (
+    <Svg
+      width={width}
+      height={width * 0.3}
+      viewBox="0 40 320 96"
+      accessibilityLabel="Stand the phone upright on a chair or shelf about waist high, 2 to 2.5 metres from the bar, facing it"
+    >
+      <Line x1="6" y1="130" x2="314" y2="130" stroke={color.line} strokeWidth={2} />
+      {/* stand and phone */}
+      <Path d="M24 130 L24 102 M44 130 L44 102 M20 102 L48 102" stroke={color.muted} strokeWidth={2} fill="none" />
+      <Rect x="27" y="76" width="14" height="25" rx="3" fill={color.raised} stroke={color.vial} strokeWidth={2} />
+      <Circle cx="34" cy="82" r="2.5" fill={color.vial} />
+      <Path d="M41 82 L276 44 L276 130 L41 96 Z" fill={color.vial} opacity={0.07} />
+      {/* bar and hanging figure */}
+      <Line x1="236" y1="50" x2="300" y2="50" stroke={color.muted} strokeWidth={3} strokeLinecap="round" />
+      <G stroke={color.chalk} strokeWidth={4.5} strokeLinecap="round" strokeLinejoin="round" fill="none">
+        <Path d="M256 50 L260 72 L276 72 L280 50" />
+        <Path d="M268 72 L268 92 L265 108 M268 92 L271 108" />
+      </G>
+      <Circle cx="268" cy="64" r="6.5" fill={color.chalk} />
+      <Line x1="44" y1="122" x2="230" y2="122" stroke={color.muted} strokeWidth={1.5} strokeDasharray="4 4" />
+      <SvgText x="137" y="117" fontSize={10} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        2–2.5 m · WAIST HIGH
+      </SvgText>
+    </Svg>
+  );
+}
+
 /** Top and bottom of a counted rep, side by side. */
 export function RepDiagram({ width = 320, exercise = 'pushup' }: { width?: number; exercise?: Exercise }) {
   if (exercise === 'crunch') return <CrunchDiagram width={width} />;
+  if (exercise === 'pullup') return <PullupDiagram width={width} />;
   return (
     <Svg
       width={width}
@@ -127,6 +159,38 @@ export function RepDiagram({ width = 320, exercise = 'pushup' }: { width?: numbe
       </SvgText>
       <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
         BOTTOM · ELBOWS ~90°
+      </SvgText>
+    </Svg>
+  );
+}
+
+/** A pull-up: from a dead hang (arms straight) to the chin over the bar. */
+function PullupDiagram({ width }: { width: number }) {
+  return (
+    <Svg
+      width={width}
+      height={(width * 90) / 320}
+      viewBox="0 20 320 90"
+      accessibilityLabel="A pull-up counts from a dead hang with straight arms up to your chin over the bar, then back down to straight arms"
+    >
+      <Line x1="50" y1="34" x2="110" y2="34" stroke={color.muted} strokeWidth={3} strokeLinecap="round" />
+      <Line x1="210" y1="34" x2="270" y2="34" stroke={color.muted} strokeWidth={3} strokeLinecap="round" />
+      <G stroke={color.chalk} strokeWidth={4.5} strokeLinecap="round" strokeLinejoin="round" fill="none">
+        {/* dead hang: arms straight */}
+        <Path d="M68 34 L72 58 L88 58 L92 34" />
+        <Path d="M80 58 L80 75 L77.5 89 M80 75 L82.5 89" />
+        {/* top: elbows bent out and down, chin over the bar */}
+        <Path d="M228 34 L220 52 L232 42 L248 42 L260 52 L252 34" />
+        <Path d="M240 42 L240 62 L237 78 M240 62 L243 78" />
+      </G>
+      <Circle cx="80" cy="50" r="6.5" fill={color.chalk} />
+      <Circle cx="240" cy="29" r="6.5" fill={color.chalk} />
+      <Line x1="226" y1="34" x2="254" y2="34" stroke={color.vial} strokeWidth={1.5} strokeDasharray="3 2" />
+      <SvgText x="80" y="106" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        DEAD HANG · ARMS STRAIGHT
+      </SvgText>
+      <SvgText x="240" y="106" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        TOP · CHIN OVER THE BAR
       </SvgText>
     </Svg>
   );
@@ -247,7 +311,22 @@ export function ExerciseGlyph({ exercise, active = true, size = 44 }: { exercise
   return (
     <Svg width={size} height={(size * 30) / 44} viewBox="0 0 44 30" accessibilityElementsHidden importantForAccessibility="no">
       <Line x1="1" y1="27.5" x2="43" y2="27.5" stroke={color.line} strokeWidth={1.5} />
-      {exercise === 'crunch' ? (
+      {exercise === 'pullup' ? (
+        <>
+          {/* pull-up: hanging from a bar, with an up-down arrow */}
+          <Line x1="8" y1="3" x2="32" y2="3" stroke={accent} strokeWidth={1.8} strokeLinecap="round" />
+          <G stroke={ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M14 3 L16.5 11 L23.5 11 L26 3" />
+            <Path d="M20 11 L20 19 L18 25.5 M20 19 L22 25.5" />
+          </G>
+          <Circle cx="20" cy="7.6" r="2.6" fill={ink} />
+          <G stroke={accent} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" fill="none">
+            <Path d="M37 8 L37 17" />
+            <Path d="M34.5 10.5 L37 8 L39.5 10.5" />
+            <Path d="M34.5 14.5 L37 17 L39.5 14.5" />
+          </G>
+        </>
+      ) : exercise === 'crunch' ? (
         <>
           {/* crunch: on the back, knees up, shoulders curled off the floor, with an up-down arrow */}
           <G stroke={ink} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" fill="none">
