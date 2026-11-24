@@ -4,20 +4,22 @@ import { Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EXERCISES, isExercise, isTimed, viewFor } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
-import { TechniqueAvoid, TechniqueSteps } from '@/features/exercise/TechniqueList';
+import { TECHNIQUE } from '@/features/exercise/technique';
+import { TechniqueSteps } from '@/features/exercise/TechniqueList';
 import { PLACEMENT, rotationCopy } from '@/session/copy';
 import { useSettings, type Settings } from '@/storage/settings';
 import { HoldDiagram, RepDiagram } from '@/ui/Diagrams';
 import { ExerciseAnimation } from '@/ui/ExerciseAnimation';
-import { OrientationHint, OrientationPicker } from '@/ui/OrientationPicker';
+import { OrientationPicker } from '@/ui/OrientationPicker';
 import { Body, Button, Display, Label, Strong } from '@/ui/primitives';
 import { color, radius, space } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
 /**
- * The step-by-step guide shown before a set: where the phone goes, how to get
- * in view, how to do the exercise, what to avoid, and what counts. One step
- * per page so a first-timer reads each part.
+ * The short guide shown before a set, two pages: where the phone goes (with
+ * the animation), then how to do the exercise, the top mistakes and what counts.
+ * The full technique (breathing, how much to start with, safety) stays on each
+ * exercise's own screen.
  *
  * `?ex=<exercise>&view=1` opens it to read only (from an exercise's screen):
  * the last page closes instead of starting a set.
@@ -94,62 +96,22 @@ interface Page {
   body: React.ReactNode;
 }
 
-/** The guide's pages for one exercise, worded for its level and settings. */
+/** The guide's two pages for one exercise: where the phone goes, then how to do it and what counts. */
 function guidePages(exercise: Exercise, s: Settings, art: number, update: (p: Partial<Settings>) => void): Page[] {
-  const place = PLACEMENT[s.orientation];
   const timed = isTimed(exercise);
   const camView = viewFor(exercise, s.views);
-  const front = camView === 'front';
-  const easy = s.difficulty === 'easy';
-  const spot =
-    exercise === 'sidePlank'
-      ? 'your mat; you will lie on your side facing it'
-      : exercise === 'crunch'
-        ? 'where you will lie down'
-        : timed
-          ? 'where you will hold your plank'
-          : 'your push-up spot';
+  const pull = exercise === 'pullup';
+  const t = TECHNIQUE[exercise];
 
-  const phone: Page = {
-    title: 'Place the phone',
+  const setup: Page = {
+    title: 'Set up',
     body: (
       <>
-        <OrientationPicker value={s.orientation} onChange={(orientation) => update({ orientation })} />
-        <OrientationHint value={s.orientation} />
-        <ExerciseAnimation exercise={exercise} orientation={s.orientation} width={art} view={camView} />
-        <Body tone="muted">
-          {front
-            ? 'Stand the phone upright on the floor 1.2–2 m beyond where your hands will be, facing you. Portrait fits best. A level, still phone is checked for you.'
-            : `${place.how} Put it about ${place.distance} to the side of ${spot}, level with your hips, camera facing straight at you. A level, still phone is checked for you.`}
-        </Body>
-        {front && (
-          <Body tone="faint" size={13}>
-            {exercise === 'plank'
-              ? 'Front view times the hold and checks your arms. Your hip line is only judged from the side.'
-              : 'Front view counts reps and checks what can be seen head-on (depth, arms, elbows flaring, one side dropping). Your hip line is only judged from the side.'}
-          </Body>
-        )}
-        {s.orientation === 'landscape' && <RotationNote />}
+        {!pull && <OrientationPicker value={s.orientation} onChange={(orientation) => update({ orientation })} />}
+        <ExerciseAnimation exercise={exercise} orientation={pull ? 'portrait' : s.orientation} width={art} view={camView} />
+        <Body tone="muted">{placementText(exercise, s)}</Body>
+        {!pull && s.orientation === 'landscape' && <RotationNote />}
       </>
-    ),
-  };
-
-  const view: Page = {
-    title: 'Get in view',
-    body: (
-      <Body tone="muted">
-        {front
-          ? 'Head towards the phone, so your face, shoulders and both hands are in the picture. Your feet do not need to be.'
-          : exercise === 'sidePlank'
-            ? 'Face the phone, lying on your side, with your head at one end of the screen and your feet at the other.'
-            : exercise === 'crunch'
-              ? 'Lie on your back with your side to the phone, head at one end of the screen and feet at the other.'
-              : 'Side-on to the phone, not facing it, with your head at one end of the screen and your feet at the other.'}{' '}
-        {easy
-          ? 'Shoulders and hips on screen is enough; feet help but are not required.'
-          : 'Keep everything from head to feet inside the screen.'}{' '}
-        A slight angle is fine. Pick a bright spot and fitted clothes that stand out from the floor.
-      </Body>
     ),
   };
 
@@ -158,29 +120,46 @@ function guidePages(exercise: Exercise, s: Settings, art: number, update: (p: Pa
     body: (
       <>
         {timed ? <HoldDiagram width={art} exercise={exercise} /> : <RepDiagram width={art} exercise={exercise} />}
-        <TechniqueSteps exercise={exercise} />
-      </>
-    ),
-  };
-
-  const avoid: Page = { title: 'Avoid these', body: <TechniqueAvoid exercise={exercise} /> };
-
-  const counts: Page = {
-    title: timed ? 'How the clock works' : 'What counts',
-    body: (
-      <>
-        <Body>{countsText(exercise, s)}</Body>
+        <TechniqueSteps exercise={exercise} compact />
+        <View style={{ gap: space.xs }} accessibilityRole="list">
+          {t.avoid.slice(0, 3).map((a) => (
+            <View key={a} style={styles.row}>
+              <Strong tone="cue" style={{ width: 18 }}>
+                ✕
+              </Strong>
+              <Body style={{ flex: 1 }} size={14}>
+                {a}
+              </Body>
+            </View>
+          ))}
+        </View>
         <View style={styles.note}>
-          <Strong>During the set</Strong>
+          <Strong>{timed ? 'How the clock works' : 'What counts'}</Strong>
           <Body tone="muted" size={15}>
-            {duringText(exercise)}
+            {countsText(exercise, s)}
           </Body>
         </View>
       </>
     ),
   };
 
-  return [phone, view, how, avoid, counts];
+  return [setup, how];
+}
+
+/** Where the phone goes and what must be in view, in two short sentences. */
+function placementText(exercise: Exercise, s: Settings): string {
+  const place = PLACEMENT[s.orientation];
+  const easy = s.difficulty === 'easy';
+  if (exercise === 'pullup') {
+    return 'Portrait, 2–2.5 m from the bar, about waist high (or on the floor, leaning back). Keep the bar, your hands, face and hips in view.';
+  }
+  if (viewFor(exercise, s.views) === 'front') {
+    return 'Upright on the floor 1.2–2 m beyond your hands, facing you. Keep your face, shoulders and both hands in view.';
+  }
+  const where = exercise === 'sidePlank' ? 'facing you' : 'side-on to you';
+  return `${place.how} About ${place.distance} away, ${where}, level with your hips. ${
+    easy ? 'Shoulders and hips in view is enough.' : 'Keep head to feet in view.'
+  }`;
 }
 
 /** Landscape: Rotation Lock must be off, or the picture can reach the tracker upside down. */
@@ -194,44 +173,38 @@ function RotationNote() {
   );
 }
 
+/** What counts (or how the clock runs), in a couple of short sentences. */
 function countsText(exercise: Exercise, s: Settings): string {
   const easy = s.difficulty === 'easy';
-  const test = s.plankTestMode && isTimed(exercise) ? ' Test mode is on: the hold ends at the first real form break.' : '';
+  const test = s.plankTestMode && isTimed(exercise) ? ' Test mode: the hold ends at the first real form break.' : '';
+  const rest = ' Rest any time; your count is kept.';
   switch (exercise) {
     case 'pushup':
-      return easy
-        ? 'Get into push-up position (knees are fine) and counting starts by itself. Bend your arms well, then push back up. Easy mode only counts; it does not judge your form.'
-        : 'Hold a straight-arm plank for a second and counting starts by itself. Go down until your elbows reach about 90°, then push all the way up. Half reps are not counted. Reps with sagging or high hips count, but are flagged so you can improve.';
-    case 'crunch':
-      return easy
-        ? 'Lie on your back with your knees bent and keep still for a second: counting starts by itself. Curl up a little, then lower back down. Easy mode only counts; it does not judge your form.'
-        : 'Lie still on your back for a second and counting starts by itself. Curl up until your shoulder blades leave the floor, then lower back down: that is one rep. Half crunches are not counted. Sitting all the way up, lifting your feet or rushing still count, but are flagged so you can improve.';
-    case 'plank':
       return (
         (easy
-          ? 'Get into a plank on straight arms or forearms (knees are fine) and the clock starts by itself. Only a big sag or piked hips stop it.'
-          : 'Hold a plank on straight arms, or on your forearms with elbows under your shoulders, and the clock starts by itself. It runs while your body stays in one straight line, and pauses if your hips sag or rise until you fix them.') +
-        test
+          ? 'Get into position and counting starts. Easy mode just counts.'
+          : 'Hold a plank to start. Down to about 90°, then all the way up. Half reps don’t count; form slips are flagged.') + rest
       );
+    case 'pullup':
+      return (
+        (easy
+          ? 'Hang still to start. Chin over the bar counts. Easy mode just counts.'
+          : 'Hang still to start. Chin over the bar, then back to straight arms. Kips and half reps don’t count; swinging or dropping is flagged.') + rest
+      );
+    case 'crunch':
+      return (
+        (easy
+          ? 'Lie still to start. Curl up a little, then lower. Easy mode just counts.'
+          : 'Lie still to start. Curl until your shoulder blades leave the floor, then lower. Half crunches don’t count.') + rest
+      );
+    case 'plank':
+      return 'Get into your plank and the clock starts. It runs while your body stays in one straight line.' + test;
     case 'sidePlank':
       return (
-        `Lie on one side facing the phone and lift your hips: the clock starts by itself. It runs while your body stays in one line, and pauses if your hips drop or you roll forward or back. Each side is timed on its own${
-          s.targetHoldSec > 0 ? `: when one side reaches ${s.targetHoldSec} seconds you will hear "switch sides"` : ''
+        `Lift your hips facing the phone and the clock starts. Each side is timed on its own${
+          s.targetHoldSec > 0 ? `; at ${s.targetHoldSec} s you’ll hear “switch sides”` : ''
         }.` + test
       );
-  }
-}
-
-function duringText(exercise: Exercise): string {
-  switch (exercise) {
-    case 'pushup':
-      return 'The voice coach counts out loud and tells you what to fix. To rest, stand up or sit back; your count is kept. Tap Finish set when you are done.';
-    case 'crunch':
-      return 'The voice coach counts out loud and tells you what to fix. To rest, sit up or stretch your legs out; your count is kept. Tap Finish set when you are done.';
-    case 'plank':
-      return 'The voice coach calls your time every 15 seconds and warns you when your hips drift, before the clock stops. To rest, drop to the floor; your time is kept. Tap Finish when you are done.';
-    case 'sidePlank':
-      return 'The voice coach calls your time and warns you when your hips drop, before the clock stops. To switch sides, get up and turn around so you face the phone with your other side down. Tap Finish when both sides are done.';
   }
 }
 
@@ -271,6 +244,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   nav: { flexDirection: 'row', gap: space.md },
+  row: { flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' },
   warn: {
     gap: space.xs,
     padding: space.lg,
