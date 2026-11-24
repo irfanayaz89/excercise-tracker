@@ -11,10 +11,11 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AnimatedSplash } from '@/features/splash/AnimatedSplash';
 import { useScreenTimeSync } from '@/screentime/useScreenTimeSync';
 import { color } from '@/ui/theme';
 
@@ -37,6 +38,9 @@ export default function RootLayout() {
   });
 
   useScreenTimeSync();
+  // The opening animation plays once per launch, over the first screen, after the phone's own splash.
+  const [intro, setIntro] = useState(true);
+  const endIntro = useCallback(() => setIntro(false), []);
 
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(color.ground).catch(() => {});
@@ -75,6 +79,7 @@ export default function RootLayout() {
           <Stack.Screen name="screen-time/apps" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="earn" options={{ animation: 'slide_from_bottom' }} />
         </Stack>
+        {intro && <AnimatedSplash onDone={endIntro} />}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
