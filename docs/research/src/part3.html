@@ -49,7 +49,32 @@
     </tbody>
   </table>
 
-  <h3 id="s4-6">5.6 Persistence and reliability</h3>
+  <h3 id="s4-6">5.6 App limits, step by step</h3>
+  <p>An iPhone app limit ("Instagram, 30 minutes a day") is two pieces: a <b>usage event</b> that wakes the monitor extension when the minutes are used, and a <b>named store of its own</b> that shields only that limit's apps. iOS does the counting; the app never reads the minutes directly <sup class="ref">[17][152]</sup>.</p>
+  <table>
+    <thead><tr><th style="width:18%">Step</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td class="k">1 · Set the limit</td><td>The app registers a <code>DeviceActivityEvent</code> for the picked apps, categories and sites, with a threshold of the minutes left today, inside a schedule that ends at midnight <sup class="ref">[16][17]</sup>. What counts is the time those items are on screen, added together <sup class="ref">[152]</sup>. With <code>includesPastActivity: false</code> only use after registering counts, so the app passes the minutes still left; <code>true</code> reaches back to the nearest whole hour <sup class="ref">[153]</sup>.</td></tr>
+      <tr><td class="k">2 · Progress</td><td>Optional extra events (for example every 15 minutes) wake the extension so the app can show "15 of 30 min". The steps are the app's choice, not an iOS limit.</td></tr>
+      <tr><td class="k">3 · Warning</td><td>A schedule <code>warningTime</code> of 5 minutes calls <code>eventWillReachThresholdWarning</code> at 25 of 30 minutes, for a "5 minutes left" notice <sup class="ref">[154][155]</sup>. It isn't sent when a threshold fires early <sup class="ref">[90]</sup> <span class="tag part">Community</span>.</td></tr>
+      <tr><td class="k">4 · Limit reached</td><td><code>eventDidReachThreshold</code> wakes the extension <sup class="ref">[18]</sup>. It checks the event is believable, then puts the tokens in the limit's store. The shield covers the app at once, even while it's open; other apps stay usable. Up to 50 stores, the most restrictive wins <sup class="ref">[21]</sup>.</td></tr>
+      <tr><td class="k">5 · Block screen</td><td>"Instagram is done for today", with the strictness level's way out (M8): "1 more minute" in Nudge, the emergency unlock in Standard, Close only in Strict. Earned time doesn't open a limited app.</td></tr>
+      <tr><td class="k">6 · Midnight</td><td>The day schedule's start wakes the extension, which empties the store and registers a fresh event. An event fires once per schedule interval, so a never-ending schedule doesn't reset each day <sup class="ref">[156]</sup> <span class="tag part">Community</span>.</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th style="width:18%">Topic</th><th>What to know</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Opens</td><td>Not possible: iOS reports minutes, never app launches <sup class="ref">[17]</sup>. "3 opens a day" is Android only (M11).</td></tr>
+      <tr><td class="k">How many</td><td>Limits add events, not schedules, so the 20-schedule budget is untouched <sup class="ref">[16]</sup>. Each store takes up to 50 app tokens; one report says 50 across all stores <sup class="ref">[10][27]</sup>. Apple documents no cap on events per schedule.</td></tr>
+      <tr><td class="k">Accuracy</td><td>The threshold is set in minutes, but iOS can be wrong in both directions. <b>Early:</b> on iOS 26.0–26.6 and 27, events can fire seconds after registering; it looked fixed in the 26.5 betas but returned in the public release, and was still reported in August 2026 <sup class="ref">[25]</sup> <span class="tag part">Community</span>. <b>Overcounting:</b> since iOS 17.6.1, limits can fill faster than real use; limits on categories count Safari and the site being visited twice. Apple called it a bug with no workaround <sup class="ref">[90][91]</sup> <span class="tag info">Apple staff</span>.</td></tr>
+      <tr><td class="k">Defence</td><td>Treat a threshold as a wake-up, not proof: reject one that claims more minutes than have passed since registering, re-register the rest under a new generation name so stale events are ignored, and cap the retries <sup class="ref">[157]</sup> <span class="tag part">Community</span>. This catches early events but not overcounting (the extension can't measure another app's use), so a limit can still close a few minutes early or late. Present limits as approximate.</td></tr>
+      <tr><td class="k">Changes</td><td>Lowering a limit applies at once: re-register with the new minutes left. Raising it is making things easier and follows the strictness rules (M8).</td></tr>
+      <tr><td class="k">Ways around</td><td>The same as any iOS block: revoking access or deleting the app (5.2, section 8).</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="s4-7">5.7 Persistence and reliability</h3>
   <table>
     <thead><tr><th style="width:18%">Event</th><th>What happens</th><th style="width:16%">Status</th></tr></thead>
     <tbody>
@@ -62,7 +87,7 @@
     </tbody>
   </table>
 
-  <h3 id="s4-7">5.7 Recent changes, and what iOS can't do</h3>
+  <h3 id="s4-8">5.8 Recent changes, and what iOS can't do</h3>
   <p><b>2025 to November 2026:</b> 26.4 added the shield submenu and EU usage data <sup class="ref">[5][13]</sup>; 26.5 added opening the app from the shield, token expiry and store management <sup class="ref">[14][15]</sup>; the March 2026 agreement added the primary-purpose rule (11.1) <sup class="ref">[23][24]</sup>. iOS 27 adds no developer APIs, only Apple's own parental "Time Allowances" <sup class="ref">[33]</sup>, and App Review has no Screen Time-specific changes; 4.10 still applies <sup class="ref">[22]</sup>.</p>
   <p><b>Not possible:</b> turning on Do Not Disturb or Focus (no API <sup class="ref">[86]</sup>; Focus filters only react when the user turns a Focus on <sup class="ref">[32][122]</sup>, and the app can only read whether one is on <sup class="ref">[87]</sup>). MDM for consumers: it is for enterprise, education and government, and in limited cases parental-control or device-security companies with Apple's approval <sup class="ref">[22]</sup>; consumer supervision isn't practical <sup class="ref">[31]</sup>.</p>
 </section>
