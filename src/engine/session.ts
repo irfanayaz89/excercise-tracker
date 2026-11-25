@@ -162,6 +162,8 @@ export interface SessionSummary {
   holdSides?: Partial<Record<Side, HoldSummary>>;
   /** Times the set paused because it looked like a video on a screen. */
   realityFlags?: number;
+  /** Set when the user fixed the count afterwards: what the camera counted (total and clean). */
+  counted?: { total: number; clean: number };
 }
 
 export interface SessionOptions {
@@ -443,6 +445,8 @@ export class PushupSession {
   interrupt(t: number): void {
     this.advanceClock(t);
     if (this.phase === 'counting') this.pause('interrupted');
+    // Already paused (e.g. stood up) and then away from the app: time away must not end the set.
+    else if (this.phase === 'paused') this.pauseReason = 'interrupted';
     // Any plank hold in progress is void: we were not watching.
     this.plankHold.reset();
     this.plankProgress = 0;

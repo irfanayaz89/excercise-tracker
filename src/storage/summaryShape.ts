@@ -106,6 +106,10 @@ export function normalizeSummary(
     holdSides: exercise === 'sidePlank' ? normalizeSides(o.holdSides) : undefined,
     difficulty: typeof o.difficulty === 'string' ? o.difficulty : undefined,
     view: o.view === 'front' || o.view === 'side' ? o.view : undefined,
+    counted:
+      o.counted && typeof o.counted === 'object' && Number.isFinite((o.counted as { total?: unknown }).total) && Number.isFinite((o.counted as { clean?: unknown }).clean)
+        ? { total: (o.counted as { total: number }).total, clean: (o.counted as { clean: number }).clean }
+        : undefined,
     startedAt: num(o.startedAt, row.startedAt),
     endedAt: num(o.endedAt, row.endedAt),
     activeMs: num(o.activeMs, row.activeMs),

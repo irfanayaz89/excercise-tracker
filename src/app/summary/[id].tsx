@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HINT_FAULTS, type MissReason, type RepFault, type RepRecord } from '@/engine/repCounter';
 import type { Exercise } from '@/engine/types';
@@ -8,7 +9,7 @@ import type { SessionSummary } from '@/engine/session';
 import type { HoldFault, HoldSummary } from '@/engine/holdTimer';
 import { DIFFICULTY_COPY, FAULT_COPY, HOLD_COPY, faultCopy, formatDuration, missCopy } from '@/session/copy';
 import { getLastSummary } from '@/session/lastSummary';
-import { bestBefore, correctReps, getSession } from '@/storage/history';
+import { bestBefore, correctReps, deleteSession, getSession } from '@/storage/history';
 import { SetCalories } from '@/features/energy/Calories';
 import { useSettings } from '@/storage/settings';
 import { Body, Button, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
@@ -60,13 +61,15 @@ export { ErrorScreen as ErrorBoundary } from '@/ui/ErrorScreen';
 export default function SummaryScreen() {
   const insets = useSafeAreaInsets();
   const guard = useTapGuard();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const [settings] = useSettings();
+  const { id, fresh: freshParam } = useLocalSearchParams<{ id: string; fresh?: string }>();
+  const [settings, updateSettings] = useSettings();
   const guided = settings.experience !== 'quick';
 
   const data = useMemo(() => {
     const last = getLastSummary();
-    if (id === 'last' || (last && last.savedId === id)) {
+    // The in-memory copy is only for the set that just ended (opened from the session);
+    // opened later from history, read what's saved (it may have been fixed since).
+    if (id === 'last' || (last && last.savedId === id && freshParam === '1')) {
       return last
         ? {
             summary: last.summary,
@@ -84,7 +87,7 @@ export default function SummaryScreen() {
     return stored
       ? { summary: stored.summary, wallStart: stored.row.startedAt, saved: true, demo: false, earned: null, focus: null, savedId: id, fresh: false }
       : null;
-  }, [id]);
+  }, [id, freshParam]);
   // A count fixed by hand on this screen (history and calories follow it).
   const [fixed, setFixed] = useState<number | null>(null);
 
@@ -99,6 +102,13 @@ export default function SummaryScreen() {
   }
 
   const { wallStart, saved, demo, earned, focus, savedId, fresh } = data;
+  /** Another set of this exercise (not whatever was picked last), and a demo stays a demo. */
+  const another = () => {
+    const exercise = data.summary.exercise ?? 'pushup';
+    updateSettings({ exercise });
+    router.replace(demo ? { pathname: '/session', params: { demo: '1', ex: exercise } } : '/session');
+  };
+  const counted = fixed !== null || data.summary.counted !== undefined;
   const s = fixed === null ? data.summary : { ...data.summary, totalReps: fixed, cleanReps: Math.min(data.summary.cleanReps, fixed) };
   const faults = (Object.entries(s.faultCounts) as [RepFault, number][]).sort((a, b) => b[1] - a[1]);
   const misses = (Object.entries(s.missCounts) as [MissReason, number][]).sort((a, b) => b[1] - a[1]);
@@ -138,9 +148,10 @@ export default function SummaryScreen() {
           <Button
             label={`Another ${EXERCISES[s.exercise ?? 'plank'].label.toLowerCase()}`}
             size="lg"
-            onPress={guard(() => router.replace('/session'))}
+            onPress={guard(another)}
           />
           <Button label="Done" variant="ghost" onPress={() => router.dismissTo('/')} />
+          {saved && savedId && !demo && <DeleteSet id={savedId} />}
         </View>
       </ScrollView>
     );
@@ -180,7 +191,12 @@ export default function SummaryScreen() {
               {EXERCISES[ex].unit}
             </Body>
           </View>
-          <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />
+          {!counted && <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />}
+          {counted && (
+            <Mono tone="muted">
+              {`Count fixed by hand${data.summary.counted ? ` (the camera counted ${data.summary.counted.total})` : ''}.`}
+            </Mono>
+          )}
           <SetCalories exercise={ex} activeMs={s.activeMs} holdMs={0} reps={s.totalReps} avgRepMs={s.avgRepMs} />
         </View>
       )}
@@ -189,7 +205,9 @@ export default function SummaryScreen() {
         <FixCount
           total={s.totalReps}
           onFix={(n) => {
-            if (correctReps(savedId, n)) setFixed(n);
+            const res = correctReps(savedId, n);
+            if (res === 'deleted') router.dismissTo('/');
+            else if (res === 'saved') setFixed(n);
           }}
         />
       )}
@@ -204,11 +222,11 @@ export default function SummaryScreen() {
       <View style={styles.stats}>
         <Stat label="Clean" value={String(s.cleanReps)} tone="good" />
         <Stat label="Flagged" value={String(flagged)} tone={flagged ? 'cue' : 'chalk'} />
-        <Stat label="Best streak" value={String(s.bestCleanStreak)} />
+        {!counted && <Stat label="Best streak" value={String(s.bestCleanStreak)} />}
         <Stat label="Avg rep" value={s.avgRepMs ? `${(s.avgRepMs / 1000).toFixed(1)}s` : '—'} />
       </View>
 
-      {s.reps.length > 1 && <TempoChart reps={s.reps} />}
+      {!counted && s.reps.length > 1 && <TempoChart reps={s.reps} />}
 
       {guided && s.totalReps > 0 && level === 'easy' && (
         <View style={styles.tip}>
@@ -276,8 +294,9 @@ export default function SummaryScreen() {
 
       <View style={{ gap: space.md }}>
         {fresh && <RestTimer />}
-        <Button label="Another set" size="lg" onPress={guard(() => router.replace('/session'))} />
+        <Button label="Another set" size="lg" onPress={guard(another)} />
         <Button label="Done" variant="ghost" onPress={() => router.dismissTo('/')} />
+        {saved && savedId && !demo && <DeleteSet id={savedId} />}
       </View>
     </ScrollView>
   );
@@ -505,18 +524,53 @@ function FixCount({ total, onFix }: { total: number; onFix: (n: number) => void 
   );
 }
 
-/** A rest countdown after a fresh set: 60–90 s is plenty; going sooner is fine. */
+/**
+ * A rest countdown after a fresh set: 60–90 s is plenty; going sooner is fine.
+ * Counted from a deadline, so a phone that locks during the rest still shows
+ * the right time when it wakes.
+ */
 function RestTimer({ seconds = 75 }: { seconds?: number }) {
-  const [left, setLeft] = useState(seconds);
+  const [deadline] = useState(() => Date.now() + seconds * 1000);
+  const [now, setNow] = useState(() => Date.now());
+  const left = Math.max(0, Math.ceil((deadline - now) / 1000));
   useEffect(() => {
-    if (left <= 0) return;
-    const t = setTimeout(() => setLeft((v) => v - 1), 1000);
+    if (left <= 0) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      return;
+    }
+    const t = setTimeout(() => setNow(Date.now()), 1000);
     return () => clearTimeout(t);
-  }, [left]);
+  }, [left, now]);
   return (
     <Mono tone={left > 0 ? 'muted' : 'good'} accessibilityLiveRegion={left === 0 ? 'polite' : 'none'}>
       {left > 0 ? `Rest ${formatDuration(left * 1000)} before the next set, or go when ready` : 'Rested. Ready for the next set.'}
     </Mono>
+  );
+}
+
+/** Delete a saved set from history (asks first: it can't be undone). */
+function DeleteSet({ id }: { id: string }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      hitSlop={12}
+      style={{ alignSelf: 'center', minHeight: 44, justifyContent: 'center' }}
+      onPress={() =>
+        Alert.alert('Delete this set?', 'It comes off your history, totals and best sets. Screen time it earned stays. This can’t be undone.', [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => {
+              deleteSession(id);
+              router.dismissTo('/');
+            },
+          },
+        ])
+      }
+    >
+      <Label tone="fault">Delete this set</Label>
+    </Pressable>
   );
 }
 

@@ -211,32 +211,42 @@ export function getSession(id: string): { row: SessionRow; summary: SessionSumma
 /**
  * "Fix my count": the user corrects a set's rep total after the camera missed
  * or added some. History and calories follow the fix; screen time already
- * earned does not (so a fix can never be a way to earn more). Returns false if
- * nothing was saved.
+ * earned does not (so a fix can never be a way to earn more). Clean reps are
+ * never more than the camera counted clean. Fixing to 0 deletes the set (an
+ * empty set is never kept). Returns 'deleted', 'saved', or null if nothing
+ * changed.
  */
-export function correctReps(id: string, totalReps: number): boolean {
+export function correctReps(id: string, totalReps: number): 'saved' | 'deleted' | null {
   const d = getDb();
-  if (!d) return false;
+  if (!d) return null;
   const total = Math.max(0, Math.min(500, Math.round(totalReps)));
   try {
     const r = d.getFirstSync<{ summary: string; clean_reps: number; total_reps: number }>(
       'SELECT summary, clean_reps, total_reps FROM sessions WHERE id = ?',
       id,
     );
-    if (!r) return false;
+    if (!r) return null;
+    if (total === 0) {
+      d.runSync('DELETE FROM sessions WHERE id = ?', id);
+      return 'deleted';
+    }
     let summary: Record<string, unknown> = {};
     try {
       summary = JSON.parse(r.summary) as Record<string, unknown>;
     } catch {
       // Keep going with the columns alone.
     }
-    const clean = Math.min(r.clean_reps, total);
-    const countedReps = typeof summary.countedReps === 'number' ? summary.countedReps : r.total_reps;
-    const next = { ...summary, totalReps: total, cleanReps: clean, countedReps };
+    const prev = summary.counted as { total?: unknown; clean?: unknown } | undefined;
+    const counted =
+      prev && typeof prev.total === 'number' && typeof prev.clean === 'number'
+        ? { total: prev.total, clean: prev.clean }
+        : { total: r.total_reps, clean: r.clean_reps };
+    const clean = Math.min(counted.clean, total);
+    const next = { ...summary, totalReps: total, cleanReps: clean, counted };
     d.runSync('UPDATE sessions SET total_reps = ?, clean_reps = ?, summary = ? WHERE id = ?', total, clean, JSON.stringify(next), id);
-    return true;
+    return 'saved';
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -246,10 +256,25 @@ export function bestBefore(exercise: Exercise, id: string): number | null {
   if (!d) return null;
   try {
     const col = isTimed(exercise) ? 'hold_ms' : 'total_reps';
-    const r = d.getFirstSync<{ best: number | null }>(`SELECT MAX(${col}) AS best FROM sessions WHERE exercise = ? AND id != ?`, exercise, id);
+    const r = d.getFirstSync<{ best: number | null }>(
+      `SELECT MAX(${col}) AS best FROM sessions WHERE exercise = ? AND id != ? AND started_at <= (SELECT started_at FROM sessions WHERE id = ?)`,
+      exercise,
+      id,
+      id,
+    );
     return r?.best ?? null;
   } catch {
     return null;
+  }
+}
+
+/** Delete every saved set (Settings › Delete my workout data). */
+export function deleteAllSessions(): boolean {
+  try {
+    getDb()?.runSync('DELETE FROM sessions');
+    return true;
+  } catch {
+    return false;
   }
 }
 

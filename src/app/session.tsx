@@ -217,16 +217,19 @@ function LiveSession({
       let focus: { heldMin: number; continuesUntil: number | null } | null = null;
       try {
         if (!demo && getScreenTime().focus) {
-          const res = endFocusNow('completed');
+          // A set with nothing in it didn't complete the workout a focus was waiting for.
+          const empty = summary.totalReps === 0 && (summary.hold?.goodMs ?? 0) < 1000;
+          const res = endFocusNow(empty ? 'abandoned' : 'completed');
           focus = res.ended ? { heldMin: focusMinutes(res.record), continuesUntil: null } : res.focus ? { heldMin: 0, continuesUntil: res.focus.until } : null;
         }
       } catch {
         // Never let screen time get in the way of the summary.
       }
       setLastSummary({ summary, wallStart, savedId: id, demo, earned, focus });
-      void c.saveTuningRecording(modelRef.current);
+      // Tuning recordings are of real people only.
+      if (!demo) void c.saveTuningRecording(modelRef.current);
       allowLeaveRef.current?.();
-      router.replace({ pathname: '/summary/[id]', params: { id: id ?? 'last' } });
+      router.replace({ pathname: '/summary/[id]', params: { id: id ?? 'last', fresh: '1' } });
     },
     [demo],
   );
@@ -486,6 +489,7 @@ function Hud({
     return () => clearTimeout(t);
   }, [confirmEnd]);
 
+  const confirmAtRef = useRef(0);
   const requestEnd = () => {
     // Nothing to save yet: leave straight away (same as the back button). Otherwise ask for a second tap.
     if (!worked) {
@@ -494,8 +498,11 @@ function Hud({
     }
     if (!confirmEnd) {
       setConfirmEnd(true);
+      confirmAtRef.current = Date.now();
       return;
     }
+    // A fast double tap is one tap: the second tap must be a deliberate one.
+    if (Date.now() - confirmAtRef.current < 400) return;
     ctrl.end();
   };
   useLayoutEffect(() => {

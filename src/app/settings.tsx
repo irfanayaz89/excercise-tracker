@@ -1,11 +1,13 @@
 import { router, useFocusEffect } from 'expo-router';
 import type { File } from 'expo-file-system';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { deleteRecording, listRecordings, shareRecording } from '@/session/recordings';
 import type { Difficulty } from '@/engine/difficulty';
 import type { PhoneOrientation } from '@/engine/types';
+import { deleteAllSessions } from '@/storage/history';
+import { useProfile } from '@/storage/profile';
 import { useSettings, type Experience, type Settings } from '@/storage/settings';
 import { Body, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
 import { ChoiceRow, LinkRow, Section, ToggleRow } from '@/ui/rows';
@@ -15,6 +17,7 @@ import { color, radius, space } from '@/ui/theme';
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [s, update] = useSettings();
+  const [, setProfile] = useProfile();
   const screenTime = useScreenTime();
   const [recs, setRecs] = useState<File[]>([]);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -224,7 +227,39 @@ export default function SettingsScreen() {
         )}
       </Section>
 
-      <Body tone="faint" size={13}>
+      <Section title="Your data">
+        <Body tone="muted" size={14}>
+          Sets, your goal, weigh-ins and health answers are stored only on this phone. Screen time rules are kept separately, under Screen
+          time.
+        </Body>
+        <Pressable
+          accessibilityRole="button"
+          style={{ minHeight: 44, justifyContent: 'center' }}
+          onPress={() =>
+            Alert.alert(
+              'Delete your workout data?',
+              'This deletes every saved set, your goal, your weigh-ins and your health answers from this phone. It can’t be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: () => {
+                    deleteAllSessions();
+                    setProfile(null);
+                    update({ safety: [], focus: [] });
+                    router.dismissTo('/');
+                  },
+                },
+              ],
+            )
+          }
+        >
+          <Strong tone="fault">Delete my workout data</Strong>
+        </Pressable>
+      </Section>
+
+      <Body tone="muted" size={13}>
         Video is processed on this phone and never stored or uploaded.
       </Body>
     </ScrollView>
