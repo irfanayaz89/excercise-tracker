@@ -52,6 +52,17 @@ interface ScreenTimeNative {
   usageSummary?(): Promise<UsageSummary>;
   /** iOS: refresh the home screen widget after the app changed what's blocked. */
   reloadWidget?(): void;
+  /**
+   * A clock the user can't change, for spotting a moved phone clock: milliseconds since boot
+   * (keeps counting while the phone sleeps) and an id that changes on every reboot.
+   * Android: SystemClock.elapsedRealtime + Settings.Global.BOOT_COUNT. iOS: CLOCK_MONOTONIC + kern.bootsessionuuid.
+   */
+  clock?(): NativeClock;
+}
+
+export interface NativeClock {
+  uptimeMs: number;
+  boot: string;
 }
 
 export interface UsageSummary {

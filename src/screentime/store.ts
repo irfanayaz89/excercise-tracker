@@ -5,6 +5,7 @@ import { ScreenTime } from '../../modules/screen-time/src';
 import { decide, rollDay, takeUnlock as takeUnlockRule } from './decide';
 import { earnFromSet, type EarnResult } from './earn';
 import { endFocus, KEY_LOCK_MAX_MIN, logFocus, settleFocus, startFocus, startKeyLock, type EndReason, type EndResult, type FocusChoice } from './focus';
+import { parseAnchor, trustedTime, type ClockAnchor } from './clock';
 import { mergeGaps, mergeReport, parseReport, toNativePlan } from './plan';
 import { applyPending, clearOldSkips, normalizeRules, DEFAULT_RULES } from './rules';
 import { deviceZone } from './time';
@@ -21,6 +22,8 @@ import type { DayLog, Decision, Focus, FocusRecord, ScreenTimeRules, Unlock } fr
  */
 
 const RULES_KEY = 'screentime.rules.v1';
+/** A second copy: a damaged rules file must not quietly turn protection off. */
+const RULES_BACKUP_KEY = 'screentime.rules.backup.v1';
 const DAYS_KEY = 'screentime.days.v1';
 const META_KEY = 'screentime.meta.v1';
 const FOCUS_KEY = 'screentime.focus.v1';
@@ -50,6 +53,10 @@ export interface Meta {
   focusBlockAll: boolean;
   /** The QR key that ends a key lock (its secret is what the code holds). */
   key: { secret: string; createdAt: number } | null;
+  /** The last time the wall clock and the phone's boot clock agreed (see clock.ts). */
+  clock: ClockAnchor | null;
+  /** "Turn off" was asked for and is waiting (Standard: midnight; Strict: 24 h). */
+  turnOffPending: boolean;
 }
 
 const DEFAULT_META: Meta = {
@@ -61,6 +68,8 @@ const DEFAULT_META: Meta = {
   focusChoice: null,
   focusBlockAll: false,
   key: null,
+  clock: null,
+  turnOffPending: false,
 };
 
 function read<T>(key: string, parse: (raw: unknown) => T, fallback: T): T {
@@ -72,13 +81,66 @@ function read<T>(key: string, parse: (raw: unknown) => T, fallback: T): T {
   }
 }
 
-function write(key: string, value: unknown) {
+/** A stored value: missing, readable, or there but unreadable (damaged). */
+function readRaw(key: string): { state: 'missing' } | { state: 'ok'; value: unknown } | { state: 'bad' } {
   try {
-    Storage.setItemSync(key, JSON.stringify(value));
+    const raw = Storage.getItemSync(key);
+    if (!raw) return { state: 'missing' };
+    const value: unknown = JSON.parse(raw);
+    return value && typeof value === 'object' ? { state: 'ok', value } : { state: 'bad' };
   } catch {
-    // Non-fatal: the next sync writes again.
+    return { state: 'bad' };
   }
 }
+
+/** A save failed since the app started (storage full or broken): the user is told, not left guessing. */
+let saveFailed = false;
+
+function write(key: string, value: unknown): boolean {
+  try {
+    Storage.setItemSync(key, JSON.stringify(value));
+    return true;
+  } catch {
+    saveFailed = true;
+    return false;
+  }
+}
+
+const SAVE_FAILED = "Screen Time changes couldn't be saved on this phone (its storage may be full). They will be lost if Trueline closes.";
+const RULES_UNREADABLE =
+  "Your Screen Time rules couldn't be read. Blocking keeps the rules the phone already had; set your rules again to fix this.";
+
+/**
+ * The rules file and its backup were both there but unreadable. Until the user saves rules again,
+ * the defaults (an empty blocked list) are neither saved over them nor sent to the phone: that
+ * would quietly unblock everything.
+ */
+let rulesUnreadable = false;
+
+/** Last good clock reading, kept in memory between syncs (saved in meta). */
+let anchor: ClockAnchor | null | undefined;
+let clockChanged = false;
+
+/**
+ * "Now" for every Screen Time decision: the wall clock, unless the user moved it (clock.ts).
+ * Falls back to the wall clock where the native module isn't there.
+ */
+export function screenTimeNow(wall = Date.now()): number {
+  if (anchor === undefined) anchor = parseAnchor(loadMeta().clock);
+  let reading = null;
+  try {
+    reading = ScreenTime?.clock?.() ?? null;
+  } catch {
+    reading = null;
+  }
+  const t = trustedTime(anchor, wall, reading);
+  anchor = t.anchor;
+  clockChanged = t.jumped;
+  return t.now;
+}
+
+const CLOCK_CHANGED =
+  "Your phone's clock was changed, so Trueline keeps to the time that has really passed: your locks and limits carry on as before. If you were correcting a wrong clock, restart your phone and Trueline will use the new time.";
 
 function isLog(x: unknown): x is DayLog {
   const o = x as DayLog;
@@ -86,7 +148,12 @@ function isLog(x: unknown): x is DayLog {
 }
 
 export function loadRules(): ScreenTimeRules {
-  return read(RULES_KEY, normalizeRules, DEFAULT_RULES);
+  const main = readRaw(RULES_KEY);
+  if (main.state === 'ok') return normalizeRules(main.value);
+  const backup = readRaw(RULES_BACKUP_KEY);
+  if (backup.state === 'ok') return normalizeRules(backup.value);
+  rulesUnreadable = main.state === 'bad' || backup.state === 'bad';
+  return DEFAULT_RULES;
 }
 
 /** Saved days, newest first. */
@@ -95,7 +162,7 @@ export function loadDays(): DayLog[] {
 }
 
 export function loadMeta(): Meta {
-  return read(META_KEY, (raw) => ({ ...DEFAULT_META, ...(raw as Partial<Meta>) }), DEFAULT_META);
+  return read(META_KEY, (raw) => ({ ...DEFAULT_META, ...(raw as Partial<Meta>), clock: parseAnchor((raw as Partial<Meta>)?.clock) }), DEFAULT_META);
 }
 
 function parseFocus(raw: unknown): Focus | null {
@@ -145,7 +212,7 @@ function build(
   meta: Meta,
   problems: string[],
   focus: Focus | null,
-  now = Date.now(),
+  now = screenTimeNow(),
 ): ScreenTimeState {
   const today = rollDay(deviceZone, days[0] ?? null, now);
   return {
@@ -165,14 +232,19 @@ export function getScreenTime(): ScreenTimeState {
   return (state ??= build(loadRules(), loadDays(), loadMeta(), [], loadFocus()));
 }
 
-function publish(next: ScreenTimeState, persist = true) {
-  state = next;
+function publish(nextIn: ScreenTimeState, persist = true) {
+  let next = nextIn;
   if (persist) {
-    write(RULES_KEY, next.rules);
-    write(DAYS_KEY, next.days);
-    write(META_KEY, next.meta);
-    write(FOCUS_KEY, next.focus);
+    let ok = true;
+    if (!rulesUnreadable) ok = write(RULES_KEY, next.rules) && write(RULES_BACKUP_KEY, next.rules) && ok;
+    ok = write(DAYS_KEY, next.days) && ok;
+    ok = write(META_KEY, next.meta) && ok;
+    ok = write(FOCUS_KEY, next.focus) && ok;
+    if (ok) saveFailed = false;
   }
+  const extra = [saveFailed && SAVE_FAILED, rulesUnreadable && RULES_UNREADABLE].filter((x): x is string => !!x);
+  if (extra.some((m) => !next.problems.includes(m))) next = { ...next, problems: [...next.problems.filter((m) => !extra.includes(m)), ...extra] };
+  state = next;
   listeners.forEach((l) => l(next));
 }
 
@@ -187,18 +259,31 @@ export interface SyncResult {
  * Take in what the native side saw, bring the rules up to date, save, and send
  * a fresh plan. Safe to call any time; does nothing native where unsupported.
  */
-export function syncScreenTime(now = Date.now()): SyncResult {
+export function syncScreenTime(now = screenTimeNow()): SyncResult {
   const s = getScreenTime();
   let rules = clearOldSkips(deviceZone, applyPending(s.rules, now, s.focus), now);
   let today = rollDay(deviceZone, s.days[0] ?? null, now);
-  const meta = { ...s.meta };
+  const meta = { ...s.meta, clock: anchor ?? s.meta.clock };
+  let turnedOff = false;
+  // A waiting "Turn off" has now applied: finish it, rather than leave Screen Time set up with nothing in it.
+  if (meta.turnOffPending && !rules.pending) {
+    meta.turnOffPending = false;
+    const empty =
+      !rules.blocked.apps.length && !rules.blocked.categories.length && !rules.blocked.domains.length && !rules.lockTimes.length && rules.dailyLimitMin === null && !rules.appLimits.length;
+    if (empty && meta.setUp) {
+      // The same clean-up as turnOff(): no focus left running, no lost-access gap carried on.
+      ScreenTime?.stopAll();
+      Object.assign(meta, { setUp: false, permissionLost: false, lostSince: null });
+      turnedOff = true;
+    }
+  }
   let openEarn = false;
   let openScan = false;
   let problems: string[] = [];
   // A focus whose time is up goes into history.
   const settled = settleFocus(s.focus, now);
   if (settled.record) today = logFocus(deviceZone, today, settled.record, now);
-  const focus = settled.focus;
+  const focus = turnedOff ? null : settled.focus;
   const avail = availability();
   if (avail === 'needs-permission' && meta.setUp) {
     meta.permissionLost = true;
@@ -216,7 +301,7 @@ export function syncScreenTime(now = Date.now()): SyncResult {
     openEarn = report?.openEarn === true;
     openScan = report?.openScan === true;
     if (report?.tokensExpired) meta.tokensExpired = true;
-    if (meta.setUp) {
+    if (meta.setUp && !rulesUnreadable) {
       // The phone's report was taken above: save it before sending the plan, so a failed send can't lose it.
       publish(build(normalizeRules(rules), withToday(s.days, today), meta, s.problems, focus, now));
       try {
@@ -228,6 +313,7 @@ export function syncScreenTime(now = Date.now()): SyncResult {
     }
   }
   rules = normalizeRules(rules);
+  if (clockChanged && meta.setUp) problems = [...problems, CLOCK_CHANGED];
   publish(build(rules, withToday(s.days, today), meta, problems, focus, now));
   return { openEarn, openScan };
 }
@@ -236,7 +322,7 @@ export function syncScreenTime(now = Date.now()): SyncResult {
  * Start a workout focus (if screen time is set up). Returns the focus, or
  * null when there's nothing to block with.
  */
-export function startFocusNow(choice: FocusChoice, now = Date.now()): Focus | null {
+export function startFocusNow(choice: FocusChoice, now = screenTimeNow()): Focus | null {
   const s = getScreenTime();
   if (!s.meta.setUp) return null;
   const focus = startFocus(s.rules, s.focus, choice, now, s.meta.focusBlockAll);
@@ -246,7 +332,7 @@ export function startFocusNow(choice: FocusChoice, now = Date.now()): Focus | nu
 }
 
 /** Lock the apps until the key is scanned (or `hours` at most). Needs a key. */
-export function startKeyLockNow(hours: number, blockAll: boolean, now = Date.now()): Focus | null {
+export function startKeyLockNow(hours: number, blockAll: boolean, now = screenTimeNow()): Focus | null {
   const s = getScreenTime();
   if (!s.meta.setUp || !s.meta.key) return null;
   const focus = startKeyLock(s.focus, hours, now, blockAll);
@@ -259,7 +345,7 @@ export function startKeyLockNow(hours: number, blockAll: boolean, now = Date.now
 export const keyText = (secret: string) => `trueline-key:${secret}`;
 
 /** A scanned code: ends the running focus or key lock if it's this phone's key. */
-export function scanKey(text: string, now = Date.now()): 'ended' | 'wrong-key' | 'nothing-running' {
+export function scanKey(text: string, now = screenTimeNow()): 'ended' | 'wrong-key' | 'nothing-running' {
   const s = getScreenTime();
   if (!s.meta.key || text.trim() !== keyText(s.meta.key.secret)) return 'wrong-key';
   if (!s.focus || s.focus.until <= now) return 'nothing-running';
@@ -268,11 +354,15 @@ export function scanKey(text: string, now = Date.now()): 'ended' | 'wrong-key' |
 }
 
 /** Make a new key (the old one stops working). Refused while a key lock runs: that key is the way out. */
-export function newKey(now = Date.now()): boolean {
+export function newKey(now = screenTimeNow()): boolean {
   const s = getScreenTime();
   if (s.focus?.kind === 'key' && s.focus.until > now) return false;
-  const bytes = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
-  const secret = bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+  // The system's secure random source where the runtime has one; Math.random only as a fallback.
+  const bytes = new Uint8Array(16);
+  const c = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  if (c?.getRandomValues) c.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  const secret = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
   publish({ ...s, meta: { ...s.meta, key: { secret, createdAt: now } } });
   return true;
 }
@@ -286,7 +376,7 @@ export function setFocusBlockAll(on: boolean) {
  * End the focus: the set finished ("completed"), was left ("abandoned"), or the
  * user pressed End ("manual"). Strict and timed focuses may refuse (see focus.ts).
  */
-export function endFocusNow(reason: EndReason, now = Date.now()): EndResult {
+export function endFocusNow(reason: EndReason, now = screenTimeNow()): EndResult {
   const s = getScreenTime();
   const res = endFocus(s.focus, reason, now);
   if (res.ended) {
@@ -315,6 +405,8 @@ export function lastFocusRecord(): FocusRecord | null {
 
 /** Save new rules (already checked with requestChange) and apply them. */
 export function saveRules(rules: ScreenTimeRules) {
+  // The user set their rules again: they replace whatever couldn't be read.
+  rulesUnreadable = false;
   const s = getScreenTime();
   publish({ ...s, rules });
   syncScreenTime();
@@ -326,6 +418,12 @@ export function markSetUp() {
   syncScreenTime();
 }
 
+/** "Turn off" is waiting to apply: when it does, Screen Time is switched off fully (see syncScreenTime). */
+export function markTurnOffPending() {
+  const s = getScreenTime();
+  publish({ ...s, meta: { ...s.meta, turnOffPending: true } });
+}
+
 /** Turn Screen Time off completely (only offered when the rules allow it). */
 export function turnOff() {
   ScreenTime?.stopAll();
@@ -334,7 +432,7 @@ export function turnOff() {
 }
 
 /** Credit a finished, verified set. Call once per saved set. */
-export function creditSet(summary: SessionSummary, sessionId: string, demo: boolean, now = Date.now()): EarnResult | null {
+export function creditSet(summary: SessionSummary, sessionId: string, demo: boolean, now = screenTimeNow()): EarnResult | null {
   const s = getScreenTime();
   if (!s.meta.setUp) return null;
   // Came back after a break: the last day with a set was two or more days ago.
@@ -352,7 +450,7 @@ export function creditSet(summary: SessionSummary, sessionId: string, demo: bool
 }
 
 /** The strictness level's way out, taken in the app (the blocked screen uses the native side directly). */
-export function unlockNow(kind: Unlock['kind'], now = Date.now()) {
+export function unlockNow(kind: Unlock['kind'], now = screenTimeNow()) {
   const s = getScreenTime();
   const res = takeUnlockRule(deviceZone, s.rules, s.today, kind, now, s.focus);
   if (!res.ok) return res;
@@ -364,7 +462,7 @@ export function unlockNow(kind: Unlock['kind'], now = Date.now()) {
   }
   // The phone stamps the unlock with its own clock, a moment after `now`. Read it back with a clock
   // that isn't earlier, or the unlock looks like it hasn't started and the app still shows "blocked".
-  syncScreenTime(Math.max(now, Date.now()));
+  syncScreenTime(Math.max(now, screenTimeNow()));
   return res;
 }
 
@@ -385,11 +483,18 @@ export function useScreenTimeTick(): ScreenTimeState {
   const s = useScreenTime();
   const refresh = useCallback(() => {
     const cur = getScreenTime();
+    const now = screenTimeNow();
+    // A waiting change came due or a focus ran out: that needs a full sync (saved and sent to the
+    // phone), or the screen keeps saying "starts at 00:00" after midnight.
+    if ((cur.rules.pending && cur.rules.pending.effectiveAt <= now) || (cur.focus && cur.focus.until <= now)) {
+      syncScreenTime(now);
+      return;
+    }
     // Only the decision changes on a tick: nothing new to save to disk.
-    publish(build(cur.rules, cur.days, cur.meta, cur.problems, cur.focus), false);
+    publish(build(cur.rules, cur.days, cur.meta, cur.problems, cur.focus, now), false);
   }, []);
   useEffect(() => {
-    const wait = Math.max(1000, Math.min(60_000, s.decision.nextChange - Date.now() + 500));
+    const wait = Math.max(1000, Math.min(60_000, s.decision.nextChange - screenTimeNow() + 500));
     const t = setTimeout(refresh, wait);
     return () => clearTimeout(t);
   }, [s.decision.nextChange, refresh]);

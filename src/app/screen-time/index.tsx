@@ -31,7 +31,9 @@ import {
   clearTokensExpired,
   endFocusNow,
   getScreenTime,
+  markTurnOffPending,
   saveRules,
+  screenTimeNow,
   turnOff,
   unlockNow,
   useScreenTimeTick,
@@ -42,9 +44,9 @@ import { deviceZone } from '@/screentime/time';
 import type { ChangeResult } from '@/screentime/rules';
 import type { RulesCore, Strictness } from '@/screentime/types';
 import { listSessionsSince } from '@/storage/history';
-import { Body, Button, Chip, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
+import { Body, Button, Chip, Display, Label, Mono, Rule, Stat, Strong } from '@/ui/primitives';
 import { LinkRow, Section } from '@/ui/rows';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
 const LIMITS: [number | null, string][] = [
@@ -113,7 +115,7 @@ export default function ScreenTimeScreen() {
       {unsupported && (
         <View style={styles.alert}>
           <Strong tone="fault">This version of Trueline can&apos;t block apps</Strong>
-          <Body tone="fault" size={14}>
+          <Body tone="fault" size={type.note}>
             Your rules are saved, but nothing is blocked on this phone until a version with Screen Time is installed.
           </Body>
         </View>
@@ -121,7 +123,7 @@ export default function ScreenTimeScreen() {
       {lost && (
         <Pressable accessibilityRole="button" onPress={guard(() => router.push('/screen-time/setup'))} style={styles.alert}>
           <Strong tone="fault">Screen Time access is off</Strong>
-          <Body tone="fault" size={14}>
+          <Body tone="fault" size={type.note}>
             Your apps aren&apos;t blocked. Tap to give Trueline access again.
           </Body>
         </Pressable>
@@ -129,7 +131,7 @@ export default function ScreenTimeScreen() {
       {st.meta.tokensExpired && (
         <View style={styles.alert}>
           <Strong tone="cue">Pick your apps again</Strong>
-          <Body size={14}>iPhone reset the app lists Trueline uses. Until you pick them again, they may not be blocked.</Body>
+          <Body size={type.note}>iPhone reset the app lists Trueline uses. Until you pick them again, they may not be blocked.</Body>
           <Button
             size="sm"
             label="Pick blocked apps"
@@ -143,21 +145,22 @@ export default function ScreenTimeScreen() {
       )}
       {st.problems.length > 0 && (
         <View style={styles.alert}>
-          <Strong tone="cue">Some schedules couldn&apos;t start</Strong>
-          <Mono size={11} tone="muted">
+          {/* Native problems, a moved clock or a storage failure: one heading that fits them all. */}
+          <Strong tone="cue">Check this</Strong>
+          <Body size={type.caption} tone="chalk2">
             {st.problems.slice(0, 3).join('\n')}
-          </Mono>
+          </Body>
         </View>
       )}
       {message && (
         <View style={styles.note} accessibilityLiveRegion="polite">
-          <Body size={14}>{message}</Body>
+          <Body size={type.note}>{message}</Body>
         </View>
       )}
 
       <View style={{ gap: space.md }}>
         <Label>Today</Label>
-        <Display size={34}>
+        <Display size={type.displayM}>
           {d.blocked
             ? d.reason === 'focus' && d.focus
               ? `Workout focus until ${formatClock(deviceZone, d.focus.until, now)}`
@@ -174,7 +177,7 @@ export default function ScreenTimeScreen() {
         </Display>
         {d.focus && (
           <View style={styles.note}>
-            <Body size={14}>
+            <Body size={type.note}>
               {d.focus.strict
                 ? 'Strict: the workout focus runs until its end.'
                 : d.focus.kind === 'timed'
@@ -225,7 +228,7 @@ export default function ScreenTimeScreen() {
             }}
           />
         )}
-        <Body tone="muted" size={12}>
+        <Body tone="muted" size={type.small}>
           {Platform.OS === 'ios'
             ? 'iPhone reports usage in 15-minute steps, so "used" can lag a little behind.'
             : 'Usage is counted while the apps are on screen.'}
@@ -234,7 +237,7 @@ export default function ScreenTimeScreen() {
 
       {pendingAt !== null && (
         <View style={styles.note}>
-          <Body size={14}>{`A change you made starts ${formatClock(deviceZone, pendingAt, now)}.`}</Body>
+          <Body size={type.note}>{`A change you made starts ${formatClock(deviceZone, pendingAt, now)}.`}</Body>
           <Pressable accessibilityRole="button" onPress={() => saveRules(cancelPending(getScreenTime().rules))} hitSlop={8}>
             <Label tone="vial">Cancel the change</Label>
           </Pressable>
@@ -270,7 +273,7 @@ export default function ScreenTimeScreen() {
 
       <Section title="Daily limit">
         <View style={styles.pad}>
-          <Body tone="muted" size={13}>
+          <Body tone="muted" size={type.caption}>
             Total time a day in your blocked apps outside lock times. After it, they open only with earned time.
           </Body>
           <View style={styles.chips}>
@@ -284,7 +287,7 @@ export default function ScreenTimeScreen() {
       <Section title="Lock times">
         {rules.lockTimes.length === 0 && (
           <View style={styles.pad}>
-            <Body tone="muted" size={13}>
+            <Body tone="muted" size={type.caption}>
               Times when your blocked apps can&apos;t be opened, like nights or work hours.
             </Body>
           </View>
@@ -298,13 +301,13 @@ export default function ScreenTimeScreen() {
               onPress={guard(() => router.push({ pathname: '/screen-time/lock/[id]', params: { id: l.id } }))}
             >
               <Strong>{l.name}</Strong>
-              <Body tone="muted" size={13}>
+              <Body tone="muted" size={type.caption}>
                 {describeLock(l)}
                 {l.earnable ? ' · earned time works' : ''}
                 {l.apps === 'all' ? ' · everything except always allowed' : l.apps !== 'main' ? ` · ${countLabel(l.apps)}` : ''}
               </Body>
               {l.skipDate && (
-                <Mono size={11} tone="cue">
+                <Mono size={type.micro} tone="cue">
                   Skipping {l.skipDate}
                 </Mono>
               )}
@@ -314,7 +317,7 @@ export default function ScreenTimeScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Skip the next ${l.name}`}
                 hitSlop={8}
-                onPress={() => apply(skipNext(deviceZone, getScreenTime().rules, l.id, Date.now(), getScreenTime().focus))}
+                onPress={() => apply(skipNext(deviceZone, getScreenTime().rules, l.id, screenTimeNow(), getScreenTime().focus))}
               >
                 <Label>Skip next</Label>
               </Pressable>
@@ -356,7 +359,7 @@ export default function ScreenTimeScreen() {
 
       <Section title="Turn off">
         <View style={styles.pad}>
-          <Body tone="muted" size={13}>
+          <Body tone="muted" size={type.caption}>
             {mode === 'strict'
               ? 'Strict mode is on: screen time can be turned off once its period ends.'
               : mode === 'standard'
@@ -387,7 +390,7 @@ export default function ScreenTimeScreen() {
   function turnOffNow() {
     const cur = getScreenTime();
     // A key lock ends only with the key; a Strict focus only at its end.
-    if (cur.focus && cur.focus.until > Date.now() && (cur.focus.kind === 'key' || cur.focus.strict)) {
+    if (cur.focus && cur.focus.until > screenTimeNow() && (cur.focus.kind === 'key' || cur.focus.strict)) {
       // Shown as an alert: the page's message box is far above this button.
       Alert.alert(
         'Can’t turn off yet',
@@ -412,7 +415,10 @@ export default function ScreenTimeScreen() {
       // Opened from a link there may be nothing to go back to.
       if (router.canGoBack()) router.back();
       else router.replace('/');
-    } else Alert.alert('Turn off screen time', describeChange(res));
+    } else {
+      if (res.result === 'scheduled') markTurnOffPending();
+      Alert.alert('Turn off screen time', describeChange(res));
+    }
   }
 }
 
@@ -423,7 +429,7 @@ function EarningSection({ st, change }: { st: ScreenTimeState; change: (p: Parti
       <View style={[styles.lockRow, { borderBottomWidth: StyleSheet.hairlineWidth }]}>
         <View style={{ flex: 1, gap: 2 }}>
           <Strong>Earn time with exercise</Strong>
-          <Body tone="muted" size={13}>
+          <Body tone="muted" size={type.caption}>
             Finished sets add minutes for today. Earned time ends at midnight.
           </Body>
         </View>
@@ -443,18 +449,18 @@ function EarningSection({ st, change }: { st: ScreenTimeState; change: (p: Parti
             const r = e.rates[x];
             return (
               <View key={x} style={styles.rateRow}>
-                <Body size={14}>{EXERCISES[x].label}</Body>
-                <Mono size={12} tone="muted">
+                <Body size={type.note}>{EXERCISES[x].label}</Body>
+                <Mono size={type.small} tone="muted">
                   {r.per10s !== undefined ? rateText(r) : `${rateText(r)} · ${r.perFlaggedRep} flagged`}
                 </Mono>
               </View>
             );
           })}
-          <Body size={13} tone="muted">
+          <Body size={type.caption} tone="muted">
             {`A set earns ${formatMin(e.milestoneMin)} more at 10 and again at 20 push-up equivalents (10 push-ups 15 min, 20 push-ups 30 min), up to ${e.setCapPe} a set. First set of the day +${formatMin(e.firstSetMin)}, coming back after a break +${formatMin(e.comebackMin)}. After ${formatMin(e.fullRateMin)} earned in a day, sets earn half until the daily most.`}
           </Body>
           <Rule style={{ marginVertical: space.sm }} />
-          <Strong size={14}>Most you can earn a day</Strong>
+          <Strong size={type.note}>Most you can earn a day</Strong>
           <View style={styles.chips}>
             {CAPS.map((c) => (
               <Chip
@@ -509,7 +515,7 @@ function StrictnessSection({
           : ''),
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Turn on Strict', onPress: () => saveRules(startStrict(getScreenTime().rules, Date.now(), strictDays)) },
+        { text: 'Turn on Strict', onPress: () => saveRules(startStrict(getScreenTime().rules, screenTimeNow(), strictDays)) },
       ],
     );
   };
@@ -526,12 +532,12 @@ function StrictnessSection({
             />
           ))}
         </View>
-        <Body tone="muted" size={13}>
+        <Body tone="muted" size={type.caption}>
           {STRICTNESS[mode].hint}
         </Body>
         {!strictOn && (
           <View style={{ gap: space.xs }}>
-            <Body size={13}>Strict lasts</Body>
+            <Body size={type.caption}>Strict lasts</Body>
             <View style={styles.chips}>
               {[1, 3, 7, 14, 30].map((n) => (
                 <Chip key={n} label={n === 1 ? '1 day' : `${n} days`} selected={strictDays === n} onPress={() => setStrictDays(n)} />
@@ -541,25 +547,25 @@ function StrictnessSection({
         )}
         {strictOn && (
           <View style={{ gap: space.sm }}>
-            <Strong size={14}>{`Strict until ${formatClock(deviceZone, r.strictUntil!, now)}`}</Strong>
+            <Strong size={type.note}>{`Strict until ${formatClock(deviceZone, r.strictUntil!, now)}`}</Strong>
             <FriendPasscodeNote />
             {askedAt === null ? (
               <Button
                 size="sm"
                 variant="ghost"
                 label="End Strict early"
-                onPress={() => apply(endStrictEarly(getScreenTime().rules, Date.now(), 0))}
+                onPress={() => apply(endStrictEarly(getScreenTime().rules, screenTimeNow(), 0))}
               />
             ) : (
               <>
-                <Body tone="muted" size={13}>
+                <Body tone="muted" size={type.caption}>
                   {`Strict ends 24 hours after you asked, or now if you do ${STRICT_OFF_PUSHUPS} verified push-ups first: ${Math.min(pushups, STRICT_OFF_PUSHUPS)} / ${STRICT_OFF_PUSHUPS}.`}
                 </Body>
                 {pushups >= STRICT_OFF_PUSHUPS && (
                   <Button
                     size="sm"
                     label="End Strict now"
-                    onPress={() => apply(endStrictEarly(getScreenTime().rules, Date.now(), pushups))}
+                    onPress={() => apply(endStrictEarly(getScreenTime().rules, screenTimeNow(), pushups))}
                   />
                 )}
               </>
@@ -579,29 +585,29 @@ function HistorySection({ st }: { st: ScreenTimeState }) {
         <View key={d.day}>
           {i > 0 && <Rule />}
           <View style={styles.histRow}>
-            <Mono size={12} style={{ width: 92 }}>
+            <Mono size={type.small} style={{ width: 92 }}>
               {d.day}
             </Mono>
             {/* A busy day has up to five items: let them wrap onto a second line instead of squeezing each other. */}
             <View style={styles.histItems}>
-              <Mono size={12} tone={d.overLimit ? 'cue' : 'chalk'}>
+              <Mono size={type.small} tone={d.overLimit ? 'cue' : 'chalk'}>
                 {`${formatMin(d.usedMin)} used`}
               </Mono>
-              <Mono size={12} tone="good">
+              <Mono size={type.small} tone="good">
                 {` · +${formatMin(d.earnedMin)}`}
               </Mono>
               {d.unlocks > 0 && (
-                <Mono size={12} tone="muted">
+                <Mono size={type.small} tone="muted">
                   {` · ${d.unlocks} unlock${d.unlocks > 1 ? 's' : ''}`}
                 </Mono>
               )}
               {d.focusMin > 0 && (
-                <Mono size={12} tone="vial">
+                <Mono size={type.small} tone="vial">
                   {` · focus ${formatMin(d.focusMin)}`}
                 </Mono>
               )}
               {d.offMin > 0 && (
-                <Mono size={12} tone="fault">
+                <Mono size={type.small} tone="fault">
                   {` · off ${formatMin(d.offMin)}`}
                 </Mono>
               )}
@@ -616,7 +622,7 @@ function HistorySection({ st }: { st: ScreenTimeState }) {
 function Header() {
   return (
     <View style={styles.header}>
-      <Display size={36}>Screen time</Display>
+      <Display size={type.stat}>Screen time</Display>
       <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
         <Label tone="chalk">Done</Label>
       </Pressable>
@@ -635,20 +641,16 @@ function Page({ insets, children }: { insets: { top: number; bottom: number }; c
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ flex: 1, gap: 2 }}>
-      <Mono size={11} tone="muted">
-        {label}
-      </Mono>
-      <Strong size={15}>{value}</Strong>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+  },
   stats: { flexDirection: 'row', gap: space.md },
   pad: { padding: space.lg, gap: space.md },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
@@ -660,7 +662,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: color.line,
   },
-  rateRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: space.md },
+  rateRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    rowGap: space.xs,
+    alignItems: 'baseline',
+    gap: space.md,
+  },
   histRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: space.lg, paddingVertical: space.sm },
   histItems: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', rowGap: space.xs },
   alert: {

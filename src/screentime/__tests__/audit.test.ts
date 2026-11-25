@@ -3,7 +3,7 @@
  * Screen-time holes found in the audit: each test is a way round a rule that
  * used to work.
  */
-import { decide, freshDay } from '../decide';
+import { decide, freshDay, setEverythingEarnable } from '../decide';
 import { endFocus } from '../focus';
 import { applyPending, coreOf, endStrictEarly, requestChange, skipNext } from '../rules';
 import { toNativePlan } from '../plan';
@@ -108,5 +108,36 @@ describe('a key lock holds back easier changes', () => {
     const at = T(london, '2026-11-19 00:06');
     const log = { ...freshDay(london, at), unlocks: [{ kind: 'emergency' as const, from: T(london, '2026-11-18 23:55'), until: T(london, '2026-11-19 00:05') }] };
     expect(toNativePlan(london, r, log, at).emergenciesLeft).toBe(1);
+  });
+});
+
+describe('iPhone: Everything locks and earned time', () => {
+  const all = {
+    id: 'e',
+    name: 'Everything',
+    days: [0, 1, 2, 3, 4, 5, 6],
+    start: '11:00',
+    end: '13:00',
+    apps: 'all' as const,
+    earnable: true,
+    enabled: true,
+    skipDate: null,
+  };
+  afterEach(() => setEverythingEarnable(true));
+
+  test('earned time opens an earnable Everything lock where the phone can count it', () => {
+    const r = rules({ strictness: 'standard', blocked, lockTimes: [all] });
+    const log = { ...freshDay(london, NOW), earnedMin: 20 };
+    expect(decide(london, r, log, NOW).usingEarned).toBe(true);
+  });
+
+  test('on iPhone it stays shut, as the native side does', () => {
+    setEverythingEarnable(false);
+    const r = rules({ strictness: 'standard', blocked, lockTimes: [all] });
+    const log = { ...freshDay(london, NOW), earnedMin: 20 };
+    const d = decide(london, r, log, NOW);
+    expect(d.blocked).toBe(true);
+    expect(d.usingEarned).toBe(false);
+    expect(d.canEarn).toBe(false);
   });
 });

@@ -5,7 +5,7 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scanKey } from '@/screentime/store';
 import { Body, Button, Display, Label } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 
 /** Scan the QR key to end a key lock (or any running focus). */
 export default function ScanKeyScreen() {
@@ -29,14 +29,19 @@ export default function ScanKeyScreen() {
   return (
     <View style={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.xl }]}>
       <View style={styles.header}>
-        <Display size={32}>Scan my key</Display>
+        <Display size={type.displayM}>Scan my key</Display>
         <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
           <Label tone="chalk">Cancel</Label>
         </Pressable>
       </View>
       {!permission ? null : permission.granted ? (
         <View style={styles.frame}>
-          <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={(r) => onScan(r.data)} />
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            onBarcodeScanned={(r) => onScan(r.data)}
+          />
         </View>
       ) : (
         <View style={{ gap: space.md }}>
@@ -47,7 +52,7 @@ export default function ScanKeyScreen() {
           />
         </View>
       )}
-      <Body size={15} tone={message === 'Unlocked.' ? 'good' : 'chalk'} accessibilityLiveRegion="polite">
+      <Body size={type.detail} tone={message === 'Unlocked.' ? 'good' : 'chalk'} accessibilityLiveRegion="polite">
         {message ?? 'Point the camera at your key.'}
       </Body>
     </View>
@@ -56,6 +61,13 @@ export default function ScanKeyScreen() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: color.ground, paddingHorizontal: space.xl, gap: space.xl },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.md },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    rowGap: space.xs,
+    alignItems: 'center',
+    gap: space.md,
+  },
   frame: { width: '100%', aspectRatio: 1, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: color.raised },
 });

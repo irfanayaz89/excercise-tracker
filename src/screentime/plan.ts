@@ -73,6 +73,8 @@ export interface NativePlan {
   focusAll: boolean;
   /** A key lock or Strict focus: no unlock opens the main apps and no unlock is offered until it ends. */
   focusLocked: boolean;
+  /** The app's trusted "now" when it made this plan: the phone carries on from it if its clock is moved (clock.ts). */
+  madeAt: number;
   /** Per-app limits (enabled ones only). */
   appLimits: NativeAppLimit[];
   /** A pause before the blocked apps open outside blocks: the first wait and today's passes so far. */
@@ -112,6 +114,7 @@ export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, 
     focusKind: d.focus ? d.focus.kind : null,
     focusAll: d.focus !== null && focus?.blockAll === true,
     focusLocked: d.focus !== null && (d.focus.kind === 'key' || d.focus.strict),
+    madeAt: now,
     appLimits: rules.appLimits
       .filter((l) => l.enabled)
       .map((l) => ({

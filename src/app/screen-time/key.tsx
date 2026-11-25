@@ -7,7 +7,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { keyText, newKey, useScreenTime } from '@/screentime/store';
 import { Body, Button, Display, Label } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 
 /**
  * The QR key: show it, save or print it, or replace it. Keep it somewhere that takes effort to
@@ -39,7 +39,7 @@ export default function KeyScreen() {
       contentContainerStyle={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.huge }]}
     >
       <View style={styles.header}>
-        <Display size={32}>My key</Display>
+        <Display size={type.displayM}>My key</Display>
         <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
           <Label tone="chalk">Done</Label>
         </Pressable>
@@ -47,7 +47,7 @@ export default function KeyScreen() {
       {key && running ? (
         // While a key lock runs the key isn't shown here: it would be a way round keeping it out of reach.
         <View style={{ gap: space.md }}>
-          <Body tone="muted" size={15}>
+          <Body tone="muted" size={type.detail}>
             A key lock is running. Scan the key you saved or printed to end it; it isn’t shown here until then.
           </Body>
           <Button label="Scan my key" onPress={() => router.replace('/screen-time/scan')} />
@@ -57,9 +57,9 @@ export default function KeyScreen() {
           <View style={styles.card} accessibilityLabel="Your key, a QR code">
             <QRCode value={keyText(key.secret)} size={240} color="#0C1A1D" backgroundColor="#FFFFFF" getRef={(c) => (qr.current = c)} />
           </View>
-          <Body tone="muted" size={14}>
-            Save it on another device or print it, and keep it out of easy reach. During a key lock, scan it in Trueline to unlock. Only this
-            phone’s current key works.
+          <Body tone="muted" size={type.note}>
+            Save it on another device or print it, and keep it out of easy reach. During a key lock, scan it in Trueline to unlock. Only
+            this phone’s current key works.
           </Body>
           <Button label="Save or print" onPress={share} />
           <Button
@@ -75,7 +75,7 @@ export default function KeyScreen() {
         <Button label="Make my key" onPress={() => newKey()} />
       )}
       {message && (
-        <Body size={14} accessibilityLiveRegion="polite">
+        <Body size={type.note} accessibilityLiveRegion="polite">
           {message}
         </Body>
       )}
@@ -85,6 +85,13 @@ export default function KeyScreen() {
 
 const styles = StyleSheet.create({
   page: { paddingHorizontal: space.xl, gap: space.xl, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.md },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    rowGap: space.xs,
+    alignItems: 'center',
+    gap: space.md,
+  },
   card: { alignSelf: 'center', padding: space.lg, borderRadius: radius.lg, backgroundColor: '#FFFFFF' },
 });

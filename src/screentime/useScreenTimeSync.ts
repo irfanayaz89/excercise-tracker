@@ -2,7 +2,11 @@ import { router } from 'expo-router';
 import { useEffect } from 'react';
 import { AppState, Platform } from 'react-native';
 import { ScreenTime } from '../../modules/screen-time/src';
+import { setEverythingEarnable } from './decide';
 import { getScreenTime, syncScreenTime } from './store';
+
+// iPhone can't count time across all apps: an "Everything" lock never opens with earned time there.
+if (Platform.OS === 'ios') setEverythingEarnable(false);
 
 /**
  * Keep the phone's blocking in step with the rules: on launch and every time

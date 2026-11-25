@@ -40,6 +40,17 @@ interface ActiveLock {
   end: number;
 }
 
+/**
+ * iPhone can only count time in apps that were picked, never "all apps", so an "Everything" lock
+ * can't be opened with earned time there (the native side refuses it too). Set once at startup.
+ */
+let everythingEarnable = true;
+export function setEverythingEarnable(on: boolean) {
+  everythingEarnable = on;
+}
+/** Earned time opens this lock time on this phone. */
+export const earnableHere = (l: { earnable: boolean; apps: unknown }) => l.earnable && (l.apps !== 'all' || everythingEarnable);
+
 function activeLocks(zone: Zone, rules: ScreenTimeRules, now: number): ActiveLock[] {
   const out: ActiveLock[] = [];
   for (const lock of rules.lockTimes) {
@@ -65,8 +76,8 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   const main = locks.filter((a) => a.lock.apps === 'main' || a.lock.apps === 'all');
   const own = locks.filter((a) => a.lock.apps !== 'main' && a.lock.apps !== 'all');
   // Locked out entirely by a lock time that doesn't allow earning; earnable ones give way to earned time.
-  const hardLock = main.filter((a) => !a.lock.earnable);
-  const softLock = main.filter((a) => a.lock.earnable);
+  const hardLock = main.filter((a) => !earnableHere(a.lock));
+  const softLock = main.filter((a) => earnableHere(a.lock));
   const limitLeft = rules.dailyLimitMin === null ? null : Math.max(0, rules.dailyLimitMin - log.usedMin);
 
   let reason: Decision['reason'] = null;
@@ -97,10 +108,10 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   const emergenciesUsed = takenToday.filter((u) => u.kind === 'emergency').length;
   const oneMoresUsed = takenToday.filter((u) => u.kind === 'one-more').length;
   const capLeft = Math.max(0, rules.earning.dailyCapMin - log.earnedMin);
-  const canEarn = reason !== null && reason !== 'focus' && rules.earning.enabled && capLeft > 0 && (reason === 'limit' || blocking.every((a) => a.lock.earnable));
+  const canEarn = reason !== null && reason !== 'focus' && rules.earning.enabled && capLeft > 0 && (reason === 'limit' || blocking.every((a) => earnableHere(a.lock)));
 
   const ownLocks = own
-    .filter((a) => !unlock && !(a.lock.earnable && left > 0))
+    .filter((a) => !unlock && !(earnableHere(a.lock) && left > 0))
     .map((a) => ({ id: a.lock.id, name: a.lock.name, until: a.end, apps: a.lock.apps as Selection }));
 
   // Per-app limits: their own apps close once their time or opens are used up. Earned time doesn't

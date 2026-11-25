@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Platform } from 'react-native';
 import { ScreenTime } from '../../modules/screen-time/src';
 import { coreOf, MAX_APPS, requestChange, type ChangeResult, type RefusalReason } from './rules';
-import { getScreenTime, saveRules } from './store';
+import { getScreenTime, saveRules, screenTimeNow } from './store';
 import { formatClock } from './summary';
 import { deviceZone } from './time';
 import type { RulesCore, Selection } from './types';
@@ -12,7 +12,7 @@ import type { RulesCore, Selection } from './types';
  * (Standard: midnight; Strict: 24 h) or is refused (plan §2–3). Saved and sent
  * to the phone's blocking when it applies or is scheduled.
  */
-export function changeRules(next: RulesCore, now = Date.now()): ChangeResult {
+export function changeRules(next: RulesCore, now = screenTimeNow()): ChangeResult {
   const s = getScreenTime();
   const res = requestChange(deviceZone, s.rules, next, now, s.focus);
   if (res.result !== 'refused') saveRules(res.rules);
@@ -30,7 +30,7 @@ export function editBase(): RulesCore {
 }
 
 /** One line telling the user what happened to their change. */
-export function describeChange(res: ChangeResult, now = Date.now()): string | null {
+export function describeChange(res: ChangeResult, now = screenTimeNow()): string | null {
   // A stricter change replaces an easier one that was still waiting: say so, or it vanishes without a word.
   if (res.result === 'applied') return res.cancelledPending ? 'Saved. The easier change that was waiting to start has been cancelled.' : null;
   if (res.result === 'refused') return REFUSALS[res.reason];
