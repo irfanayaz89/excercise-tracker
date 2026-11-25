@@ -88,6 +88,19 @@ class BlockActivity : Activity() {
     goHome()
   }
 
+  // The screen refreshes every few seconds only while it's on screen: once the user has gone
+  // Home it stops, and it looks again when it comes back.
+  override fun onStop() {
+    tick?.let { ticker.removeCallbacks(it) }
+    super.onStop()
+  }
+
+  override fun onRestart() {
+    super.onRestart()
+    shownSig = null
+    render()
+  }
+
   override fun onDestroy() {
     tick?.let { ticker.removeCallbacks(it) }
     super.onDestroy()

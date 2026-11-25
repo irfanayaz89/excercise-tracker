@@ -17,6 +17,8 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.PowerManager
+import android.media.AudioManager
+import android.telecom.TelecomManager
 import java.text.DateFormat
 import java.util.Date
 
@@ -58,6 +60,9 @@ class BlockService : Service() {
   private var lastNote: String? = null
   private var lastBeat = 0L
   private var hasAccess = true
+  private var usageOk = true
+  /** Android refused the foreground start: this instance does nothing and goes away. */
+  private var refused = false
   private val categories = mutableMapOf<String, String>()
 
   private val tick = object : Runnable {
@@ -74,7 +79,17 @@ class BlockService : Service() {
     val nm = getSystemService(NotificationManager::class.java)
     nm.createNotificationChannel(NotificationChannel(CHANNEL, "Screen time", NotificationManager.IMPORTANCE_LOW))
     val n = note("Screen time is on")
-    if (Build.VERSION.SDK_INT >= 34) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(ID, n)
+    // Restarted by the system from the background, Android 12+ may refuse a foreground start
+    // (ForegroundServiceStartNotAllowedException). Stop cleanly instead of crashing in a loop: the
+    // gap is recorded next time Trueline opens, and the boot receiver or the app starts it again.
+    val started = runCatching {
+      if (Build.VERSION.SDK_INT >= 34) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(ID, n)
+    }.isSuccess
+    if (!started) {
+      refused = true
+      stopSelf()
+      return
+    }
     // Restarted (after a reboot, or Trueline opened after a force stop): note any gap, then beat again.
     handler.post {
       runCatching { STCore.checkGap(this) }
@@ -83,6 +98,7 @@ class BlockService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (refused) return START_NOT_STICKY
     if (!running) {
       running = true
       handler.post(tick)
@@ -134,6 +150,7 @@ class BlockService : Service() {
       // Usage access or "display over other apps" switched off: nothing can be blocked, so say so
       // where the user will see it, not only inside Trueline.
       hasAccess = ScreenTimeModule.hasAccess(this)
+      usageOk = ScreenTimeModule.usageAccess(this)
     }
     if (!interactive) {
       carryMs = 0
@@ -142,7 +159,12 @@ class BlockService : Service() {
     }
     // Nothing counts, and nothing is blocked, on the lock screen (including an alarm shown over it),
     // or when no activity is in front.
-    val top = foreground(now)
+    // Without usage access no new events arrive: the last app would look like it's in front forever
+    // (counting its time, or blocking it over and over). Forget it until access is back.
+    val top = if (usageOk) foreground(now) else {
+      resumed.clear()
+      null
+    }
     val keyguard = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
     val front = if (keyguard) null else top
     val pkg = front?.substringBefore('/')
@@ -159,14 +181,20 @@ class BlockService : Service() {
       inTruelineSince = 0L
     }
     val (s, st, show) = STCore.locked { tally(p, pkg, now, dt) }
-    if (pkg != null && show != null) {
-      startActivity(
-        Intent(this, BlockActivity::class.java)
-          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-          .putExtra("pkg", pkg)
-          .putExtra("mode", show)
-          .putExtra("deniedVisit", deniedVisit),
-      )
+    // Never cover a call (incoming, ongoing or a video call) or the apps the phone needs: the dialer,
+    // Settings (Trueline's own permission screens open there) and emergency.
+    val calling = inCall()
+    if (pkg != null && show != null && pkg !in essential && !calling) {
+      openBlocked(pkg, show)
+    } else if (front != null && show == null && !calling && now - lastShown > 1500) {
+      // Split screen and free-form windows keep more than one app resumed: a blocked app there
+      // is blocked too, even when the other pane was touched last.
+      val other = resumed.entries.sortedByDescending { it.value }.map { it.key.substringBefore('/') }
+        .firstOrNull { it != pkg && it != packageName && it !in essential && STCore.blocks(p, s, it, category(it), packageName, ::everyday) }
+      if (other != null) {
+        lastShown = now
+        openBlocked(other, "block")
+      }
     }
     val clock = { at: Long -> DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at)) }
     val text = when {
@@ -322,6 +350,38 @@ class BlockService : Service() {
     }
     if (lastEventAt == 0L) lastEventAt = now
     return resumed.maxByOrNull { it.value }?.key
+  }
+
+  private fun openBlocked(pkg: String, mode: String) {
+    startActivity(
+      Intent(this, BlockActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        .putExtra("pkg", pkg)
+        .putExtra("mode", mode)
+        .putExtra("deniedVisit", deniedVisit),
+    )
+  }
+
+  /** On a call (phone, WhatsApp, Meet…): the phone is in call or communication audio mode. */
+  private fun inCall(): Boolean {
+    val mode = getSystemService(AudioManager::class.java)?.mode ?: return false
+    return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
+  }
+
+  /** Apps never covered by the blocked screen, whatever the user picked. */
+  private val essential: Set<String> by lazy {
+    val dialer = runCatching { getSystemService(TelecomManager::class.java)?.defaultDialerPackage }.getOrNull()
+    setOfNotNull(
+      dialer,
+      "com.android.dialer",
+      "com.google.android.dialer",
+      "com.android.phone",
+      "com.android.server.telecom",
+      "com.android.emergency",
+      "com.android.settings",
+      "com.android.permissioncontroller",
+      "com.google.android.permissioncontroller",
+    )
   }
 
   private fun category(pkg: String): String =

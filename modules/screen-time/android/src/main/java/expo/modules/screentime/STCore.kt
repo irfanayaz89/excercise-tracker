@@ -19,6 +19,7 @@ import android.provider.AlarmClock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * Android side of Trueline's screen time, shared by the module, the blocking
@@ -331,7 +332,9 @@ object STCore {
 
   fun dayKey(ms: Long): String {
     val c = Calendar.getInstance().apply { timeInMillis = ms }
-    return "%04d-%02d-%02d".format(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+    // Locale.ROOT: always ASCII digits, so the key matches the app's own ("2026-11-25"), even on a
+    // phone set to Arabic, Persian or Bengali (which would otherwise write their own digits).
+    return String.format(Locale.ROOT, "%04d-%02d-%02d", c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
   }
 
   /** The window of a lock time starting on the local day containing `dayMs`. */
