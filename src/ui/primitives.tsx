@@ -54,11 +54,16 @@ export function Display({ tone = 'chalk', size = type.headline, style, ...rest }
  * which they no longer fit beside what they label.
  */
 const BODY_SCALE = 2;
+/** "Step-by-step guide ›": the arrow is for the eye; screen readers say the words only. */
+const spoken = (rest: TProps) =>
+  rest.accessibilityLabel ??
+  (typeof rest.children === 'string' && rest.children.endsWith('›') ? rest.children.slice(0, -1).trim() : undefined);
 const LABEL_SCALE = 1.5;
 
 export function Body({ tone = 'chalk', size = type.body, style, ...rest }: TProps) {
   return (
     <Text
+      accessibilityLabel={spoken(rest)}
       maxFontSizeMultiplier={BODY_SCALE}
       style={[{ fontFamily: font.body, fontSize: size, lineHeight: size * 1.45, color: toneColor[tone] }, style]}
       {...rest}
@@ -69,6 +74,7 @@ export function Body({ tone = 'chalk', size = type.body, style, ...rest }: TProp
 export function Strong({ tone = 'chalk', size = type.body, style, ...rest }: TProps) {
   return (
     <Text
+      accessibilityLabel={spoken(rest)}
       maxFontSizeMultiplier={BODY_SCALE}
       style={[{ fontFamily: font.bodySemi, fontSize: size, lineHeight: size * 1.35, color: toneColor[tone] }, style]}
       {...rest}
@@ -80,6 +86,7 @@ export function Strong({ tone = 'chalk', size = type.body, style, ...rest }: TPr
 export function Label({ tone = 'muted', size = type.micro, style, ...rest }: TProps) {
   return (
     <Text
+      accessibilityLabel={spoken(rest)}
       maxFontSizeMultiplier={LABEL_SCALE}
       style={[{ fontFamily: font.monoMed, fontSize: size, letterSpacing: 1.4, textTransform: 'uppercase', color: toneColor[tone] }, style]}
       {...rest}
@@ -148,11 +155,25 @@ export function Button({ label, variant = 'vial', size = 'md', icon, style, disa
 }
 
 /** Selectable chip used for targets and settings. */
-export function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+/**
+ * A choice. One of a set ("radio button, selected") unless `multi`, where several can be on
+ * ("checkbox, checked").
+ */
+export function Chip({
+  label,
+  selected,
+  onPress,
+  multi = false,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  multi?: boolean;
+}) {
   return (
     <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityRole={multi ? 'checkbox' : 'radio'}
+      accessibilityState={{ checked: selected }}
       onPress={onPress}
       style={({ pressed }) => [styles.chip, selected && styles.chipOn, pressed && { opacity: 0.8 }]}
     >

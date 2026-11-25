@@ -40,7 +40,8 @@ export function ProjectionCard({
   const work = days.map((d) => projectWorkouts(perSession, perWeek, d));
   const diet = dailyDeficit > 0 ? days.map((d, i) => projectWeightChange(dailyDeficit, d, work[i].total.kcal)) : null;
   return (
-    <View style={styles.card} accessible accessibilityLabel={`${title}.`}>
+    // Not one accessible block: that would hide every figure (and the link) from a screen reader.
+    <View style={styles.card}>
       <Label>{title}</Label>
       <View style={styles.cols}>
         {days.map((d, i) => (

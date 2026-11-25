@@ -84,10 +84,13 @@ export default function Home() {
     // Left open past midnight: "Today" starts again, every midnight it stays open.
     let midnight: ReturnType<typeof setTimeout>;
     const atMidnight = () => {
-      midnight = setTimeout(() => {
-        reload();
-        atMidnight();
-      }, startOfDay(-1) - Date.now() + 1000);
+      midnight = setTimeout(
+        () => {
+          reload();
+          atMidnight();
+        },
+        startOfDay(-1) - Date.now() + 1000,
+      );
     };
     atMidnight();
     return () => {
@@ -219,7 +222,7 @@ export default function Home() {
             <Mono
               size={type.small}
               tone={streak.current > 0 ? 'vial' : 'muted'}
-              accessibilityLabel={`Weekly streak: ${streak.current} weeks in a row with ${streakTarget} workout days. Best ${streak.best}.`}
+              accessibilityLabel={`Weekly streak: ${streak.current} ${streak.current === 1 ? 'week' : 'weeks'} in a row with ${streakTarget} workout days. Best ${streak.best}`}
             >
               {streak.current > 0
                 ? `${streak.current}-week streak${streak.thisWeekMet ? '' : `, ${streakTarget} days to keep it`}`
@@ -294,7 +297,7 @@ export default function Home() {
               <Pressable
                 key={e}
                 accessibilityRole="button"
-                accessibilityLabel={`${EXERCISES[e].label}. ${EXERCISES[e].tagline}. ${show(e, weekTotal(e))} in the last 7 days.`}
+                accessibilityLabel={`${EXERCISES[e].label}. ${EXERCISES[e].tagline}. ${show(e, weekTotal(e))}${isTimed(e) ? '' : ` ${EXERCISES[e].unit}`} in the last 7 days`}
                 onPress={guard(() => router.push({ pathname: '/exercise/[id]', params: { id: e } }))}
                 style={({ pressed }) => [styles.card, last && styles.cardLast, pressed && { opacity: 0.85 }]}
               >

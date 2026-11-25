@@ -261,6 +261,7 @@ function AimStep({ p, set, next }: StepProps) {
             <Chip
               key={w}
               label={WHY_LABELS[w]}
+              multi
               selected={p.why.includes(w)}
               onPress={() => set({ why: p.why.includes(w) ? p.why.filter((x) => x !== w) : [...p.why, w] })}
             />

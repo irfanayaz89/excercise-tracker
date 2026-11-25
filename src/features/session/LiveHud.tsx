@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { AccessibilityInfo, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import type { SessionSnapshot } from '@/engine/session';
 import { formatDuration, pauseCopy } from '@/session/copy';
@@ -16,10 +16,11 @@ import { useSettings } from '@/storage/settings';
 export function CountColumn({ snap, repMarks, compact }: { snap: SessionSnapshot; repMarks: boolean[]; compact: boolean }) {
   const pop = useSharedValue(1);
   const [{ voice }] = useSettings();
-  // With VoiceOver or TalkBack on and the voice coach off, each rep is announced (live regions are
-  // Android-only, so iPhone screen-reader users would otherwise hear nothing).
+  // With a screen reader on and the voice coach off, each rep is read out once. Android: the count
+  // is a live region (below). iPhone has no live regions, so it is announced. Doing both on
+  // Android read every rep twice (checked with TalkBack).
   useEffect(() => {
-    if (voice || snap.reps === 0) return;
+    if (voice || snap.reps === 0 || Platform.OS !== 'ios') return;
     void AccessibilityInfo.isScreenReaderEnabled().then((on) => {
       if (on) AccessibilityInfo.announceForAccessibility(String(snap.reps));
     });
@@ -36,7 +37,9 @@ export function CountColumn({ snap, repMarks, compact }: { snap: SessionSnapshot
     <View
       style={styles.count}
       accessible
-      accessibilityLabel={`${snap.reps} reps${snap.targetReps ? ` of ${snap.targetReps}` : ''}, ${snap.cleanReps} clean, ${formatDuration(snap.elapsedMs)}`}
+      // No running clock in the label: it would change every second and be read again and again.
+      accessibilityLabel={`${snap.reps} ${snap.reps === 1 ? 'rep' : 'reps'}${snap.targetReps ? ` of ${snap.targetReps}` : ''}, ${snap.cleanReps} clean`}
+      accessibilityLiveRegion={!voice ? 'polite' : 'none'}
     >
       <Label>{snap.targetReps ? `Reps · target ${snap.targetReps}` : 'Reps'}</Label>
       <Animated.View style={popStyle}>
@@ -77,7 +80,8 @@ export function TimerColumn({ snap, compact }: { snap: SessionSnapshot; compact:
     <View
       style={styles.count}
       accessible
-      accessibilityLabel={`${name}${which}: ${Math.floor(goodMs / 1000)} seconds in good form${target ? ` of ${Math.round(target / 1000)}` : ''}, ${
+      // Ten-second steps: a label that changes every second is read again and again.
+      accessibilityLabel={`${name}${which}: ${Math.floor(goodMs / 10_000) * 10} seconds in good form${target ? ` of ${Math.round(target / 1000)}` : ''}, ${
         h?.state === 'broken' ? 'clock stopped' : h?.state === 'warning' ? 'form slipping' : 'good form'
       }`}
     >
