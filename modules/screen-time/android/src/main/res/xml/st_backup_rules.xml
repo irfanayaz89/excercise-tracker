@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older. Blocking state (plan, today's counts, the service's heartbeat) belongs to
+     this phone: restored on a new one it would bring back an old plan and a false "stopped" gap.
+     Only excludes, so everything else the app keeps is still backed up. -->
+<full-backup-content>
+  <exclude domain="sharedpref" path="trueline.screentime.xml" />
+</full-backup-content>

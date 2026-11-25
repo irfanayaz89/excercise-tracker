@@ -16,10 +16,12 @@ import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
 import android.provider.AlarmClock
+import android.provider.Settings
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.abs
 
 /**
  * Android side of Trueline's screen time, shared by the module, the blocking
@@ -44,13 +46,62 @@ object STCore {
   fun <T> locked(block: () -> T): T = synchronized(lock) { block() }
 
   /** Loads the state, changes it and saves it, as one step. */
-  fun <T> edit(ctx: Context, now: Long = System.currentTimeMillis(), block: (State) -> T): T =
+  fun <T> edit(ctx: Context, now: Long = STCore.now(ctx), block: (State) -> T): T =
     synchronized(lock) {
       val st = state(ctx, now)
       val r = block(st)
       saveState(ctx, st)
       r
     }
+
+  // ── Trusted time ───────────────────────────────────────────────────────────
+
+  /**
+   * "Now" for every screen time decision. Moving the phone clock forward must not end a lock time,
+   * Strict, a focus or an unlock early, or start a new day. Each plan carries the app's own trusted
+   * "now" (madeAt); with the time since boot at that moment, the phone carries on from it. When the
+   * wall clock is more than 2 minutes away from that, the clock was moved: the carried-on time wins.
+   * (The time since boot drifts only a second or two a day, and every plan from the app re-anchors.)
+   * After a reboot the time since boot starts again, so the anchor says nothing: the wall clock is
+   * used until Trueline sends its next plan. Accepted gap: moving the clock and then rebooting.
+   */
+  fun now(ctx: Context): Long {
+    val wall = System.currentTimeMillis()
+    val pr = prefs(ctx)
+    val at = pr.getLong("clockAt", 0L)
+    if (at == 0L) return wall
+    val up = pr.getLong("clockUp", 0L)
+    val el = SystemClock.elapsedRealtime()
+    if (el < up || pr.getString("clockBoot", null) != bootId(ctx)) return wall
+    val expected = at + (el - up)
+    return if (abs(wall - expected) > CLOCK_SLACK_MS) expected else wall
+  }
+
+  private const val CLOCK_SLACK_MS = 120_000L
+
+  /** Remembers the app's trusted "now" with the time since boot (on every plan). */
+  fun anchor(ctx: Context, madeAt: Long?) {
+    // An older app sends no madeAt: carry on from the last anchor (or the wall clock) instead.
+    val at = madeAt ?: now(ctx)
+    prefs(ctx).edit().putLong("clockAt", at).putLong("clockUp", SystemClock.elapsedRealtime()).putString("clockBoot", bootId(ctx)).apply()
+  }
+
+  /** The wall clock minus the trusted time: how far the phone clock was moved (0 when it wasn't). */
+  fun skew(ctx: Context, now: Long = STCore.now(ctx)) = System.currentTimeMillis() - now
+
+  @Volatile private var boot: String? = null
+
+  /**
+   * An id that changes on every reboot (it can't change while this process lives, so it's read
+   * once): Android's boot count, else the kernel's boot id, else the boot moment by the wall clock
+   * (a moved clock then only makes the anchor look stale, which falls back to the wall clock).
+   */
+  fun bootId(ctx: Context): String =
+    boot ?: (
+      runCatching { Settings.Global.getInt(ctx.contentResolver, Settings.Global.BOOT_COUNT).toString() }.getOrNull()
+        ?: runCatching { java.io.File("/proc/sys/kernel/random/boot_id").readText().trim().takeIf { it.isNotEmpty() } }.getOrNull()
+        ?: "up${(System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 60_000}"
+      ).also { boot = it }
 
   // ── Plan (written by the app) ──────────────────────────────────────────────
 
@@ -138,7 +189,13 @@ object STCore {
     val pause: Pause = Pause.OFF,
     /** Hide notifications from apps while they're blocked. */
     val silence: Boolean = false,
-  )
+    /** The app's trusted "now" when it made the plan (epoch ms); absent from older apps. */
+    val madeAt: Long? = null,
+  ) {
+    /** Is there anything to block (or count)? If not, the service isn't needed. */
+    val wantsBlocking get() = !blocked.isEmpty || appLimits.isNotEmpty() || focusAll ||
+      locks.any { it.enabled && (it.allApps || it.apps == null || !it.apps.isEmpty) }
+  }
 
   fun parsePlan(json: String): Plan {
     val o = JSONObject(json)
@@ -215,10 +272,18 @@ object STCore {
         passes = pz.optInt("passes"),
       ),
       silence = o.optBoolean("silence"),
+      madeAt = if (!o.has("madeAt") || o.isNull("madeAt")) null else o.optLong("madeAt").takeIf { it > 0 },
     )
   }
 
-  fun plan(ctx: Context): Plan? = prefs(ctx).getString("plan", null)?.let { runCatching { parsePlan(it) }.getOrNull() }
+  /** The last plan parsed, by its text: the service reads the plan every second, the text rarely changes. */
+  @Volatile private var parsed: Pair<String, Plan>? = null
+
+  fun plan(ctx: Context): Plan? {
+    val raw = prefs(ctx).getString("plan", null) ?: return null
+    parsed?.let { if (it.first == raw) return it.second }
+    return runCatching { parsePlan(raw) }.getOrNull()?.also { parsed = raw to it }
+  }
 
   // ── State (written here while Trueline is in the background) ───────────────
 
@@ -269,7 +334,7 @@ object STCore {
     }
   }
 
-  fun state(ctx: Context, now: Long = System.currentTimeMillis()): State {
+  fun state(ctx: Context, now: Long = STCore.now(ctx)): State {
     val raw = prefs(ctx).getString("state", null)
     val s = State()
     if (raw != null) {
@@ -319,6 +384,20 @@ object STCore {
   fun takeState(ctx: Context): String =
     edit(ctx) { st ->
       val out = st.toJson().put("limitReached", limitReached(plan(ctx), st))
+      // What blocking needs right now, so the app can say what to fix (older apps ignore these).
+      val usage = ScreenTimeModule.usageAccess(ctx)
+      val overlay = Settings.canDrawOverlays(ctx)
+      out.put(
+        "access",
+        JSONObject()
+          .put("usage", usage)
+          .put("overlay", overlay)
+          .put("notifications", runCatching { ctx.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled() }.getOrDefault(true))
+          .put("listener", ScreenTimeModule.listenerOn(ctx)),
+      )
+      // Blocking should run but can't: "usage" or "overlay" (what's missing), else absent.
+      if (plan(ctx)?.wantsBlocking == true) BootReceiver.missing(usage, overlay)?.let { out.put("pausedFor", it) }
+      out.put("now", now(ctx)).put("clockMoved", abs(skew(ctx)) > CLOCK_SLACK_MS)
       st.earnedSpentSec -= (st.earnedSpentSec / 60) * 60
       st.unlocks.clear()
       st.gaps.clear()
@@ -519,7 +598,7 @@ object STCore {
   // ── Was blocking stopped? (research guide, Appendix A F5) ─────────────────
 
   /** The service writes this every few seconds while it runs. */
-  fun heartbeat(ctx: Context, now: Long = System.currentTimeMillis()) {
+  fun heartbeat(ctx: Context, now: Long = STCore.now(ctx)) {
     prefs(ctx).edit().putLong("hb", now).putBoolean("svc", true).apply()
   }
 
@@ -537,22 +616,24 @@ object STCore {
    * cleanly): only time after the boot can count, and only if the service still hadn't started
    * well after it (it normally starts on BOOT_COMPLETED).
    */
-  fun checkGap(ctx: Context, now: Long = System.currentTimeMillis()) =
+  fun checkGap(ctx: Context, now: Long = STCore.now(ctx)) =
     locked {
       val pr = prefs(ctx)
       val hb = pr.getLong("hb", 0L)
       if (hb == 0L || !pr.getBoolean("svc", false) || now - hb < 60_000) return@locked
       val bootAt = now - SystemClock.elapsedRealtime()
+      // Android's records (usage events, exit reasons) are stamped with the wall clock.
+      val shift = skew(ctx, now)
       val from = maxOf(hb, bootAt)
       if (hb < bootAt && now - bootAt < BOOT_GRACE_MS) {
         heartbeat(ctx, now)
         return@locked
       }
-      if (interactiveMs(ctx, from, now) < 60_000) {
+      if (interactiveMs(ctx, from + shift, now + shift) < 60_000) {
         heartbeat(ctx, now)
         return@locked
       }
-      val via = userStopSince(ctx, from, now)
+      val via = userStopSince(ctx, from + shift, now + shift)
       val st = state(ctx, now)
       if (st.gaps.none { it.from == from }) st.gaps.add(Gap(from, now, if (via != null) "stopped" else "killed", via?.takeIf { it != "user" }))
       saveState(ctx, st)
@@ -624,7 +705,7 @@ object STCore {
   fun pausePasses(p: Plan, st: State, now: Long) = maxOf(st.pauses, if (p.day == dayKey(now)) p.pause.passes else 0)
 
   /** The user waited out the pause: this app is open for the pass length, and the next wait grows. */
-  fun grantPass(ctx: Context, pkg: String, now: Long = System.currentTimeMillis()) {
+  fun grantPass(ctx: Context, pkg: String, now: Long = STCore.now(ctx)) {
     val p = plan(ctx) ?: return
     edit(ctx, now) { st ->
       st.passes.entries.removeAll { it.value <= now }
@@ -658,7 +739,7 @@ object STCore {
     return launchable - needed
   }
 
-  fun takeUnlock(ctx: Context, kind: String, minutes: Int, now: Long = System.currentTimeMillis()) {
+  fun takeUnlock(ctx: Context, kind: String, minutes: Int, now: Long = STCore.now(ctx)) {
     edit(ctx, now) { st -> st.unlocks.add(Unlock(kind, now.toDouble(), (now + minutes * 60_000L).toDouble())) }
   }
 

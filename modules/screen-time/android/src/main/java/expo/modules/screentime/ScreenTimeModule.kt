@@ -9,11 +9,15 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
+import expo.modules.interfaces.permissions.PermissionsStatus
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import android.app.usage.UsageStatsManager
 import java.util.Calendar
+import java.util.concurrent.Executors
 
 /**
  * Trueline's screen time bridge on Android. The app's TypeScript engine
@@ -28,6 +32,11 @@ class ScreenTimeModule : Module() {
     Name("ScreenTime")
 
     Function("isSupported") { Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q }
+
+    /** A clock the user can't move (time since boot, sleep included) and an id that changes on every reboot. */
+    Function("clock") {
+      mapOf("uptimeMs" to SystemClock.elapsedRealtime().toDouble(), "boot" to STCore.bootId(ctx))
+    }
 
     Function("authorizationStatus") { if (hasAccess(ctx)) "approved" else "notDetermined" }
 
@@ -74,9 +83,7 @@ class ScreenTimeModule : Module() {
     }
 
     /** Trueline may hide notifications (Settings → Notification access is on for it). */
-    Function("notificationAccess") {
-      NotificationManagerCompatLite.enabledListeners(ctx).contains(ctx.packageName)
-    }
+    Function("notificationAccess") { listenerOn(ctx) }
 
     /**
      * Phone use from Android's own records: minutes per day for the last 7 days (all apps the user
@@ -90,10 +97,14 @@ class ScreenTimeModule : Module() {
       }.getOrDefault(emptySet())
       val home = runCatching { pm.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)?.activityInfo?.packageName }.getOrNull()
       val counted = launchable - setOfNotNull(ctx.packageName, home)
+      // Days by the trusted time (a moved phone clock doesn't relabel them); Android's events are
+      // stamped with the wall clock, so they're shifted back by how far the clock was moved.
+      val now = STCore.now(ctx)
+      val shift = STCore.skew(ctx, now)
       val cal = Calendar.getInstance().apply {
+        timeInMillis = now
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
       }
-      val now = System.currentTimeMillis()
       val starts = (0 until 7).map { i -> (cal.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -i) }.timeInMillis }.reversed()
       val perDay = LongArray(7)
       val today = mutableMapOf<String, Long>()
@@ -112,18 +123,18 @@ class ScreenTimeModule : Module() {
         }
       }
       val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-      val events = runCatching { usm.queryEvents(starts[0], now) }.getOrNull()
+      val events = runCatching { usm.queryEvents(starts[0] + shift, now + shift) }.getOrNull()
       val front = mutableMapOf<String, Long>()
       val e = android.app.usage.UsageEvents.Event()
       while (events != null && events.hasNextEvent()) {
         events.getNextEvent(e)
         val k = "${e.packageName}/${e.className}"
         when (e.eventType) {
-          android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED -> front[k] = e.timeStamp
+          android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED -> front[k] = e.timeStamp - shift
           android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED, android.app.usage.UsageEvents.Event.ACTIVITY_STOPPED ->
-            front.remove(k)?.let { add(e.packageName, it, e.timeStamp) }
+            front.remove(k)?.let { add(e.packageName, it, e.timeStamp - shift) }
           android.app.usage.UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
-            front.forEach { (key, at) -> add(key.substringBefore('/'), at, e.timeStamp) }
+            front.forEach { (key, at) -> add(key.substringBefore('/'), at, e.timeStamp - shift) }
             front.clear()
           }
         }
@@ -144,25 +155,45 @@ class ScreenTimeModule : Module() {
       mapOf("days" to days, "top" to top)
     }
 
-    /** Store the plan and start (or stop) blocking. */
+    /**
+     * Store the plan and start (or stop) blocking. Stays synchronous (the app reads the problems
+     * straight away) but light: the slow part, looking for a gap in Android's records, runs on a
+     * background thread, or in the service's own thread when it starts.
+     */
     Function("sync") { planJson: String ->
       val problems = mutableListOf<String>()
       val plan = runCatching { STCore.parsePlan(planJson) }.getOrElse {
         problems.add("plan: ${it.message}")
         return@Function problems
       }
-      // Before (re)starting the service: did it stop while it should have been running?
-      runCatching { STCore.checkGap(ctx) }
-      STCore.prefs(ctx).edit().putString("plan", planJson).apply()
-      val anything = !plan.blocked.isEmpty || plan.appLimits.isNotEmpty() || plan.focusAll ||
-        plan.locks.any { it.enabled && (it.allApps || it.apps == null || !it.apps.isEmpty) }
-      if (!anything) {
-        BlockService.stop(ctx)
-        STWidget.update(ctx, "Screen time is off")
-      } else if (!hasAccess(ctx)) {
-        problems.add("Usage access or Display over other apps is off")
+      val c = ctx
+      // The app's trusted "now" for this plan: the phone carries on from it if its clock is moved.
+      STCore.anchor(c, plan.madeAt)
+      STCore.prefs(c).edit().putString("plan", planJson).apply()
+      val miss = BootReceiver.missing(c)
+      if (!plan.wantsBlocking) {
+        // Did it stop while it should have been running? Then it's stopped on purpose: not a gap later.
+        background.execute {
+          runCatching { STCore.checkGap(c) }
+          STCore.stoppedCleanly(c)
+        }
+        BlockService.stop(c)
+        BootReceiver.disarm(c)
+        BootReceiver.clearAlert(c)
+        STWidget.update(c, "Screen time is off")
+      } else if (miss != null) {
+        background.execute { runCatching { STCore.checkGap(c) } }
+        BootReceiver.arm(c)
+        problems.add(if (miss == "usage") "Blocking is paused: Usage access is off for Trueline." else "Blocking is paused: Display over other apps is off for Trueline.")
       } else {
-        runCatching { BlockService.start(ctx) }.onFailure { problems.add("service: ${it.message}") }
+        // A running service beats every 5 s, so there's only a gap to look for when it isn't running
+        // (a service starting now looks too, in onCreate: whichever is first records it, once).
+        if (!BlockService.alive) background.execute { runCatching { STCore.checkGap(c) } }
+        runCatching { BlockService.start(c) }.onFailure { problems.add("service: ${it.message}") }
+        BootReceiver.arm(c)
+      }
+      if (plan.wantsBlocking && plan.silence && !listenerOn(c)) {
+        problems.add("Hiding notifications needs Notification access for Trueline.")
       }
       problems
     }
@@ -174,16 +205,28 @@ class ScreenTimeModule : Module() {
 
     Function("stopAll") {
       BlockService.stop(ctx)
+      BootReceiver.disarm(ctx)
+      BootReceiver.clearAlert(ctx)
       STCore.prefs(ctx).edit().remove("plan").apply()
       STWidget.update(ctx, "Screen time is off")
     }
 
-    /** Android 13+: the ongoing "Screen time is on" notification. */
-    AsyncFunction("requestNotifications") {
-      if (Build.VERSION.SDK_INT < 33) return@AsyncFunction true
-      if (ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return@AsyncFunction true
-      appContext.currentActivity?.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4271)
-      false
+    /** Android 13+: the ongoing "Screen time is on" notification. Resolves with the user's answer. */
+    AsyncFunction("requestNotifications") { promise: Promise ->
+      if (Build.VERSION.SDK_INT < 33 || ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+        promise.resolve(true)
+        return@AsyncFunction
+      }
+      val perms = appContext.permissions
+      if (perms == null) {
+        appContext.currentActivity?.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 4271)
+        promise.resolve(false)
+        return@AsyncFunction
+      }
+      perms.askForPermissions(
+        { res -> promise.resolve(res[Manifest.permission.POST_NOTIFICATIONS]?.status == PermissionsStatus.GRANTED) },
+        Manifest.permission.POST_NOTIFICATIONS,
+      )
     }
   }
 
@@ -192,14 +235,15 @@ class ScreenTimeModule : Module() {
     if (activity != null) activity.startActivity(i) else ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
   }
 
-  /** The notification listeners the user has enabled (Settings → Notification access). */
-  private object NotificationManagerCompatLite {
-    fun enabledListeners(ctx: Context): Set<String> =
-      (Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners") ?: "")
-        .split(':').mapNotNull { android.content.ComponentName.unflattenFromString(it)?.packageName }.toSet()
-  }
-
   companion object {
+    /** sync's slow part (checkGap) runs here, one at a time, off the JS thread. */
+    private val background = Executors.newSingleThreadExecutor()
+
+    /** Trueline is among the notification listeners the user enabled (Settings → Notification access). */
+    fun listenerOn(ctx: Context): Boolean =
+      (Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners") ?: "")
+        .split(':').any { android.content.ComponentName.unflattenFromString(it)?.packageName == ctx.packageName }
+
     fun usageAccess(ctx: Context): Boolean {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
       val ops = ctx.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager

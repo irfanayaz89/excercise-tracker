@@ -17,6 +17,8 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
+import android.provider.Settings
 import android.media.AudioManager
 import android.telecom.TelecomManager
 import java.text.DateFormat
@@ -33,6 +35,7 @@ class BlockService : Service() {
   private val thread = HandlerThread("trueline-block").apply { start() }
   private val handler = Handler(thread.looper)
   @Volatile private var running = false
+  /** Throttles and the time counted use the time since boot: moving the phone clock can't stretch or stall them. */
   private var lastTick = 0L
   /** Milliseconds counted but not yet a whole second (carried to the next tick, so none are lost). */
   private var carryMs = 0L
@@ -56,11 +59,16 @@ class BlockService : Service() {
   private var inTruelineSince = 0L
   /** Activities that resumed and haven't paused since ("package/class" to when), and the newest event read. */
   private val resumed = mutableMapOf<String, Long>()
+  /** Activities that paused but haven't stopped: still on screen (picture-in-picture, or under a see-through screen). */
+  private val pausedVisible = mutableMapOf<String, Long>()
   private var lastEventAt = 0L
+  /** Wall clock minus time since boot at the last look: a change means the phone clock was moved. */
+  private var lastSkew: Long? = null
   private var lastNote: String? = null
   private var lastBeat = 0L
-  private var hasAccess = true
   private var usageOk = true
+  /** What access is missing ("usage", "overlay"), as last alerted; null when all is there. */
+  private var missing: String? = null
   /** Android refused the foreground start: this instance does nothing and goes away. */
   private var refused = false
   private val categories = mutableMapOf<String, String>()
@@ -81,15 +89,22 @@ class BlockService : Service() {
     val n = note("Screen time is on")
     // Restarted by the system from the background, Android 12+ may refuse a foreground start
     // (ForegroundServiceStartNotAllowedException). Stop cleanly instead of crashing in a loop: the
-    // gap is recorded next time Trueline opens, and the boot receiver or the app starts it again.
+    // gap is recorded next time Trueline opens, the user is told (tapping opens Trueline, which
+    // starts it from the foreground), and the watchdog, the boot receiver or the app start it again.
     val started = runCatching {
       if (Build.VERSION.SDK_INT >= 34) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(ID, n)
     }.isSuccess
     if (!started) {
       refused = true
+      runCatching { BootReceiver.alertStopped(this) }
+      runCatching { STWidget.update(this, null) }
       stopSelf()
       return
     }
+    alive = true
+    BootReceiver.clearAlert(this)
+    // Brings blocking back if this service is stopped without Trueline knowing (see BootReceiver).
+    runCatching { BootReceiver.arm(this) }
     // Restarted (after a reboot, or Trueline opened after a force stop): note any gap, then beat again.
     handler.post {
       runCatching { STCore.checkGap(this) }
@@ -110,6 +125,7 @@ class BlockService : Service() {
     // Only a deliberate stop gets here; a force stop or Task Manager stop kills the process instead.
     // A refused foreground start is not a clean stop: leave the gap for checkGap to record.
     if (!refused) STCore.stoppedCleanly(this)
+    alive = false
     running = false
     handler.removeCallbacks(tick)
     // After any step in progress: write down the last seconds counted, and clear the widget's line.
@@ -137,21 +153,28 @@ class BlockService : Service() {
   }
 
   private fun step() {
-    val now = System.currentTimeMillis()
+    val now = STCore.now(this)
+    val wall = System.currentTimeMillis()
+    val up = SystemClock.elapsedRealtime()
     val p = STCore.plan(this) ?: run {
       stopSelf()
       return
     }
     val interactive = getSystemService(PowerManager::class.java).isInteractive
-    val elapsed = if (lastTick == 0L) 0L else (now - lastTick).coerceIn(0L, 5_000L)
-    lastTick = now
-    if (now - lastBeat >= 5_000) {
-      lastBeat = now
+    val elapsed = if (lastTick == 0L) 0L else (up - lastTick).coerceIn(0L, 5_000L)
+    lastTick = up
+    if (lastBeat == 0L || up - lastBeat >= 5_000) {
+      lastBeat = up
       STCore.heartbeat(this, now)
       // Usage access or "display over other apps" switched off: nothing can be blocked, so say so
-      // where the user will see it, not only inside Trueline.
-      hasAccess = ScreenTimeModule.hasAccess(this)
+      // where the user will see it (a heads-up once, then the ongoing notification), not only inside Trueline.
       usageOk = ScreenTimeModule.usageAccess(this)
+      val overlay = Settings.canDrawOverlays(this)
+      val miss = BootReceiver.missing(usageOk, overlay)
+      if (miss != missing) {
+        missing = miss
+        runCatching { if (miss != null) BootReceiver.alertAccess(this, miss) else BootReceiver.clearAlert(this) }
+      }
     }
     if (!interactive) {
       carryMs = 0
@@ -162,8 +185,9 @@ class BlockService : Service() {
     // or when no activity is in front.
     // Without usage access no new events arrive: the last app would look like it's in front forever
     // (counting its time, or blocking it over and over). Forget it until access is back.
-    val top = if (usageOk) foreground(now) else {
+    val top = if (usageOk) foreground(wall, up) else {
       resumed.clear()
+      pausedVisible.clear()
       null
     }
     val keyguard = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
@@ -176,30 +200,31 @@ class BlockService : Service() {
     carryMs -= dt * 1000
     // A few seconds in Trueline itself ends the visit to the app before (going back is a new open).
     if (pkg == packageName && !onOwnScreen) {
-      if (inTruelineSince == 0L) inTruelineSince = now
-      if (now - inTruelineSince >= 3_000) lastApp = packageName
+      if (inTruelineSince == 0L) inTruelineSince = up
+      if (up - inTruelineSince >= 3_000) lastApp = packageName
     } else {
       inTruelineSince = 0L
     }
-    val (s, st, show) = STCore.locked { tally(p, pkg, now, dt) }
+    val (s, st, show) = STCore.locked { tally(p, pkg, now, up, dt) }
     // Never cover a call (incoming, ongoing or a video call) or the apps the phone needs: the dialer,
     // Settings (Trueline's own permission screens open there) and emergency.
     val calling = inCall()
     if (pkg != null && show != null && pkg !in essential && !calling) {
       openBlocked(pkg, show)
-    } else if (front != null && show == null && !calling && now - lastShown > 1500) {
+    } else if (front != null && show == null && !calling && up - lastShown > 1500) {
       // Split screen and free-form windows keep more than one app resumed: a blocked app there
       // is blocked too, even when the other pane was touched last.
       val other = resumed.entries.sortedByDescending { it.value }.map { it.key.substringBefore('/') }
         .firstOrNull { it != pkg && it != packageName && it !in essential && STCore.blocks(p, s, it, category(it), packageName, ::everyday) }
       if (other != null) {
-        lastShown = now
+        lastShown = up
         openBlocked(other, "block")
       }
     }
+    if (front != null && !calling) pausePip(p, s, pkg, wall)
     val clock = { at: Long -> DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at)) }
     val text = when {
-      !hasAccess -> "Blocking is off: Trueline lost its access. Tap to turn it back on."
+      missing != null -> BootReceiver.accessText(missing!!)
       s.unlockedUntil != null -> "Unlocked until ${clock(s.unlockedUntil)}"
       // A lock time or a workout focus: both have a name and an end.
       s.blocked && s.until != null && p.focusKind == "key" && s.reason == "focus" -> "Key lock until you scan your key (at most ${clock(s.until)})"
@@ -211,7 +236,7 @@ class BlockService : Service() {
     // Once stopping, leave the notification and widget to onDestroy.
     if (text != lastNote && running) {
       lastNote = text
-      getSystemService(NotificationManager::class.java).notify(ID, note(text))
+      getSystemService(NotificationManager::class.java).notify(ID, note(text, missing))
       STWidget.update(this, text)
     }
   }
@@ -220,7 +245,7 @@ class BlockService : Service() {
    * Under the state lock: re-read the saved state (the app or the blocked screen may have changed
    * it), add what this tick counted, save when needed, and say which screen to show over `pkg`.
    */
-  private fun tally(p: STCore.Plan, pkg: String?, now: Long, dt: Long): Triple<STCore.Status, STCore.State, String?> {
+  private fun tally(p: STCore.Plan, pkg: String?, now: Long, up: Long, dt: Long): Triple<STCore.Status, STCore.State, String?> {
     val st = STCore.state(this, now)
     // A new day starts from zero: yesterday's unsaved seconds don't carry over.
     if (st.day != pendingDay) {
@@ -308,14 +333,14 @@ class BlockService : Service() {
     }
     s = visitOnly(STCore.status(p, st, now))
     var show: String? = null
-    if (now - lastShown > 1500) {
+    if (up - lastShown > 1500) {
       show = when {
         STCore.blocks(p, s, pkg, cat, packageName, ::everyday) -> "block"
         STCore.pauses(p, s, st, pkg, cat, packageName, now) -> "pause"
         else -> null
       }
       if (show != null) {
-        lastShown = now
+        lastShown = up
         save()
       }
     }
@@ -331,8 +356,21 @@ class BlockService : Service() {
    * the activity is destroyed (one that crashed never pauses) and when the screen turns off or the
    * lock screen shows.
    */
-  private fun foreground(now: Long): String? {
+  private fun foreground(now: Long, up: Long): String? {
     val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+    // Event times are wall clock times, and Android moves its stored events when the clock is
+    // changed. Move ours by the same amount, or a clock set back would hide every new event (they'd
+    // all look older than the last one read) until the clock caught up.
+    val skew = now - up
+    lastSkew?.let { last ->
+      val moved = skew - last
+      if (lastEventAt != 0L && kotlin.math.abs(moved) > 2_000) {
+        lastEventAt += moved
+        resumed.replaceAll { _, at -> at + moved }
+        pausedVisible.replaceAll { _, at -> at + moved }
+      }
+    }
+    lastSkew = skew
     // The first look after the service starts (reboot, app update) goes back far enough to find an
     // app that was already open. After that, only what is new, with a small overlap: an event can
     // be recorded a moment late, and replaying one is harmless (each activity keeps its last event).
@@ -343,14 +381,49 @@ class BlockService : Service() {
       events.getNextEvent(e)
       val key = "${e.packageName}/${e.className}"
       when (e.eventType) {
-        UsageEvents.Event.ACTIVITY_RESUMED -> resumed[key] = e.timeStamp
-        UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED, ACTIVITY_DESTROYED -> resumed.remove(key)
-        UsageEvents.Event.SCREEN_NON_INTERACTIVE, UsageEvents.Event.KEYGUARD_SHOWN -> resumed.clear()
+        UsageEvents.Event.ACTIVITY_RESUMED -> {
+          resumed[key] = e.timeStamp
+          pausedVisible.remove(key)
+        }
+        UsageEvents.Event.ACTIVITY_PAUSED -> {
+          resumed.remove(key)
+          pausedVisible[key] = e.timeStamp
+        }
+        UsageEvents.Event.ACTIVITY_STOPPED, ACTIVITY_DESTROYED -> {
+          resumed.remove(key)
+          pausedVisible.remove(key)
+        }
+        UsageEvents.Event.SCREEN_NON_INTERACTIVE, UsageEvents.Event.KEYGUARD_SHOWN -> {
+          resumed.clear()
+          pausedVisible.clear()
+        }
       }
       if (e.timeStamp > lastEventAt) lastEventAt = e.timeStamp
     }
     if (lastEventAt == 0L) lastEventAt = now
     return resumed.maxByOrNull { it.value }?.key
+  }
+
+  /** Blocked apps whose picture-in-picture window has had the blocked screen shown for it once. */
+  private val pipShown = mutableSetOf<String>()
+
+  /**
+   * Picture-in-picture: the app's activity is paused but stays on screen (nothing in the usage
+   * events says "PiP", but paused-and-not-stopped for a few seconds is what it looks like). The
+   * blocked screen can't cover a PiP window, and only an accessibility service could close it, so:
+   * the blocked screen is shown once (so the user knows why), and the app's playback is paused
+   * through its media session every second while it stays blocked. Pausing needs Notification
+   * access (Android only lists media sessions to a notification listener); without it, the PiP
+   * window keeps playing. Its time isn't counted (the user isn't using that app).
+   */
+  private fun pausePip(p: STCore.Plan, s: STCore.Status, pkg: String?, wall: Long) {
+    val apps = pausedVisible.filter { wall - it.value > 2_000 }.keys.map { it.substringBefore('/') }.toSet()
+      .filter { it != pkg && it != packageName && it !in essential && STCore.blocks(p, s, it, category(it), packageName, ::everyday) }
+    pipShown.retainAll(apps.toSet())
+    for (app in apps) {
+      STNotifyListener.pauseMedia(this, app)
+      if (pipShown.add(app)) openBlocked(app, "block")
+    }
   }
 
   private fun openBlocked(pkg: String, mode: String) {
@@ -398,17 +471,21 @@ class BlockService : Service() {
 
   /** For "block everything": apps the user opens from the launcher, minus the ones the phone needs. */
   private fun everyday(pkg: String): Boolean {
-    val now = System.currentTimeMillis()
-    if (now - everydayAt > 10 * 60_000L) {
+    val now = SystemClock.elapsedRealtime()
+    if (everydayAt == 0L || now - everydayAt > 10 * 60_000L) {
       everydayAt = now
       everydayApps = STCore.everydayApps(this)
     }
     return pkg in everydayApps
   }
 
-  private fun note(text: String): Notification {
-    val open = packageManager.getLaunchIntentForPackage(packageName)
-    val pi = open?.let { PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE) }
+  /** The ongoing notification; with access missing, tapping it opens the settings screen that fixes it. */
+  private fun note(text: String, miss: String? = null): Notification {
+    val pi = if (miss != null) {
+      PendingIntent.getActivity(this, 2, BootReceiver.fixIntent(this, miss), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    } else {
+      packageManager.getLaunchIntentForPackage(packageName)?.let { PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE) }
+    }
     return Notification.Builder(this, CHANNEL)
       .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
       .setContentTitle("Trueline")
@@ -423,6 +500,9 @@ class BlockService : Service() {
     const val ID = 4271
     /** UsageEvents.Event.ACTIVITY_DESTROYED (hidden in the SDK, but delivered with usage access). */
     private const val ACTIVITY_DESTROYED = 24
+
+    /** The service is running in this process (the watchdog then has nothing to do). */
+    @Volatile var alive = false
 
     fun categoryName(c: Int): String =
       when (c) {
