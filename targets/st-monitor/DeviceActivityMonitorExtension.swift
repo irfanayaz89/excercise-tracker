@@ -2,7 +2,9 @@ import DeviceActivity
 import Foundation
 
 /// Wakes at lock-time edges, at midnight and at usage thresholds, while Trueline
-/// is closed, and makes the blocks match the plan the app last saved.
+/// is closed, and makes the blocks match the plan the app last saved. The schedules
+/// fire by the phone clock, but STShared decides by its trusted clock (STShared.now()),
+/// so a callback brought early by a moved clock keeps the blocks and re-arms the wake-up.
 class DeviceActivityMonitorExtension: DeviceActivityMonitor {
   override func intervalDidStart(for activity: DeviceActivityName) {
     super.intervalDidStart(for: activity)
