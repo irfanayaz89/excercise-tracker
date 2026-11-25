@@ -608,11 +608,11 @@ function TempoChart({ reps }: { reps: RepRecord[] }) {
         ))}
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Mono size={11} tone="faint">
+        <Mono size={11} tone="muted">
           rep 1
         </Mono>
-        <Mono size={11} tone="faint">{`${(max / 1000).toFixed(1)}s max`}</Mono>
-        <Mono size={11} tone="faint">{`rep ${reps.length}`}</Mono>
+        <Mono size={11} tone="muted">{`${(max / 1000).toFixed(1)}s max`}</Mono>
+        <Mono size={11} tone="muted">{`rep ${reps.length}`}</Mono>
       </View>
     </View>
   );

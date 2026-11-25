@@ -104,7 +104,7 @@ export default function SessionScreen() {
       <Gate
         eyebrow="Camera"
         title="Let Trueline see you"
-        body="The camera watches your body position to count push-ups and check your form. Everything runs on this phone; no video is saved or sent anywhere."
+        body="The camera watches your body position to count your reps and check your form. Everything runs on this phone; no video is saved or sent anywhere."
         primary={{ label: 'Allow camera', onPress: () => void permission.requestPermission() }}
         secondary={{ label: 'Not now', onPress: goBack }}
       />
@@ -112,7 +112,7 @@ export default function SessionScreen() {
       <Gate
         eyebrow="Camera is off"
         title="Camera access needed"
-        body="Camera access was turned off for Trueline. Turn it on in Settings to count push-ups."
+        body="Camera access was turned off for Trueline. Turn it on in Settings to count your reps."
         primary={{ label: 'Open Settings', onPress: openSettings }}
         secondary={{ label: 'Back', onPress: goBack }}
       />
@@ -550,7 +550,7 @@ function Hud({
               />
             )}
             {snap.phase === 'body-check' && <BodyPanel snap={snap} orientation={orientation} guided={guided} config={ctrl.config} />}
-            {snap.phase === 'paused' && <PausedPanel snap={snap} onEnd={() => ctrl.end()} />}
+            {snap.phase === 'paused' && <PausedPanel snap={snap} onEnd={requestEnd} confirming={confirmEnd} />}
             {counting && <CueBanner banner={ctrl.banner} detailed={guided} />}
           </View>
         </View>

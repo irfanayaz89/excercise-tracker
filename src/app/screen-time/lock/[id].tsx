@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { changeRules, countLabel, describeChange, editBase, pickApps, selectionProblem } from '@/screentime/edit';
 import { describeLock, EMPTY_SELECTION, LOCK_PRESETS, lockProblem, MAX_LOCK_TIMES } from '@/screentime/rules';
@@ -186,7 +186,18 @@ export default function LockEditor() {
           disabled={!!problem || !lock.name.trim() || (lock.apps !== 'main' && lock.apps !== 'all' && countLabel(lock.apps) === 'None picked')}
           onPress={save}
         />
-        {!isNew && <Button variant="danger" label="Delete" onPress={remove} />}
+        {!isNew && (
+          <Button
+            variant="danger"
+            label="Delete"
+            onPress={() =>
+              Alert.alert('Delete this lock time?', 'It stops blocking at these times.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: remove },
+              ])
+            }
+          />
+        )}
       </View>
     </ScrollView>
   );

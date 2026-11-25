@@ -19,7 +19,7 @@ export default function EarnScreen() {
   const insets = useSafeAreaInsets();
   const guard = useTapGuard();
   const st = useScreenTimeTick();
-  const [settings] = useSettings();
+  const [settings, updateSettings] = useSettings();
   const e = st.rules.earning;
   const capLeft = Math.max(0, e.dailyCapMin - st.today.earnedMin);
   const order = [...settings.focus, ...ORDER.filter((x) => !settings.focus.includes(x))];
@@ -59,7 +59,11 @@ export default function EarnScreen() {
             key={x}
             accessibilityRole="button"
             accessibilityLabel={`${EXERCISES[x].label}: ${rateText(e.rates[x])}`}
-            onPress={guard(() => router.push({ pathname: '/exercise/[id]', params: { id: x } }))}
+            onPress={guard(() => {
+              // Straight towards a set: the short guide (phone placement) leads into it.
+              updateSettings({ exercise: x });
+              router.push({ pathname: '/guide', params: { ex: x } });
+            })}
             style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
           >
             <ExerciseGlyph exercise={x} active size={44} />
@@ -79,7 +83,7 @@ export default function EarnScreen() {
         ))}
       </View>
 
-      <Body tone="faint" size={13}>
+      <Body tone="muted" size={13}>
         Only counted reps and time in good form earn minutes. Flagged reps earn half. Demo sets earn nothing.
       </Body>
       {off && <Button variant="ghost" label="Screen time settings" onPress={() => router.replace('/screen-time')} />}

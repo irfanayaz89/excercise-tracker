@@ -37,9 +37,10 @@ export const font = {
   displayBlack: 'BigShouldersDisplay_900Black',
   displayMed: 'BigShouldersDisplay_600SemiBold',
   body: 'Archivo_400Regular',
-  bodyMed: 'Archivo_500Medium',
+  // Medium and bold aren't loaded (unused, ~240 KB): they map to the weights that are.
+  bodyMed: 'Archivo_400Regular',
   bodySemi: 'Archivo_600SemiBold',
-  bodyBold: 'Archivo_700Bold',
+  bodyBold: 'Archivo_600SemiBold',
   mono: 'JetBrainsMono_400Regular',
   monoMed: 'JetBrainsMono_500Medium',
 } as const;

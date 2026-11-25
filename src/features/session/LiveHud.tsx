@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import type { SessionSnapshot } from '@/engine/session';
 import { formatDuration, pauseCopy } from '@/session/copy';
@@ -10,10 +10,20 @@ import { Body, Button, Display, Label, Mono } from '@/ui/primitives';
 import { Tally } from '@/ui/Tally';
 import { color, radius, space, type } from '@/ui/theme';
 import { EXERCISES, isTimed } from '@/engine/exercises';
+import { useSettings } from '@/storage/settings';
 
 /** The giant rep counter column, readable from across a room. */
 export function CountColumn({ snap, repMarks, compact }: { snap: SessionSnapshot; repMarks: boolean[]; compact: boolean }) {
   const pop = useSharedValue(1);
+  const [{ voice }] = useSettings();
+  // With VoiceOver or TalkBack on and the voice coach off, each rep is announced (live regions are
+  // Android-only, so iPhone screen-reader users would otherwise hear nothing).
+  useEffect(() => {
+    if (voice || snap.reps === 0) return;
+    void AccessibilityInfo.isScreenReaderEnabled().then((on) => {
+      if (on) AccessibilityInfo.announceForAccessibility(String(snap.reps));
+    });
+  }, [snap.reps, voice]);
   useEffect(() => {
     if (snap.reps > 0) pop.value = withSequence(withTiming(1.12, { duration: 90 }), withTiming(1, { duration: 220 }));
   }, [snap.reps, pop]);
@@ -141,7 +151,7 @@ export function DepthColumn({ snap }: { snap: SessionSnapshot }) {
   );
 }
 
-export function PausedPanel({ snap, onEnd }: { snap: SessionSnapshot; onEnd: () => void }) {
+export function PausedPanel({ snap, onEnd, confirming = false }: { snap: SessionSnapshot; onEnd: () => void; confirming?: boolean }) {
   const c = pauseCopy(snap.pauseReason ?? 'lost-tracking', snap.exercise);
   const saved = isTimed(snap.exercise) ? `${formatDuration(snap.hold?.goodMs ?? 0)} saved` : `${snap.reps} reps saved`;
   // A screen instead of a person is an alert, not a rest: red, and stays up until a real person is back.
@@ -158,7 +168,7 @@ export function PausedPanel({ snap, onEnd }: { snap: SessionSnapshot; onEnd: () 
       <View style={styles.hold}>
         <View style={[styles.holdFill, { width: `${Math.round(snap.plankProgress * 100)}%` }]} />
       </View>
-      <Button label="Finish set" variant="ghost" onPress={onEnd} style={{ alignSelf: 'flex-start' }} />
+      <Button label={confirming ? 'Tap again to finish' : 'Finish set'} variant="ghost" onPress={onEnd} style={{ alignSelf: 'flex-start' }} />
     </View>
   );
 }
@@ -196,7 +206,8 @@ export function TrackingDebug({
 }
 
 const styles = StyleSheet.create({
-  count: { gap: 6, alignItems: 'flex-start' },
+  // A dark plate behind the count: readable from 2 m even against a bright wall or window.
+  count: { gap: 6, alignItems: 'flex-start', alignSelf: 'flex-start', backgroundColor: color.scrimStrong, borderRadius: radius.lg, padding: space.md },
   subRow: { flexDirection: 'row', gap: space.lg, marginBottom: 6 },
   banner: {
     backgroundColor: color.scrimStrong,

@@ -31,7 +31,7 @@ export function DayTimeline({ rules, now }: { rules: ScreenTimeRules; now: numbe
       </View>
       <View style={styles.scale}>
         {['00', '06', '12', '18', '24'].map((h) => (
-          <Mono key={h} size={10} tone="faint">
+          <Mono key={h} size={10} tone="muted">
             {h}
           </Mono>
         ))}

@@ -25,7 +25,7 @@ export function ScreenTimeCard({ guard }: { guard: (fn: () => void) => () => voi
         <Label tone="vial">Screen time</Label>
         <Strong size={18}>Earn your scroll</Strong>
         <Body tone="muted" size={14}>
-          Block the apps that eat your day, and open them again with push-ups, crunches or a plank. Set up in a minute ›
+          Block the apps that eat your day, and open them again with push-ups, crunches or a plank. Set it up ›
         </Body>
       </Pressable>
     );

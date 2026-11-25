@@ -209,7 +209,7 @@ function IntroStep({ next, skip }: StepProps) {
       <View style={{ gap: space.md, marginTop: space.xl }}>
         <Display size={46}>Pick a goal. Your camera counts the reps.</Display>
         <Body tone="muted">
-          Three quick questions give you a plan with real numbers: what to eat, when you will get there and what your workouts burn. Video
+          A few quick questions give you a plan with real numbers: what to eat, when you will get there and what your workouts burn. Video
           never leaves your phone.
         </Body>
       </View>
@@ -713,7 +713,7 @@ function PlanStep({ p, next, safety }: StepProps) {
             : 'While pregnant or soon after birth, don’t diet to lose weight. Ask your midwife or doctor what suits you.'}
         </Note>
       )}
-      <Body tone="faint" size={13}>
+      <Body tone="muted" size={13}>
         {p.aim === 'lose-fat' || p.aim === 'get-stronger'
           ? `Daily needs from ${p.muscular ? 'Ten Haaf’s equation for muscular people' : 'Mifflin–St Jeor'}, accurate to about 10% for most adults; your weekly weight is the true check. Workout calories from your weight, height and rep speed, about ±30% a set. BMI now ${bmiNow.value.toFixed(1)}. Not medical advice.`
           : 'Workout calories from your weight, height and rep speed, using lab measurements of push-ups and planks: about ±30% for any one set. Not medical advice.'}
@@ -764,7 +764,7 @@ function AccessStep({ next }: StepProps) {
         </>
       )}
       {motion === 'denied' && (
-        <Body tone="faint" size={13}>
+        <Body tone="muted" size={13}>
           Motion is off: the level check will ask you to confirm the phone is set instead.
         </Body>
       )}

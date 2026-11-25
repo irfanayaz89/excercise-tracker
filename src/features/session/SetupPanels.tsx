@@ -183,7 +183,7 @@ export function BodyPanel({
           </View>
         </>
       )}
-      <HoldBar progress={snap.plankProgress} />
+      <HoldBar progress={snap.plankProgress} exercise={snap.exercise} />
       {f.hint && SOFT_HINT_COPY[f.hint] && <Mono tone="cue">{SOFT_HINT_COPY[f.hint]}</Mono>}
       {noRoom && <Mono tone="cue">{noRoomTip(orientation)}</Mono>}
     </View>
@@ -204,9 +204,19 @@ function useStuck(active: boolean, ms: number): boolean {
   return active && stuck;
 }
 
+/** What to hold still in to start, per exercise (it isn't always a plank). */
+const START_HOLD: Record<SessionSnapshot['exercise'], string> = {
+  pushup: 'Hold a straight-arm plank to start',
+  plank: 'Hold your plank to start',
+  sidePlank: 'Hold your side plank to start',
+  crunch: 'Lie still, knees bent, to start',
+  pullup: 'Hang still to start',
+};
+
 function Check({ label, state }: { label: string; state: 'ok' | 'pending' | 'idle' }) {
   return (
-    <View style={styles.check}>
+    // Not by colour alone: the state is spoken, and the dot is filled only when done.
+    <View style={styles.check} accessible accessibilityLabel={`${label}: ${state === 'ok' ? 'done' : 'not yet'}`}>
       <View
         style={[
           styles.dot,
@@ -214,20 +224,20 @@ function Check({ label, state }: { label: string; state: 'ok' | 'pending' | 'idl
           state === 'pending' && { borderColor: color.cue },
         ]}
       />
-      <Body size={15} tone={state === 'idle' ? 'faint' : 'chalk'}>
+      <Body size={15} tone={state === 'idle' ? 'muted' : 'chalk'}>
         {label}
       </Body>
     </View>
   );
 }
 
-function HoldBar({ progress }: { progress: number }) {
+function HoldBar({ progress, exercise }: { progress: number; exercise: SessionSnapshot['exercise'] }) {
   return (
     <View style={{ gap: 6 }}>
       <View style={styles.hold}>
         <View style={[styles.holdFill, { width: `${Math.round(progress * 100)}%` }]} />
       </View>
-      <Label>{progress > 0 ? 'Hold steady' : 'Hold a plank to start'}</Label>
+      <Label>{progress > 0 ? 'Hold steady' : START_HOLD[exercise]}</Label>
     </View>
   );
 }

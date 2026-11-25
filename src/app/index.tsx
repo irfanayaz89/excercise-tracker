@@ -79,7 +79,8 @@ export default function Home() {
   const daily = settings.dailyGoal === 'none' ? null : GOAL_TARGETS[settings.dailyGoal];
   const repsToday = (today?.pushup ?? 0) + (today?.crunch ?? 0) + (today?.pullup ?? 0);
   const holdToday = (today?.plank ?? 0) + (today?.sidePlank ?? 0);
-  const shown = filter === 'all' ? rows : rows.filter((r) => r.exercise === filter);
+  // A filter reads that exercise's own sets, not just those among the latest 60.
+  const shown = useMemo(() => (filter === 'all' ? rows : listSessions(30, 0, filter)), [filter, rows]);
 
   const progress = useMemo(
     () => (profile ? goalProgress(profile, profile.aim === 'get-stronger' ? goalRows : weekRows) : null),
@@ -288,7 +289,7 @@ export default function Home() {
         />
       </View>
       {rows.length === 0 && (
-        <Body tone="faint" size={13}>
+        <Body tone="muted" size={13}>
           More exercises are on the way.
         </Body>
       )}

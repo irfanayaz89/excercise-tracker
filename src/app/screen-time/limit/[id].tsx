@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { changeRules, countLabel, describeChange, editBase, pickApps, selectionProblem } from '@/screentime/edit';
 import { appLimitProblem, EMPTY_SELECTION, MAX_APP_LIMITS } from '@/screentime/rules';
@@ -152,7 +152,16 @@ export default function AppLimitEditor() {
       <View style={{ gap: space.md }}>
         <Button label={isNew ? 'Add limit' : 'Save'} disabled={!!problem} onPress={save} />
         {!isNew && (
-          <Button variant="danger" label="Delete" onPress={() => commit(getScreenTime().rules.appLimits.filter((l) => l.id !== limit.id))} />
+          <Button
+            variant="danger"
+            label="Delete"
+            onPress={() =>
+              Alert.alert('Delete this app limit?', 'These apps go back to the main rules.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => commit(editBase().appLimits.filter((l) => l.id !== limit.id)) },
+              ])
+            }
+          />
         )}
       </View>
     </ScrollView>

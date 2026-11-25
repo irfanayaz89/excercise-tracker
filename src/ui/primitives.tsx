@@ -37,7 +37,8 @@ interface TProps extends TextProps {
 export function Display({ tone = 'chalk', size = type.headline, style, ...rest }: TProps) {
   return (
     <Text
-      allowFontScaling={false}
+      // Headlines follow the phone's text size (up to 1.3×); big numerals are already as large as fits.
+      maxFontSizeMultiplier={size >= 60 ? 1 : 1.3}
       style={[{ fontFamily: font.display, fontSize: size, lineHeight: Math.round(size * 1.08), color: toneColor[tone], letterSpacing: 0.5 }, style]}
       {...rest}
     />
@@ -77,7 +78,8 @@ interface ButtonProps extends Omit<PressableProps, 'style' | 'children'> {
 }
 
 export function Button({ label, variant = 'vial', size = 'md', icon, style, disabled, ...rest }: ButtonProps) {
-  const h = size === 'lg' ? 64 : size === 'md' ? 52 : 40;
+  // Minimum heights, so larger text grows the button instead of clipping; never under 44 pt to tap.
+  const h = size === 'lg' ? 64 : size === 'md' ? 52 : 44;
   const bg = variant === 'vial' ? color.vial : variant === 'danger' ? color.faultSoft : variant === 'ghost' ? 'transparent' : color.raised;
   const fg = variant === 'vial' ? color.vialInk : variant === 'danger' ? color.fault : color.chalk;
   const border = variant === 'ghost' ? color.line : 'transparent';
@@ -89,7 +91,7 @@ export function Button({ label, variant = 'vial', size = 'md', icon, style, disa
       style={({ pressed }) => [
         styles.btn,
         {
-          height: h,
+          minHeight: h,
           backgroundColor: bg,
           borderColor: border,
           opacity: disabled ? 0.4 : pressed ? 0.82 : 1,
@@ -138,6 +140,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     paddingHorizontal: space.xl,
+    paddingVertical: space.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -145,7 +148,8 @@ const styles = StyleSheet.create({
   },
   chip: {
     minWidth: 52,
-    height: 40,
+    minHeight: 44,
+    paddingVertical: space.xs,
     paddingHorizontal: space.md,
     borderRadius: radius.pill,
     borderWidth: 1,

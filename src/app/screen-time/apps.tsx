@@ -101,7 +101,7 @@ export default function AppPicker() {
                 <View style={[styles.box, on && styles.boxOn]} />
                 <View style={{ flex: 1 }}>
                   <Strong size={15}>{item.label}</Strong>
-                  <Mono size={11} tone="faint">
+                  <Mono size={11} tone="muted">
                     {viaCat ? `in ${item.category}` : item.category || item.packageName}
                   </Mono>
                 </View>

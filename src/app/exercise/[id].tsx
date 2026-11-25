@@ -62,7 +62,12 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
   const today = values[values.length - 1] ?? 0;
   const weekTotal = values.reduce((a, b) => a + b, 0);
   const body = useEnergyBody();
-  const weekKcal = body ? setsKcal(weekRows.filter((r) => r.exercise === exercise), body) : null;
+  const weekKcal = body
+    ? setsKcal(
+        weekRows.filter((r) => r.exercise === exercise),
+        body,
+      )
+    : null;
   const guided = settings.experience !== 'quick';
   const levelCopy = difficultyCopy(settings.difficulty, exercise);
   const art = Math.min(width, 560) - space.xl * 4;
@@ -99,172 +104,186 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
     });
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: color.ground }}
-      contentContainerStyle={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.huge }]}
-    >
-      <View style={styles.header}>
-        <Pressable accessibilityRole="button" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} hitSlop={12}>
-          <Label tone="chalk">‹ Exercises</Label>
-        </Pressable>
-      </View>
-
-      <View style={styles.titleRow}>
-        <ExerciseGlyph exercise={exercise} size={72} />
-        <View style={{ flex: 1, gap: 2 }}>
-          <Display size={40}>{info.label}</Display>
-          <Mono tone="vial">{info.tagline}</Mono>
-        </View>
-      </View>
-
-      <View style={{ gap: space.sm }}>
-        <View style={styles.statsRow}>
-          <Stat label="Today" value={show(today)} />
-          <Stat label="Last 7 days" value={show(weekTotal)} />
-          <Stat label={timed ? 'Best hold' : 'Best set'} value={best === null ? '—' : show(best)} />
-        </View>
-        <WeekBars days={week.map((d) => d.day)} values={values} label={`${show(weekTotal)} ${info.unit} in the last 7 days`} height={56} />
-        {body ? (
-          <View style={{ gap: space.xs }}>
-            <Mono size={12} tone="muted">
-              {`${weekKcal && weekKcal.kcal >= 1 ? `${kcalText(weekKcal)} this week from ${info.label.toLowerCase()} · ` : ''}${TYPICAL_SET[exercise].label} ${kcalText(typicalSetKcal(exercise, body))}`}
-            </Mono>
-            <CaloriesHow />
-          </View>
-        ) : (
-          <AddWeightForCalories />
-        )}
-      </View>
-
-      <View style={styles.card}>
-        <View style={styles.cardHead}>
-          <Label tone="vial">How to do it</Label>
-          <Pressable
-            accessibilityRole="button"
-            hitSlop={10}
-            onPress={guard(() => router.push({ pathname: '/guide', params: { ex: exercise, view: '1' } }))}
-          >
-            <Label tone="chalk">Step-by-step guide ›</Label>
+    <View style={{ flex: 1, backgroundColor: color.ground }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: space.huge }]}
+      >
+        <View style={styles.header}>
+          <Pressable accessibilityRole="button" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} hitSlop={12}>
+            <Label tone="chalk">‹ Exercises</Label>
           </Pressable>
         </View>
-        <ExerciseAnimation exercise={exercise} orientation={settings.orientation} width={art} view={view} />
-        <TechniqueSteps exercise={exercise} compact={!guided} />
-      </View>
 
-      {notes.length > 0 && (
-        <View style={styles.warn}>
-          <Label tone="cue">Take care</Label>
-          {notes.map((n) => (
-            <Body key={n} size={14}>
-              {n}
-            </Body>
-          ))}
-        </View>
-      )}
-
-      {info.frontView && (
-        <View style={{ gap: space.md }}>
-          <Label>Camera view</Label>
-          <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Camera view">
-            <Chip label="Side-on" selected={view === 'side'} onPress={() => update({ views: { ...settings.views, [exercise]: 'side' } })} />
-            <Chip
-              label="Facing the phone"
-              selected={view === 'front'}
-              onPress={() => update({ views: { ...settings.views, [exercise]: 'front' } })}
-            />
+        <View style={styles.titleRow}>
+          <ExerciseGlyph exercise={exercise} size={72} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Display size={40}>{info.label}</Display>
+            <Mono tone="vial">{info.tagline}</Mono>
           </View>
-          <Body tone="muted" size={14}>
-            {view === 'side'
-              ? 'The phone beside you sees your whole body line: the strictest form checks.'
-              : exercise === 'plank'
-                ? 'The phone on the floor beyond your hands. Easier to set up; times the hold and checks your arms. Hips and knees are only judged side-on, so plank test mode ends only when you drop out of position.'
-                : 'The phone on the floor beyond your hands. Easier to set up; counts reps and checks depth, arms and elbows. Hips and knees are only judged side-on, so knee push-ups count here.'}
-          </Body>
         </View>
-      )}
 
-      {guided ? (
+        <View style={{ gap: space.sm }}>
+          <View style={styles.statsRow}>
+            <Stat label="Today" value={show(today)} />
+            <Stat label="Last 7 days" value={show(weekTotal)} />
+            <Stat label={timed ? 'Best hold' : 'Best set'} value={best === null ? '—' : show(best)} />
+          </View>
+          <WeekBars
+            days={week.map((d) => d.day)}
+            values={values}
+            label={`${show(weekTotal)} ${info.unit} in the last 7 days`}
+            height={56}
+          />
+          {body ? (
+            <View style={{ gap: space.xs }}>
+              <Mono size={12} tone="muted">
+                {`${weekKcal && weekKcal.kcal >= 1 ? `${kcalText(weekKcal)} this week from ${info.label.toLowerCase()} · ` : ''}${TYPICAL_SET[exercise].label} ${kcalText(typicalSetKcal(exercise, body))}`}
+              </Mono>
+              <CaloriesHow />
+            </View>
+          ) : (
+            <AddWeightForCalories />
+          )}
+        </View>
+
         <View style={styles.card}>
-          <Label tone="vial">Before you start</Label>
-          <OrientationPicker value={settings.orientation} onChange={(orientation) => update({ orientation })} />
-          <View style={{ gap: space.md }}>
-            {setupSteps(exercise, settings.difficulty, settings.orientation, view).map((s, i) => (
-              <View key={i} style={{ flexDirection: 'row', gap: space.md }}>
-                <Display size={28} tone="vial" style={{ width: 22 }}>
-                  {i + 1}
-                </Display>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Strong>{s.title}</Strong>
-                  <Body tone="muted" size={14}>
-                    {s.body}
-                  </Body>
-                </View>
-              </View>
+          <View style={styles.cardHead}>
+            <Label tone="vial">How to do it</Label>
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={10}
+              onPress={guard(() => router.push({ pathname: '/guide', params: { ex: exercise, view: '1' } }))}
+            >
+              <Label tone="chalk">Step-by-step guide ›</Label>
+            </Pressable>
+          </View>
+          <ExerciseAnimation exercise={exercise} orientation={settings.orientation} width={art} view={view} />
+          <TechniqueSteps exercise={exercise} compact={!guided} />
+        </View>
+
+        {notes.length > 0 && (
+          <View style={styles.warn}>
+            <Label tone="cue">Take care</Label>
+            {notes.map((n) => (
+              <Body key={n} size={14}>
+                {n}
+              </Body>
             ))}
           </View>
-        </View>
-      ) : (
-        <View style={{ gap: space.md }}>
-          <Label>Phone</Label>
-          <OrientationPicker compact value={settings.orientation} onChange={(orientation) => update({ orientation })} />
-        </View>
-      )}
-
-      <View style={{ gap: space.md }}>
-        <Label>Difficulty</Label>
-        <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Difficulty">
-          {DIFFICULTIES.map((d) => (
-            <Chip
-              key={d}
-              label={difficultyCopy(d, exercise).label}
-              selected={settings.difficulty === d}
-              onPress={() => update({ difficulty: d })}
-            />
-          ))}
-        </View>
-        <View style={{ gap: 2 }}>
-          <Strong size={15}>{levelCopy.short}</Strong>
-          <Body tone="muted" size={14}>
-            {levelCopy.detail}
-          </Body>
-        </View>
-      </View>
-
-      <View style={{ gap: space.md }}>
-        <Label>{info.perSide ? 'Target · each side' : 'Target'}</Label>
-        <View style={styles.chips}>
-          {timed
-            ? HOLD_TARGETS.map((t) => (
-                <Chip
-                  key={t}
-                  label={t === 0 ? 'Open' : formatDuration(t * 1000)}
-                  selected={settings.targetHoldSec === t}
-                  onPress={() => update({ targetHoldSec: t })}
-                />
-              ))
-            : TARGETS.map((t) => (
-                <Chip
-                  key={t}
-                  label={t === 0 ? 'Open' : String(t)}
-                  selected={settings.targetReps === t}
-                  onPress={() => update({ targetReps: t })}
-                />
-              ))}
-        </View>
-        <FocusChooser />
-        <Button label={`Start ${info.label.toLowerCase()}`} size="lg" onPress={start()} />
-        {__DEV__ && (
-          <Pressable accessibilityRole="button" onPress={start(true)} hitSlop={8} style={{ alignSelf: 'center' }}>
-            <Label tone="muted">Preview a demo set</Label>
-          </Pressable>
         )}
-      </View>
 
-      <View style={{ gap: space.md }}>
-        <Label>History</Label>
-        <HistoryList rows={rows} guard={guard} showExercise={false} body={body} empty="No sets yet. Each finished set is saved here." />
+        {info.frontView && (
+          <View style={{ gap: space.md }}>
+            <Label>Camera view</Label>
+            <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Camera view">
+              <Chip
+                label="Side-on"
+                selected={view === 'side'}
+                onPress={() => update({ views: { ...settings.views, [exercise]: 'side' } })}
+              />
+              <Chip
+                label="Facing the phone"
+                selected={view === 'front'}
+                onPress={() => update({ views: { ...settings.views, [exercise]: 'front' } })}
+              />
+            </View>
+            <Body tone="muted" size={14}>
+              {view === 'side'
+                ? 'The phone beside you sees your whole body line: the strictest form checks.'
+                : exercise === 'plank'
+                  ? 'The phone on the floor beyond your hands. Easier to set up; times the hold and checks your arms. Hips and knees are only judged side-on, so plank test mode ends only when you drop out of position.'
+                  : 'The phone on the floor beyond your hands. Easier to set up; counts reps and checks depth, arms and elbows. Hips and knees are only judged side-on, so knee push-ups count here.'}
+            </Body>
+          </View>
+        )}
+
+        {guided ? (
+          <View style={styles.card}>
+            <Label tone="vial">Before you start</Label>
+            <OrientationPicker value={settings.orientation} onChange={(orientation) => update({ orientation })} />
+            <View style={{ gap: space.md }}>
+              {setupSteps(exercise, settings.difficulty, settings.orientation, view).map((s, i) => (
+                <View key={i} style={{ flexDirection: 'row', gap: space.md }}>
+                  <Display size={28} tone="vial" style={{ width: 22 }}>
+                    {i + 1}
+                  </Display>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Strong>{s.title}</Strong>
+                    <Body tone="muted" size={14}>
+                      {s.body}
+                    </Body>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : (
+          <View style={{ gap: space.md }}>
+            <Label>Phone</Label>
+            <OrientationPicker compact value={settings.orientation} onChange={(orientation) => update({ orientation })} />
+          </View>
+        )}
+
+        <View style={{ gap: space.md }}>
+          <Label>Difficulty</Label>
+          <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Difficulty">
+            {DIFFICULTIES.map((d) => (
+              <Chip
+                key={d}
+                label={difficultyCopy(d, exercise).label}
+                selected={settings.difficulty === d}
+                onPress={() => update({ difficulty: d })}
+              />
+            ))}
+          </View>
+          <View style={{ gap: 2 }}>
+            <Strong size={15}>{levelCopy.short}</Strong>
+            <Body tone="muted" size={14}>
+              {levelCopy.detail}
+            </Body>
+          </View>
+        </View>
+
+        <View style={{ gap: space.md }}>
+          <Label>{info.perSide ? 'Target · each side' : 'Target'}</Label>
+          <View style={styles.chips}>
+            {timed
+              ? HOLD_TARGETS.map((t) => (
+                  <Chip
+                    key={t}
+                    label={t === 0 ? 'Open' : formatDuration(t * 1000)}
+                    selected={settings.targetHoldSec === t}
+                    onPress={() => update({ targetHoldSec: t })}
+                  />
+                ))
+              : TARGETS.map((t) => (
+                  <Chip
+                    key={t}
+                    label={t === 0 ? 'Open' : String(t)}
+                    selected={settings.targetReps === t}
+                    onPress={() => update({ targetReps: t })}
+                  />
+                ))}
+          </View>
+          <FocusChooser />
+          {__DEV__ && (
+            <Pressable accessibilityRole="button" onPress={start(true)} hitSlop={8} style={{ alignSelf: 'center' }}>
+              <Label tone="muted">Preview a demo set</Label>
+            </Pressable>
+          )}
+        </View>
+
+        <View style={{ gap: space.md }}>
+          <Label>History</Label>
+          <HistoryList rows={rows} guard={guard} showExercise={false} body={body} empty="No sets yet. Each finished set is saved here." />
+        </View>
+      </ScrollView>
+      {/* Start is always in reach, not after the whole page (like the guide's footer). */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + space.md }]}>
+        <Button label={`Start ${info.label.toLowerCase()}`} size="lg" onPress={start()} />
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -286,7 +305,11 @@ function FocusChooser() {
   if (!st.meta.setUp || st.availability === 'unsupported') return null;
   const choice = st.meta.focusChoice;
   const strict = effectiveStrictness(st.rules, st.now) === 'strict';
-  const options: [FocusChoice | null, string][] = [[null, 'Off'], ['set', 'This set'], ...FOCUS_CHOICES.map((m) => [m, `${m} min`] as [FocusChoice, string])];
+  const options: [FocusChoice | null, string][] = [
+    [null, 'Off'],
+    ['set', 'This set'],
+    ...FOCUS_CHOICES.map((m) => [m, `${m} min`] as [FocusChoice, string]),
+  ];
   const what = st.meta.focusBlockAll ? 'All apps except your always-allowed ones' : 'Your blocked apps';
   return (
     <View style={{ gap: space.sm }}>
@@ -314,6 +337,16 @@ function FocusChooser() {
 }
 
 const styles = StyleSheet.create({
+  footer: {
+    paddingHorizontal: space.xl,
+    paddingTop: space.md,
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+    backgroundColor: color.ground,
+    borderTopWidth: 1,
+    borderTopColor: color.lineSoft,
+  },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.lg },

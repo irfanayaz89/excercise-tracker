@@ -188,7 +188,7 @@ export default function ScreenTimeScreen() {
                 label="End focus now"
                 onPress={() => {
                   const res = endFocusNow('manual');
-                  if (!res.ended) setMessage('This focus can\'t be ended early.');
+                  if (!res.ended) setMessage("This focus can't be ended early.");
                 }}
               />
             )}
@@ -196,7 +196,10 @@ export default function ScreenTimeScreen() {
         )}
         <DayTimeline rules={rules} now={now} />
         <View style={styles.stats}>
-          <Stat label="Used" value={limit === null ? formatMin(today.usedMin) : `${formatMin(Math.min(today.usedMin, limit))} / ${formatMin(limit)}`} />
+          <Stat
+            label="Used"
+            value={limit === null ? formatMin(today.usedMin) : `${formatMin(Math.min(today.usedMin, limit))} / ${formatMin(limit)}`}
+          />
           <Stat label="Earned today" value={`${formatMin(today.earnedMin)} / ${formatMin(rules.earning.dailyCapMin)}`} />
           <Stat label="Earned left" value={formatMin(d.earnedLeftMin)} />
         </View>
@@ -208,12 +211,21 @@ export default function ScreenTimeScreen() {
             variant="ghost"
             label={d.emergency.available ? `Emergency unlock: ${d.emergency.minutes} min` : `1 more minute (${d.oneMore.left} left today)`}
             onPress={() => {
-              const res = unlockNow(d.emergency.available ? 'emergency' : 'one-more');
-              if (!res.ok) setMessage('No unlocks left today.');
+              const take = () => {
+                const res = unlockNow(d.emergency.available ? 'emergency' : 'one-more');
+                if (!res.ok) setMessage('No unlocks left today.');
+              };
+              // The emergency unlock is the day's only one: ask before using it up.
+              if (!d.emergency.available) take();
+              else
+                Alert.alert('Use today’s emergency unlock?', `Your apps open for ${d.emergency.minutes} minutes. There’s one a day.`, [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Unlock', onPress: take },
+                ]);
             }}
           />
         )}
-        <Body tone="faint" size={12}>
+        <Body tone="muted" size={12}>
           {Platform.OS === 'ios'
             ? 'iPhone reports usage in 15-minute steps, so "used" can lag a little behind.'
             : 'Usage is counted while the apps are on screen.'}
@@ -222,9 +234,7 @@ export default function ScreenTimeScreen() {
 
       {pendingAt !== null && (
         <View style={styles.note}>
-          <Body size={14}>
-            {`A change you made starts ${formatClock(deviceZone, pendingAt, now)}.`}
-          </Body>
+          <Body size={14}>{`A change you made starts ${formatClock(deviceZone, pendingAt, now)}.`}</Body>
           <Pressable accessibilityRole="button" onPress={() => saveRules(cancelPending(getScreenTime().rules))} hitSlop={8}>
             <Label tone="vial">Cancel the change</Label>
           </Pressable>
@@ -358,39 +368,52 @@ export default function ScreenTimeScreen() {
             size="sm"
             label="Turn off screen time"
             disabled={mode === 'strict'}
-            onPress={() => {
-              const cur = getScreenTime();
-              // A key lock ends only with the key; a Strict focus only at its end.
-              if (cur.focus && cur.focus.until > Date.now() && (cur.focus.kind === 'key' || cur.focus.strict)) {
-                // Shown as an alert: the page's message box is far above this button.
-                Alert.alert(
-                  'Can’t turn off yet',
-                  cur.focus.kind === 'key' ? 'A key lock is running: scan your key first.' : 'A Strict focus is running: it ends at its planned time.',
-                );
-                return;
-              }
-              // Everything off counts as making things easier, so it follows the strictness rules.
-              const res = changeRules({
-                ...coreOf(cur.rules),
-                blocked: EMPTY_SELECTION,
-                lockTimes: [],
-                dailyLimitMin: null,
-                appLimits: [],
-                pause: { ...cur.rules.pause, enabled: false },
-                silenceNotifications: false,
-              });
-              if (res.result === 'applied') {
-                turnOff();
-                // Opened from a link there may be nothing to go back to.
-                if (router.canGoBack()) router.back();
-                else router.replace('/');
-              } else Alert.alert('Turn off screen time', describeChange(res));
-            }}
+            onPress={() =>
+              Alert.alert(
+                'Turn off screen time?',
+                'This removes your blocked apps, lock times and limits. Earned time and history stay. Depending on your strictness it may only start at midnight.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Turn off', style: 'destructive', onPress: turnOffNow },
+                ],
+              )
+            }
           />
         </View>
       </Section>
     </Page>
   );
+
+  function turnOffNow() {
+    const cur = getScreenTime();
+    // A key lock ends only with the key; a Strict focus only at its end.
+    if (cur.focus && cur.focus.until > Date.now() && (cur.focus.kind === 'key' || cur.focus.strict)) {
+      // Shown as an alert: the page's message box is far above this button.
+      Alert.alert(
+        'Can’t turn off yet',
+        cur.focus.kind === 'key'
+          ? 'A key lock is running: scan your key first.'
+          : 'A Strict focus is running: it ends at its planned time.',
+      );
+      return;
+    }
+    // Everything off counts as making things easier, so it follows the strictness rules.
+    const res = changeRules({
+      ...coreOf(cur.rules),
+      blocked: EMPTY_SELECTION,
+      lockTimes: [],
+      dailyLimitMin: null,
+      appLimits: [],
+      pause: { ...cur.rules.pause, enabled: false },
+      silenceNotifications: false,
+    });
+    if (res.result === 'applied') {
+      turnOff();
+      // Opened from a link there may be nothing to go back to.
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
+    } else Alert.alert('Turn off screen time', describeChange(res));
+  }
 }
 
 function EarningSection({ st, change }: { st: ScreenTimeState; change: (p: Partial<RulesCore>) => void }) {
@@ -434,7 +457,14 @@ function EarningSection({ st, change }: { st: ScreenTimeState; change: (p: Parti
           <Strong size={14}>Most you can earn a day</Strong>
           <View style={styles.chips}>
             {CAPS.map((c) => (
-              <Chip key={c} label={formatMin(c)} selected={e.dailyCapMin === c} onPress={() => change({ earning: { ...editBase().earning, dailyCapMin: c, fullRateMin: Math.min(editBase().earning.fullRateMin, c) } })} />
+              <Chip
+                key={c}
+                label={formatMin(c)}
+                selected={e.dailyCapMin === c}
+                onPress={() =>
+                  change({ earning: { ...editBase().earning, dailyCapMin: c, fullRateMin: Math.min(editBase().earning.fullRateMin, c) } })
+                }
+              />
             ))}
           </View>
         </View>
@@ -526,7 +556,11 @@ function StrictnessSection({
                   {`Strict ends 24 hours after you asked, or now if you do ${STRICT_OFF_PUSHUPS} verified push-ups first: ${Math.min(pushups, STRICT_OFF_PUSHUPS)} / ${STRICT_OFF_PUSHUPS}.`}
                 </Body>
                 {pushups >= STRICT_OFF_PUSHUPS && (
-                  <Button size="sm" label="End Strict now" onPress={() => apply(endStrictEarly(getScreenTime().rules, Date.now(), pushups))} />
+                  <Button
+                    size="sm"
+                    label="End Strict now"
+                    onPress={() => apply(endStrictEarly(getScreenTime().rules, Date.now(), pushups))}
+                  />
                 )}
               </>
             )}
@@ -629,6 +663,13 @@ const styles = StyleSheet.create({
   rateRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: space.md },
   histRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: space.lg, paddingVertical: space.sm },
   histItems: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', rowGap: space.xs },
-  alert: { gap: space.xs, padding: space.lg, borderRadius: radius.lg, backgroundColor: color.faultSoft, borderWidth: 1, borderColor: color.fault },
+  alert: {
+    gap: space.xs,
+    padding: space.lg,
+    borderRadius: radius.lg,
+    backgroundColor: color.faultSoft,
+    borderWidth: 1,
+    borderColor: color.fault,
+  },
   note: { gap: space.sm, padding: space.lg, borderRadius: radius.lg, backgroundColor: color.raised },
 });

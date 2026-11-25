@@ -1,3 +1,4 @@
+import { useIsFocused } from 'expo-router';
 import { useEffect, useState } from 'react';
 import Animated, {
   Easing,
@@ -39,7 +40,10 @@ export function ExerciseAnimation({
   const front = view === 'front' && EXERCISES[exercise].frontView;
   // Pull-ups are always seen facing the phone, hanging from a bar.
   const pull = exercise === 'pullup';
-  const reduce = useReducedMotion();
+  // Still when motion is reduced, and when this screen isn't the one showing (a live set runs on
+  // top of the exercise screen: the loop would compete with the camera and the pose model).
+  const focused = useIsFocused();
+  const reduce = useReducedMotion() || !focused;
   const p = useSharedValue(STILL_P[exercise]);
   const period = MOTION_MS[exercise];
 
