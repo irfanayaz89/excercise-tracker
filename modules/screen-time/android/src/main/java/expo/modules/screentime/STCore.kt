@@ -127,6 +127,8 @@ object STCore {
     val focusUntil: Double?,
     /** "set" or "timed" (wording only). */
     val focusKind: String?,
+    /** A key lock or Strict focus: unlocks don't open the main apps and none is offered. */
+    val focusLocked: Boolean = false,
     val locks: List<Lock>,
     val blocked: Sel,
     val allowed: Sel,
@@ -198,6 +200,7 @@ object STCore {
       unlockUntil = if (o.isNull("unlockUntil")) null else o.optDouble("unlockUntil"),
       focusUntil = if (!o.has("focusUntil") || o.isNull("focusUntil")) null else o.optDouble("focusUntil"),
       focusKind = if (!o.has("focusKind") || o.isNull("focusKind")) null else o.optString("focusKind"),
+      focusLocked = o.optBoolean("focusLocked", false),
       locks = locks,
       blocked = Sel.from(o.optJSONObject("blocked")),
       allowed = Sel.from(o.optJSONObject("allowed")),
@@ -431,7 +434,9 @@ object STCore {
       reason = "focus"
       usingEarned = false
     }
-    if (unlocked) {
+    // A key lock or Strict focus can't be opened by an unlock: only the key (or its end) lifts it.
+    val lockedFocus = focusing && p.focusLocked
+    if (unlocked && !lockedFocus) {
       reason = null
       usingEarned = false
     }
@@ -468,8 +473,8 @@ object STCore {
       usingEarned = usingEarned,
       earnedLeftSec = earnedLeftSec,
       canEarn = canEarn,
-      emergency = any && mode == "standard" && emergenciesLeft - usedEmergencies > 0,
-      oneMore = any && mode == "nudge" && oneMoresLeft - usedOneMores > 0,
+      emergency = any && !lockedFocus && mode == "standard" && emergenciesLeft - usedEmergencies > 0,
+      oneMore = any && !lockedFocus && mode == "nudge" && oneMoresLeft - usedOneMores > 0,
       ownBlocked = ownBlocked,
       unlockedUntil = unlockedUntil,
       blockAll = blockAll,

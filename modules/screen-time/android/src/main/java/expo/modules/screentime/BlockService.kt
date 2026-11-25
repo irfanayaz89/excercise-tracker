@@ -108,13 +108,14 @@ class BlockService : Service() {
 
   override fun onDestroy() {
     // Only a deliberate stop gets here; a force stop or Task Manager stop kills the process instead.
-    STCore.stoppedCleanly(this)
+    // A refused foreground start is not a clean stop: leave the gap for checkGap to record.
+    if (!refused) STCore.stoppedCleanly(this)
     running = false
     handler.removeCallbacks(tick)
     // After any step in progress: write down the last seconds counted, and clear the widget's line.
     handler.post {
       runCatching { flush() }
-      runCatching { STWidget.update(this, "Screen time is off") }
+      if (!refused) runCatching { STWidget.update(this, "Screen time is off") }
     }
     thread.quitSafely()
     super.onDestroy()
@@ -365,7 +366,9 @@ class BlockService : Service() {
   /** On a call (phone, WhatsApp, Meet…): the phone is in call or communication audio mode. */
   private fun inCall(): Boolean {
     val mode = getSystemService(AudioManager::class.java)?.mode ?: return false
-    return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
+    // Phone calls only. MODE_IN_COMMUNICATION is any VoIP app (Discord, WhatsApp, Instagram calls),
+    // and treating that as a call would switch blocking off for as long as one runs.
+    return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_RINGTONE
   }
 
   /** Apps never covered by the blocked screen, whatever the user picked. */

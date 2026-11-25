@@ -314,7 +314,7 @@ export default function ScreenTimeScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Skip the next ${l.name}`}
                 hitSlop={8}
-                onPress={() => apply(skipNext(deviceZone, getScreenTime().rules, l.id, Date.now()))}
+                onPress={() => apply(skipNext(deviceZone, getScreenTime().rules, l.id, Date.now(), getScreenTime().focus))}
               >
                 <Label>Skip next</Label>
               </Pressable>

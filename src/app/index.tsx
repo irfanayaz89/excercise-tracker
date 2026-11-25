@@ -330,7 +330,7 @@ function GoalBlock({
   const weighedToday = lastWeigh && new Date(lastWeigh.at).toDateString() === new Date().toDateString();
   const value = lose && imperial ? String(Math.round(kgToLb(Number(progress.value)))) : progress.value;
   const unit = lose && imperial ? progress.unit.replace('kg', 'lb') : progress.unit;
-  const of = lose && imperial ? `of ${Math.round(kgToLb(p.startKg - p.targetKg!))} lb` : progress.of;
+  const of = lose && imperial ? `of ${Math.round(kgToLb(Math.max(p.startKg, p.weightKg) - p.targetKg!))} lb` : progress.of;
   const reached = progress.met && (p.aim === 'lose-fat' || p.aim === 'get-stronger');
 
   return (

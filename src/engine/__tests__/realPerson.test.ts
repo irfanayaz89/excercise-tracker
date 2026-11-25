@@ -226,6 +226,21 @@ describe.each(DIFFICULTIES)('%s', (level) => {
       }
     });
 
+    it('leaving the app while paused for a screen keeps the screen check', () => {
+      const r = run(level, exercise);
+      r.play([...start(exercise), ...work(exercise, 6400)]);
+      r.play(work(exercise, 12800), tvProbe);
+      expect(r.session.snapshot().pauseReason).toBe('not-real');
+      r.session.interrupt(r.t + 10);
+      expect(r.session.snapshot().pauseReason).toBe('interrupted');
+      r.session.resumeFromInterrupt(r.t + 5000);
+      r.t += 5000;
+      expect(r.session.snapshot().pauseReason).toBe('not-real');
+      // The screen is still there: it stays paused.
+      r.play(work(exercise, 3200), tvProbe);
+      expect(r.session.snapshot().phase).toBe('paused');
+    });
+
     it('stays paused while the screen is there, and resumes once a real person is back', () => {
       const r = run(level, exercise);
       r.play([...start(exercise), ...work(exercise, 6400)]);

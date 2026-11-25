@@ -118,6 +118,8 @@ enum STShared {
     var focusUntil: Double?
     /// "set" or "timed" (wording only).
     var focusKind: String?
+    /// A key lock or Strict focus: unlocks don't open the main apps and none is offered.
+    var focusLocked: Bool?
     /// Minutes the app knows were used today; the limit is measured on from here.
     var usedMin: Int?
     var locks: [LockPlan]
@@ -338,7 +340,9 @@ enum STShared {
       s.reason = "focus"
       s.usingEarned = false
     }
-    if unlocked {
+    // A key lock or Strict focus can't be opened by an unlock: only the key (or its end) lifts it.
+    let lockedFocus = focusing && (p.focusLocked ?? false)
+    if unlocked && !lockedFocus {
       s.reason = nil
       s.usingEarned = false
     }
@@ -371,8 +375,8 @@ enum STShared {
     let usedOneMores = mine.filter { $0.kind == "one-more" }.count
     let emergenciesLeft = newDay ? (p.emergenciesPerDay ?? 1) : p.emergenciesLeft
     let oneMoresLeft = newDay ? (p.oneMoresPerDay ?? 3) : p.oneMoresLeft
-    s.emergency = any && mode == "standard" && emergenciesLeft - usedEmergencies > 0
-    s.oneMore = any && mode == "nudge" && oneMoresLeft - usedOneMores > 0
+    s.emergency = any && !lockedFocus && mode == "standard" && emergenciesLeft - usedEmergencies > 0
+    s.oneMore = any && !lockedFocus && mode == "nudge" && oneMoresLeft - usedOneMores > 0
     return s
   }
 

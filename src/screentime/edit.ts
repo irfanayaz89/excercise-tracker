@@ -20,12 +20,13 @@ export function changeRules(next: RulesCore, now = Date.now()): ChangeResult {
 }
 
 /**
- * The rules a screen should edit from: a change already waiting to start is
- * built on, not dropped (a second easing change used to replace the first).
+ * The rules a screen should edit from: the ones in force. Building on a
+ * waiting change instead would make a tightening read as a loosening (and in
+ * Strict, refuse every edit while "end Strict" waits). A new easier change
+ * replaces a waiting one; `describeChange` says so.
  */
 export function editBase(): RulesCore {
-  const r = getScreenTime().rules;
-  return r.pending ? r.pending.next : coreOf(r);
+  return coreOf(getScreenTime().rules);
 }
 
 /** One line telling the user what happened to their change. */
@@ -35,9 +36,10 @@ export function describeChange(res: ChangeResult, now = Date.now()): string | nu
   if (res.result === 'refused') return REFUSALS[res.reason];
   // Same clock wording as everywhere else in the app ("tomorrow 00:00"), not the phone's own format.
   const when = formatClock(deviceZone, res.effectiveAt, now);
+  const replaced = res.replacedPending ? ' It replaces the easier change that was already waiting.' : '';
   return res.effectiveAt - now >= 20 * 3_600_000
-    ? `That makes things easier on you, so it starts in 24 hours (${when}).`
-    : `That makes things easier on you, so it starts at midnight (${when}).`;
+    ? `That makes things easier on you, so it starts in 24 hours (${when}).${replaced}`
+    : `That makes things easier on you, so it starts at midnight (${when}).${replaced}`;
 }
 
 const REFUSALS: Record<RefusalReason, string> = {

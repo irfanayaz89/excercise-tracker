@@ -246,6 +246,8 @@ export class PushupSession {
   private reps: RepRecord[] = [];
   private misses: MissRecord[] = [];
   private pauseReason: PauseReason | null = null;
+  /** Why the set was paused before the app was left: a screen or a moved phone still has to clear. */
+  private pausedBefore: PauseReason | null = null;
   private pausedAt: number | null = null;
   private pauses = 0;
   private lostSince: number | null = null;
@@ -444,9 +446,14 @@ export class PushupSession {
   /** App went to background, a call came in, or the camera was interrupted. */
   interrupt(t: number): void {
     this.advanceClock(t);
-    if (this.phase === 'counting') this.pause('interrupted');
-    // Already paused (e.g. stood up) and then away from the app: time away must not end the set.
-    else if (this.phase === 'paused') this.pauseReason = 'interrupted';
+    if (this.phase === 'counting') {
+      this.pause('interrupted');
+      this.pausedBefore = null;
+    } else if (this.phase === 'paused') {
+      // Already paused (e.g. stood up) and then away from the app: time away must not end the set.
+      if (this.pauseReason !== 'interrupted') this.pausedBefore = this.pauseReason;
+      this.pauseReason = 'interrupted';
+    }
     // Any plank hold in progress is void: we were not watching.
     this.plankHold.reset();
     this.plankProgress = 0;
@@ -465,7 +472,10 @@ export class PushupSession {
     this.plankProgress = 0;
     this.lastDetectedT = null;
     if (this.phase === 'paused') {
-      if (this.pauseReason === 'interrupted') this.pauseReason = 'lost-tracking';
+      // A screen or a moved phone still has to clear: leaving the app doesn't skip those checks.
+      if (this.pauseReason === 'interrupted')
+        this.pauseReason = this.pausedBefore === 'not-real' || this.pausedBefore === 'phone-moved' ? this.pausedBefore : 'lost-tracking';
+      this.pausedBefore = null;
       // Time spent away from the app does not count toward the auto-end timeout.
       this.pausedAt = t;
     }

@@ -1,6 +1,6 @@
 import { decide, EMERGENCIES_PER_DAY, EMERGENCY_MIN, ONE_MORE_MIN, ONE_MORE_PER_DAY, rollDay } from './decide';
 import { effectiveStrictness, PAUSE_MAX_S, PAUSE_PASS_MIN, PAUSE_STEP_S } from './rules';
-import { parseHHMM, type Zone } from './time';
+import { dayKey, parseHHMM, type Zone } from './time';
 import type { DayLog, Focus, Gap, ScreenTimeRules, Selection, Unlock } from './types';
 
 /**
@@ -71,6 +71,8 @@ export interface NativePlan {
   focusKind: 'set' | 'timed' | 'key' | null;
   /** The running focus blocks every app except the always-allowed ones. */
   focusAll: boolean;
+  /** A key lock or Strict focus: no unlock opens the main apps and no unlock is offered until it ends. */
+  focusLocked: boolean;
   /** Per-app limits (enabled ones only). */
   appLimits: NativeAppLimit[];
   /** A pause before the blocked apps open outside blocks: the first wait and today's passes so far. */
@@ -86,7 +88,8 @@ export interface NativePlan {
 export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: number, focus: Focus | null = null): NativePlan {
   const log = rollDay(zone, logIn, now);
   const d = decide(zone, rules, log, now, focus);
-  const used = (kind: Unlock['kind']) => log.unlocks.filter((u) => u.kind === kind).length;
+  // Only unlocks taken today count, as in decide(): one carried over from late last night doesn't.
+  const used = (kind: Unlock['kind']) => log.unlocks.filter((u) => u.kind === kind && dayKey(zone.local(u.from)) === log.day).length;
   return {
     day: log.day,
     dailyLimitMin: rules.dailyLimitMin,
@@ -108,6 +111,7 @@ export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, 
     focusUntil: d.focus ? d.focus.until : null,
     focusKind: d.focus ? d.focus.kind : null,
     focusAll: d.focus !== null && focus?.blockAll === true,
+    focusLocked: d.focus !== null && (d.focus.kind === 'key' || d.focus.strict),
     appLimits: rules.appLimits
       .filter((l) => l.enabled)
       .map((l) => ({

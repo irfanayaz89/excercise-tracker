@@ -109,7 +109,7 @@ export default function SummaryScreen() {
     router.replace(demo ? { pathname: '/session', params: { demo: '1', ex: exercise } } : '/session');
   };
   const counted = fixed !== null || data.summary.counted !== undefined;
-  const s = fixed === null ? data.summary : { ...data.summary, totalReps: fixed, cleanReps: Math.min(data.summary.cleanReps, fixed) };
+  const s = fixed === null ? data.summary : { ...data.summary, totalReps: fixed, cleanReps: Math.min(data.summary.counted?.clean ?? data.summary.cleanReps, fixed) };
   const faults = (Object.entries(s.faultCounts) as [RepFault, number][]).sort((a, b) => b[1] - a[1]);
   const misses = (Object.entries(s.missCounts) as [MissReason, number][]).sort((a, b) => b[1] - a[1]);
   const missTotal = misses.reduce((n, [, c]) => n + c, 0);

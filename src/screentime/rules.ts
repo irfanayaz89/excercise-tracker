@@ -378,7 +378,8 @@ export function loosens(prev: RulesCore, next: RulesCore): boolean {
 
 export type ChangeResult =
   | { result: 'applied'; rules: ScreenTimeRules; cancelledPending: boolean }
-  | { result: 'scheduled'; rules: ScreenTimeRules; effectiveAt: number }
+  /** `replacedPending`: an easier change that was already waiting is replaced by this one. */
+  | { result: 'scheduled'; rules: ScreenTimeRules; effectiveAt: number; replacedPending?: boolean }
   | { result: 'refused'; rules: ScreenTimeRules; reason: RefusalReason };
 
 export type RefusalReason = 'strict-running-lock' | 'strict-remove-apps' | 'strict-off-early' | 'focus-locked' | 'invalid';
@@ -444,7 +445,7 @@ export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore,
     return { result: 'applied', rules: { ...r, ...applied, strictUntil, pending: null }, cancelledPending: r.pending !== null };
   }
   // A key lock or a Strict focus can't be loosened while it runs, in any mode: that's what makes it a lock.
-  if (focus && (focus.kind === 'key' || focus.strict) && focus.startedAt <= now && now < focus.until) {
+  if (focusLocks(focus, now)) {
     return { result: 'refused', rules: r, reason: 'focus-locked' };
   }
   const mode = effectiveStrictness(r, now);
@@ -454,15 +455,24 @@ export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore,
     if (!subset(asSet(prev.blocked), asSet(next.blocked))) return { result: 'refused', rules: r, reason: 'strict-remove-apps' };
     if (touchesRunningLock(zone, prev, next, now)) return { result: 'refused', rules: r, reason: 'strict-running-lock' };
     const effectiveAt = now + STRICT_WAIT_MS;
-    return { result: 'scheduled', rules: { ...r, pending: { effectiveAt, next } }, effectiveAt };
+    return { result: 'scheduled', rules: { ...r, pending: { effectiveAt, next } }, effectiveAt, replacedPending: r.pending !== null };
   }
   const effectiveAt = nextMidnight(zone, now);
-  return { result: 'scheduled', rules: { ...r, pending: { effectiveAt, next } }, effectiveAt };
+  return { result: 'scheduled', rules: { ...r, pending: { effectiveAt, next } }, effectiveAt, replacedPending: r.pending !== null };
 }
 
-/** Apply a waiting change once its time has come (call on every app open and at midnight). */
-export function applyPending(r: ScreenTimeRules, now: number): ScreenTimeRules {
+/** A key lock or Strict focus is running: rules may only get stricter. */
+export function focusLocks(focus: Focus | null, now: number): boolean {
+  return !!focus && (focus.kind === 'key' || focus.strict) && focus.startedAt <= now && now < focus.until;
+}
+
+/**
+ * Apply a waiting change once its time has come (call on every app open and at midnight).
+ * An easier change asked for before a key lock or Strict focus waits until that ends.
+ */
+export function applyPending(r: ScreenTimeRules, now: number, focus: Focus | null = null): ScreenTimeRules {
   if (!r.pending || now < r.pending.effectiveAt) return r;
+  if (focusLocks(focus, now) && loosens(coreOf(r), r.pending.next)) return r;
   const next = r.pending.next;
   return { ...r, ...next, strictUntil: next.strictness === 'strict' ? r.strictUntil : null, pending: null };
 }
@@ -491,13 +501,13 @@ export function endStrictEarly(r: ScreenTimeRules, now: number, verifiedPushupsS
 }
 
 /** Skip the next (or running) occurrence of a lock time: loosening, so it follows `requestChange`. */
-export function skipNext(zone: Zone, r: ScreenTimeRules, lockId: string, now: number): ChangeResult {
+export function skipNext(zone: Zone, r: ScreenTimeRules, lockId: string, now: number, focus: Focus | null = null): ChangeResult {
   const lock = r.lockTimes.find((l) => l.id === lockId);
   if (!lock) return { result: 'refused', rules: r, reason: 'invalid' };
   const occ = activeOccurrence(zone, lock, now) ?? occurrences(zone, lock, now, 7).find((o) => o.start > now);
   if (!occ) return { result: 'refused', rules: r, reason: 'invalid' };
   const next = { ...coreOf(r), lockTimes: r.lockTimes.map((l) => (l.id === lockId ? { ...l, skipDate: occ.day } : l)) };
-  return requestChange(zone, r, next, now);
+  return requestChange(zone, r, next, now, focus);
 }
 
 /** Today's date key, for clearing skips that are in the past. */

@@ -189,7 +189,7 @@ export interface SyncResult {
  */
 export function syncScreenTime(now = Date.now()): SyncResult {
   const s = getScreenTime();
-  let rules = clearOldSkips(deviceZone, applyPending(s.rules, now), now);
+  let rules = clearOldSkips(deviceZone, applyPending(s.rules, now, s.focus), now);
   let today = rollDay(deviceZone, s.days[0] ?? null, now);
   const meta = { ...s.meta };
   let openEarn = false;
