@@ -1,21 +1,18 @@
 import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { EXERCISES } from '@/engine/exercises';
+import { EXERCISE_IDS, EXERCISES } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { useScreenTimeTick } from '@/screentime/store';
-import { formatMin } from '@/screentime/summary';
-import type { Rate } from '@/screentime/types';
+import { MILESTONES_PE } from '@/screentime/rules';
+import { formatMin, rateText, tierText } from '@/screentime/summary';
 import { useSettings } from '@/storage/settings';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Body, Button, Display, Label, Mono, Strong } from '@/ui/primitives';
 import { color, radius, space } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
-const ORDER: Exercise[] = ['pushup', 'crunch', 'plank', 'sidePlank'];
-
-const rateText = (r: Rate) =>
-  r.per10s !== undefined ? `${r.per10s} min for every 10 s in good form` : `${r.perCleanRep} min per clean rep`;
+const ORDER: Exercise[] = EXERCISE_IDS;
 
 /** "Earn time": opened from a blocked app's screen or the Screen Time screen. Pick an exercise and do a set (plan §6). */
 export default function EarnScreen() {
@@ -46,7 +43,7 @@ export default function EarnScreen() {
           {off
             ? 'Turn on earning in Screen time to get minutes for your sets.'
             : capLeft > 0
-              ? `Every finished set adds minutes to today. You can still earn ${formatMin(capLeft)} today. Earned time ends at midnight.`
+              ? `Every set earns minutes, plus ${formatMin(e.milestoneMin)} each time a set reaches 10 and 20 push-up equivalents, and a bonus for your first set of the day. After ${formatMin(e.fullRateMin)} earned, sets earn half. You can still earn ${formatMin(capLeft)} today. Earned time ends at midnight.`
               : `You've earned today's ${formatMin(e.dailyCapMin)}. Sets still count for your history.`}
         </Body>
       </View>
@@ -71,6 +68,11 @@ export default function EarnScreen() {
               <Mono size={12} tone="muted">
                 {rateText(e.rates[x])}
               </Mono>
+              {e.milestoneMin > 0 && (
+                <Mono size={12} tone="vial">
+                  {tierText(e.rates[x], e.milestoneMin, EXERCISES[x].unit, MILESTONES_PE)}
+                </Mono>
+              )}
             </View>
             <Label tone="vial">Start ›</Label>
           </Pressable>

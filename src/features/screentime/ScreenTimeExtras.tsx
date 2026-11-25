@@ -40,7 +40,7 @@ export function AppLimitsSection({ st, guard }: { st: ScreenTimeState; guard: Gu
           <LinkRow
             key={l.id}
             label={l.name}
-            hint={`${countLabel(l.apps)}, ${parts.join(', ')}${l.enabled ? '' : ', off'}`}
+            hint={`${countLabel(l.apps)} · ${parts.join(' · ')}${l.enabled ? '' : ' · off'}`}
             value={done ? 'Done today' : undefined}
             onPress={guard(() => router.push({ pathname: '/screen-time/limit/[id]', params: { id: l.id } }))}
           />
@@ -209,7 +209,7 @@ export function UsageSection({ st }: { st: ScreenTimeState }) {
           ))}
         </View>
         <Mono size={12} tone="muted">
-          {`Today ${formatMin(days[days.length - 1]?.minutes ?? 0)}, 7-day average ${formatMin(Math.round(total / Math.max(1, days.length)))}`}
+          {`Today ${formatMin(days[days.length - 1]?.minutes ?? 0)} · 7-day average ${formatMin(Math.round(total / Math.max(1, days.length)))}`}
         </Mono>
         {summary && summary.top.length > 0 && (
           <View style={{ gap: space.xs }}>

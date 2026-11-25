@@ -96,26 +96,27 @@ function Step({ label, a11y, onPress, disabled }: { label: string; a11y: string;
 
 const styles = StyleSheet.create({
   wrap: { gap: space.sm, flex: 1 },
-  row: { flexDirection: 'row', alignItems: 'stretch', gap: 2, height: 64 },
-  valueBox: {
-    flex: 1,
+  row: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'center',
+    alignItems: 'stretch',
+    height: 60,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: color.lineSoft,
     backgroundColor: color.surface,
-    paddingTop: 6,
-    gap: 4,
+    overflow: 'hidden',
   },
+  valueBox: { flex: 1, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', paddingTop: 8, gap: 4 },
   input: {
     fontFamily: font.display,
-    fontSize: 38,
+    fontSize: 34,
     color: color.chalk,
     minWidth: 36,
     textAlign: 'center',
     padding: 0,
     fontVariant: ['tabular-nums'],
   },
-  unit: { fontFamily: font.bodyMed, fontSize: 15, color: color.muted },
-  step: { width: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: color.raised, borderRadius: radius.sm },
-  stepText: { fontFamily: font.display, fontSize: 30, color: color.chalk },
+  unit: { fontFamily: font.mono, fontSize: 13, color: color.muted },
+  step: { width: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: color.raised },
+  stepText: { fontFamily: font.display, fontSize: 28, color: color.chalk },
 });

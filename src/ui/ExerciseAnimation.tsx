@@ -78,8 +78,8 @@ export function ExerciseAnimation({
       }
     >
       {/* ── camera view ── */}
-      <SvgText x="10" y="54" fontSize={8} fill={color.vial} fontFamily={font.bodySemi}>
-        {front || pull ? 'Camera view, facing you' : facing ? 'Camera view, facing it' : 'Camera view, side-on'}
+      <SvgText x="10" y="54" fontSize={8} fill={color.vial} fontFamily={font.mono}>
+        {front || pull ? 'CAMERA VIEW · FACING YOU' : facing ? 'CAMERA VIEW · FACING IT' : 'CAMERA VIEW · SIDE-ON'}
       </SvgText>
       <G stroke={color.muted} strokeWidth={1.5} fill="none" strokeLinecap="round">
         <Path d="M8 70 L8 60 L18 60" />
@@ -88,7 +88,7 @@ export function ExerciseAnimation({
         <Path d="M212 152 L222 152 L222 142" />
       </G>
       <Circle cx="215" cy="67" r="2.5" fill={color.fault} />
-      <SvgText x="15" y="73" fontSize={9} fill={color.chalk} fontFamily={font.bodySemi}>
+      <SvgText x="15" y="73" fontSize={9} fill={color.chalk} fontFamily={font.mono}>
         {counter}
       </SvgText>
       <Line x1="12" y1={FLOOR_Y + 1.5} x2="218" y2={FLOOR_Y + 1.5} stroke={color.line} strokeWidth={2} />
@@ -105,8 +105,8 @@ export function ExerciseAnimation({
 
       {/* ── from above ── */}
       <Line x1="229" y1="60" x2="229" y2="152" stroke={color.lineSoft} strokeWidth={1} />
-      <SvgText x="275" y="54" fontSize={8} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        From above
+      <SvgText x="275" y="54" fontSize={8} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        FROM ABOVE
       </SvgText>
       {pull ? (
         <BarMap distance={distance} />
@@ -126,16 +126,16 @@ function SideMap({ distance, portrait }: { distance: string; portrait: boolean }
       <Rect x="238" y="72" width="72" height="20" rx="3" fill={color.raised} stroke={color.line} strokeWidth={1} />
       <Line x1="249" y1="82" x2="304" y2="82" stroke={color.chalk} strokeWidth={3} strokeLinecap="round" />
       <Circle cx="245" cy="82" r="4" fill={color.chalk} />
-      <SvgText x="274" y="68" fontSize={7} fill={color.muted} fontFamily={font.bodySemi} textAnchor="middle">
-        You, on the mat
+      <SvgText x="274" y="68" fontSize={7} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        YOU, ON THE MAT
       </SvgText>
       {/* sight line from the phone to the hips, at a right angle to the body */}
       <Line x1="270" y1="119" x2="270" y2="94" stroke={color.vial} strokeWidth={1.5} strokeDasharray="4 3" />
       <Path d="M270 89 L276 89 L276 83" stroke={color.vial} strokeWidth={1.2} fill="none" />
-      <SvgText x="280" y="101" fontSize={8} fill={color.vial} fontFamily={font.bodySemi}>
+      <SvgText x="280" y="101" fontSize={8} fill={color.vial} fontFamily={font.mono}>
         90°
       </SvgText>
-      <SvgText x="276" y="114" fontSize={8} fill={color.chalk} fontFamily={font.bodySemi}>
+      <SvgText x="276" y="114" fontSize={8} fill={color.chalk} fontFamily={font.mono}>
         {distance}
       </SvgText>
       {portrait ? (
@@ -144,8 +144,8 @@ function SideMap({ distance, portrait }: { distance: string; portrait: boolean }
         <Rect x="262" y="122" width="16" height="9" rx="2" fill={color.raised} stroke={color.vial} strokeWidth={1.5} />
       )}
       <Circle cx="270" cy={portrait ? 123 : 124.5} r="1.6" fill={color.vial} />
-      <SvgText x="270" y="148" fontSize={7} fill={color.muted} fontFamily={font.bodySemi} textAnchor="middle">
-        Phone at hip level
+      <SvgText x="270" y="148" fontSize={7} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        PHONE · HIP LEVEL
       </SvgText>
     </>
   );
@@ -167,11 +167,11 @@ function FrontMap({ distance, portrait }: { distance: string; portrait: boolean 
       ) : (
         <Rect x="262" y={phoneY - 4.5} width="16" height="9" rx="2" fill={color.raised} stroke={color.vial} strokeWidth={1.5} />
       )}
-      <SvgText x="284" y={(phoneY + headY) / 2 + 3} fontSize={8} fill={color.chalk} fontFamily={font.bodySemi}>
+      <SvgText x="284" y={(phoneY + headY) / 2 + 3} fontSize={8} fill={color.chalk} fontFamily={font.mono}>
         {distance}
       </SvgText>
-      <SvgText x="275" y="148" fontSize={7} fill={color.muted} fontFamily={font.bodySemi} textAnchor="middle">
-        Phone at your head
+      <SvgText x="275" y="148" fontSize={7} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        PHONE · AT YOUR HEAD
       </SvgText>
     </>
   );
@@ -185,16 +185,16 @@ function BarMap({ distance }: { distance: string }) {
     <>
       <Line x1="246" y1={barY} x2="294" y2={barY} stroke={color.muted} strokeWidth={3} strokeLinecap="round" />
       <Circle cx="270" cy={barY + 7} r="4" fill={color.chalk} />
-      <SvgText x="275" y="68" fontSize={7} fill={color.muted} fontFamily={font.bodySemi} textAnchor="middle">
-        You, under the bar
+      <SvgText x="275" y="68" fontSize={7} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        YOU, UNDER THE BAR
       </SvgText>
       <Line x1="270" y1={phoneY - 9} x2="270" y2={barY + 13} stroke={color.vial} strokeWidth={1.5} strokeDasharray="4 3" />
-      <SvgText x="276" y={(phoneY + barY) / 2 + 6} fontSize={8} fill={color.chalk} fontFamily={font.bodySemi}>
+      <SvgText x="276" y={(phoneY + barY) / 2 + 6} fontSize={8} fill={color.chalk} fontFamily={font.mono}>
         {distance}
       </SvgText>
       <Rect x="265.5" y={phoneY - 8} width="9" height="16" rx="2" fill={color.raised} stroke={color.vial} strokeWidth={1.5} />
-      <SvgText x="270" y="148" fontSize={7} fill={color.muted} fontFamily={font.bodySemi} textAnchor="middle">
-        Phone waist high
+      <SvgText x="270" y="148" fontSize={7} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        PHONE · WAIST HIGH
       </SvgText>
     </>
   );
@@ -226,7 +226,7 @@ function useLoopCounter(exercise: Exercise, period: number, still: boolean): str
   }, [exercise, period, still, timed]);
 
   // Side plank: the first half of the loop is the left side.
-  if (exercise === 'sidePlank') return Math.floor(n / (period / 2000)) % 2 === 1 ? 'Right side' : 'Left side';
-  if (timed) return `Hold 0:${String(n % 60).padStart(2, '0')}`;
-  return `Reps ${n === 0 ? 0 : ((n - 1) % 10) + 1}`;
+  if (exercise === 'sidePlank') return Math.floor(n / (period / 2000)) % 2 === 1 ? 'RIGHT SIDE' : 'LEFT SIDE';
+  if (timed) return `HOLD · 0:${String(n % 60).padStart(2, '0')}`;
+  return `REPS · ${n === 0 ? 0 : ((n - 1) % 10) + 1}`;
 }

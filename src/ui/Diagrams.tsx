@@ -51,7 +51,7 @@ export function SetupDiagram({
       )}
       {/* distance */}
       <Line x1={portrait ? 40 : 48} y1="122" x2="140" y2="122" stroke={color.muted} strokeWidth={1.5} strokeDasharray="4 4" />
-      <SvgText x="94" y="135" fontSize={10} fill={color.muted} fontFamily={font.bodySemi} textAnchor="middle">
+      <SvgText x="94" y="135" fontSize={10} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
         {distance}
       </SvgText>
       {exercise === 'crunch' ? (
@@ -122,8 +122,8 @@ function PullupSetupDiagram({ width }: { width: number }) {
       </G>
       <Circle cx="268" cy="64" r="6.5" fill={color.chalk} />
       <Line x1="44" y1="122" x2="230" y2="122" stroke={color.muted} strokeWidth={1.5} strokeDasharray="4 4" />
-      <SvgText x="137" y="117" fontSize={10} fill={color.muted} fontFamily={font.bodySemi} textAnchor="middle">
-        2–2.5 m away, waist high
+      <SvgText x="137" y="117" fontSize={10} fill={color.muted} fontFamily={font.mono} textAnchor="middle">
+        2–2.5 m · WAIST HIGH
       </SvgText>
     </Svg>
   );
@@ -154,11 +154,11 @@ export function RepDiagram({ width = 320, exercise = 'pushup' }: { width?: numbe
       <Circle cx="199" cy="58" r="7" fill={color.chalk} />
       <Circle cx="40" cy="61" r="3.5" fill={color.vial} />
       <Circle cx="226" cy="62" r="3.5" fill={color.vial} />
-      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        Top: arms locked
+      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        TOP · ARMS LOCKED
       </SvgText>
-      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        Bottom: elbows about 90°
+      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        BOTTOM · ELBOWS ~90°
       </SvgText>
     </Svg>
   );
@@ -186,11 +186,11 @@ function PullupDiagram({ width }: { width: number }) {
       <Circle cx="80" cy="50" r="6.5" fill={color.chalk} />
       <Circle cx="240" cy="29" r="6.5" fill={color.chalk} />
       <Line x1="226" y1="34" x2="254" y2="34" stroke={color.vial} strokeWidth={1.5} strokeDasharray="3 2" />
-      <SvgText x="80" y="106" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        Dead hang: arms straight
+      <SvgText x="80" y="106" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        DEAD HANG · ARMS STRAIGHT
       </SvgText>
-      <SvgText x="240" y="106" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        Top: chin over the bar
+      <SvgText x="240" y="106" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        TOP · CHIN OVER THE BAR
       </SvgText>
     </Svg>
   );
@@ -219,14 +219,14 @@ function CrunchDiagram({ width }: { width: number }) {
       <Circle cx="198" cy="40" r="7" fill={color.chalk} />
       {/* lift angle at the hip */}
       <Path d="M232 74 A24 24 0 0 1 235 62" stroke={color.vial} strokeWidth={1.5} fill="none" />
-      <SvgText x="229" y="74" fontSize={9} fill={color.vial} fontFamily={font.bodySemi} textAnchor="end">
+      <SvgText x="229" y="74" fontSize={9} fill={color.vial} fontFamily={font.mono} textAnchor="end">
         ~30°
       </SvgText>
-      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        Down: shoulders on the floor
+      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        DOWN · SHOULDERS ON FLOOR
       </SvgText>
-      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        Up: shoulder blades off
+      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        UP · SHOULDER BLADES OFF
       </SvgText>
     </Svg>
   );
@@ -256,11 +256,11 @@ export function HoldDiagram({ width = 320, exercise = 'plank' }: { width?: numbe
       <Line x1="200" y1="58" x2="314" y2="76" stroke={color.vial} strokeWidth={1.5} strokeDasharray="4 4" />
       <Circle cx="30" cy="42" r="7" fill={color.chalk} />
       <Circle cx="194" cy="56" r="7" fill={color.chalk} />
-      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        High: arms straight
+      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        HIGH · ARMS STRAIGHT
       </SvgText>
-      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        Forearm: elbows under shoulders
+      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        FOREARM · ELBOWS UNDER
       </SvgText>
     </Svg>
   );
@@ -291,11 +291,11 @@ function SideHoldDiagram({ width }: { width: number }) {
       <Line x1="198" y1="44" x2="314" y2="76" stroke={color.vial} strokeWidth={1.5} strokeDasharray="4 4" />
       <Circle cx="24" cy="56" r="7" fill={color.chalk} />
       <Circle cx="192" cy="42" r="7" fill={color.chalk} />
-      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        Forearm: elbow under shoulder
+      <SvgText x="78" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        FOREARM · ELBOW UNDER
       </SvgText>
-      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.bodySemi} textAnchor="middle">
-        Straight arm: hand under shoulder
+      <SvgText x="242" y="98" fontSize={10} fill={color.vial} fontFamily={font.mono} textAnchor="middle">
+        STRAIGHT ARM · HAND UNDER
       </SvgText>
     </Svg>
   );

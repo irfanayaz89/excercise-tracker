@@ -1,7 +1,7 @@
 /// <reference types="jest" />
 import type { SessionRow } from '@/storage/history';
 import { defaultProfile, normalizeProfile, startProfile, withWeighIn, type Profile } from '@/storage/profile';
-import { activeDaysThisWeek, goalProgress, setsKcal, weekStart, workoutKcal } from '../goal';
+import { activeDaysThisWeek, daysSinceLastSet, goalProgress, setsKcal, weekStart, weekStreak } from '../goal';
 
 jest.mock('expo-sqlite/kv-store', () => ({ __esModule: true, default: { getItemSync: () => null, setItemSync: () => {} } }));
 
@@ -41,12 +41,14 @@ describe('goal progress', () => {
   test('get stronger: the best set since the start, of the target', () => {
     const p = base({ aim: 'get-stronger', repGoal: { exercise: 'pullup', reps: 8 } });
     const rows = [
-      row({ exercise: 'pullup', totalReps: 5 }),
-      row({ exercise: 'pullup', totalReps: 12, startedAt: p.startedAt - DAY }), // before the goal was set
-      row({ exercise: 'pushup', totalReps: 30 }),
+      row({ exercise: 'pullup', totalReps: 5, cleanReps: 5 }),
+      row({ exercise: 'pullup', totalReps: 12, cleanReps: 12, startedAt: p.startedAt - DAY }), // before the goal was set
+      row({ exercise: 'pushup', totalReps: 30, cleanReps: 30 }),
     ];
     expect(goalProgress(p, rows, NOW)).toMatchObject({ value: '5', of: 'of 8', met: false });
-    expect(goalProgress(p, [...rows, row({ exercise: 'pullup', totalReps: 8 })], NOW).met).toBe(true);
+    // 9 pull-ups with 3 flagged for form: 6 strict ones, not the goal yet.
+    expect(goalProgress(p, [...rows, row({ exercise: 'pullup', totalReps: 9, cleanReps: 6 })], NOW)).toMatchObject({ value: '6', met: false });
+    expect(goalProgress(p, [...rows, row({ exercise: 'pullup', totalReps: 8, cleanReps: 8 })], NOW).met).toBe(true);
   });
 
   test('stay active: distinct workout days this week', () => {
@@ -56,11 +58,38 @@ describe('goal progress', () => {
     expect(goalProgress(p, rows, NOW)).toMatchObject({ value: '2', of: 'of 3', met: false });
   });
 
-  test('calories of saved sets and of the suggested workout', () => {
-    // 1 minute of push-ups at 10 reps a minute, 80 kg: 6.5 × 3.5 × 80 / 200 = 9.1
-    expect(setsKcal([row({})], 80)).toBeCloseTo(9.1, 5);
-    // 5 min push-ups + 5 min plank at 75 kg ≈ 42.7 + 11.8
-    expect(workoutKcal(75)).toBeCloseTo(54.47, 1);
+  test('calories of saved sets add up, with their range', () => {
+    // 10 push-ups in 60 s: 6 s a rep at the most, 80 kg, 1.76 m.
+    const k = setsKcal([row({}), row({})], { weightKg: 80, heightCm: 176, sex: 'male' });
+    expect(k.kcal).toBeGreaterThan(15);
+    expect(k.low).toBeLessThan(k.kcal);
+    expect(k.high).toBeGreaterThan(k.kcal);
+  });
+});
+
+describe('weekly streaks', () => {
+  const W = 7 * DAY;
+  const days = (weeksAgo: number, n: number) =>
+    Array.from({ length: n }, (_, i) => row({ startedAt: weekStart(NOW) - weeksAgo * W + i * DAY + 3_600_000 }));
+
+  test('weeks in a row that reach the target; the week in progress never breaks it', () => {
+    const rows = [...days(1, 3), ...days(2, 2), ...days(3, 3)];
+    // This week: nothing yet. Last two weeks met 2+ days, the one before too.
+    expect(weekStreak(rows, 2, NOW)).toEqual({ current: 3, best: 3, thisWeekMet: false });
+    // Two sets on one day count as one workout day.
+    const sameDay = [row({ startedAt: weekStart(NOW) + 3_600_000 }), row({ startedAt: weekStart(NOW) + 7_200_000 })];
+    expect(weekStreak([...rows, ...sameDay], 2, NOW).thisWeekMet).toBe(false);
+    expect(weekStreak([...rows, ...days(0, 2)], 2, NOW)).toEqual({ current: 4, best: 4, thisWeekMet: true });
+  });
+
+  test('a missed week ends the run but the best streak is kept', () => {
+    const rows = [...days(1, 2), ...days(3, 2), ...days(4, 2), ...days(5, 2)];
+    expect(weekStreak(rows, 2, NOW)).toEqual({ current: 1, best: 3, thisWeekMet: false });
+  });
+
+  test('days since the last set', () => {
+    expect(daysSinceLastSet([], NOW)).toBeNull();
+    expect(daysSinceLastSet([row({ startedAt: NOW - 9 * DAY })], NOW)).toBe(9);
   });
 });
 

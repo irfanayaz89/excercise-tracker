@@ -1,5 +1,10 @@
-import { Barlow_400Regular, Barlow_500Medium, Barlow_600SemiBold, Barlow_700Bold } from '@expo-google-fonts/barlow';
-import { BarlowCondensed_600SemiBold, BarlowCondensed_700Bold, BarlowCondensed_800ExtraBold } from '@expo-google-fonts/barlow-condensed';
+import { Archivo_400Regular, Archivo_500Medium, Archivo_600SemiBold, Archivo_700Bold } from '@expo-google-fonts/archivo';
+import {
+  BigShouldersDisplay_600SemiBold,
+  BigShouldersDisplay_800ExtraBold,
+  BigShouldersDisplay_900Black,
+} from '@expo-google-fonts/big-shoulders-display';
+import { JetBrainsMono_400Regular, JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -21,13 +26,15 @@ export { ErrorScreen as ErrorBoundary } from '@/ui/ErrorScreen';
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
-    BarlowCondensed_600SemiBold,
-    BarlowCondensed_700Bold,
-    BarlowCondensed_800ExtraBold,
-    Barlow_400Regular,
-    Barlow_500Medium,
-    Barlow_600SemiBold,
-    Barlow_700Bold,
+    BigShouldersDisplay_600SemiBold,
+    BigShouldersDisplay_800ExtraBold,
+    BigShouldersDisplay_900Black,
+    Archivo_400Regular,
+    Archivo_500Medium,
+    Archivo_600SemiBold,
+    Archivo_700Bold,
+    JetBrainsMono_400Regular,
+    JetBrainsMono_500Medium,
   });
 
   useScreenTimeSync();
@@ -71,6 +78,7 @@ export default function RootLayout() {
           <Stack.Screen name="screen-time/lock/[id]" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="screen-time/apps" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="earn" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="calories" options={{ animation: 'slide_from_bottom' }} />
         </Stack>
         {intro && <AnimatedSplash onDone={endIntro} />}
       </SafeAreaProvider>

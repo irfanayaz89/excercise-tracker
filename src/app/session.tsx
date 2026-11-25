@@ -206,10 +206,10 @@ function LiveSession({
       // A demo set is synthetic: show its summary but keep it out of your history.
       const id = demo ? null : saveSession(summary, wallStart);
       // Only a saved, real set earns screen time (and only once: the id is its key).
-      let earned: { minutes: number; capped: boolean } | null = null;
+      let earned: { minutes: number; capped: boolean; bonus?: number; halfRate?: boolean } | null = null;
       try {
         const res = id ? creditSet(summary, id, demo) : null;
-        if (res && (res.minutes > 0 || res.reason === 'cap-reached')) earned = { minutes: res.minutes, capped: res.capped };
+        if (res && (res.minutes > 0 || res.reason === 'cap-reached')) earned = { minutes: res.minutes, capped: res.capped, bonus: res.bonus, halfRate: res.halfRate };
       } catch {
         // Screen time must never get in the way of saving a set.
       }
@@ -527,7 +527,7 @@ function Hud({
         <View style={[styles.main, landscape && { flexDirection: 'row' }]} pointerEvents="box-none">
           {counting && landscape && (plank ? <LineColumn snap={snap} warnAt={ctrl.config.hold.warnRatio} /> : <DepthColumn snap={snap} />)}
           <View style={styles.mainBody} pointerEvents="box-none">
-            {demo && <Label tone="vial">Demo set: a synthetic body, no camera</Label>}
+            {demo && <Label tone="vial">Demo set · synthetic body, no camera</Label>}
             {loading && <Label tone="vial">Starting body tracker…</Label>}
             {usingFallbackCamera && <Label tone="cue">Preferred camera unavailable, using the other one</Label>}
             {snap.phase === 'phone-setup' && (

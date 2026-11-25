@@ -92,7 +92,7 @@ export function AlignmentGuide({ snap, width, height, fit, insetTop, insetRight 
       {!bodyOk && (
         <View style={[styles.zone, { left: X(zone.x0), top: Y(zone.y0), width: X(zone.x1) - X(zone.x0), height: Y(zone.y1) - Y(zone.y0) }]}>
           <Label tone="vial" style={styles.zoneLabel}>
-            {issue === 'move-closer' ? 'Come closer and fill this area' : p ? 'Fit your body in here' : 'Get into this area, side-on'}
+            {issue === 'move-closer' ? 'Come closer · fill this area' : p ? 'Fit your body in here' : 'Get into this area, side-on'}
           </Label>
         </View>
       )}

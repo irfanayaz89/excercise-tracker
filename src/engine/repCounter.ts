@@ -20,6 +20,8 @@ export type RepFault =
   | 'elbows-flaring'
   /** Front view: one side lower than the other. */
   | 'uneven'
+  /** Push-ups: knees bent (dropped towards the floor) mid-set, when kneeling isn't allowed. */
+  | 'knees-bent'
   /** Pull-ups: the body swung (hips travelling sideways or back and forth) during the pull. */
   | 'swinging'
   /** Pull-ups: dropped from the bar instead of lowering under control. */
@@ -96,6 +98,7 @@ interface Attempt {
   necks: number[];
   flares: number[];
   tilts: number[];
+  knees: number[];
   lastDepthOk: boolean;
 }
 
@@ -123,6 +126,9 @@ const FORM_PCT = 0.15;
  * - elbow hidden → depth from shoulder drop alone, lockout from shoulder height
  * - shoulder drop unavailable (wrist hidden) → elbow angle alone
  */
+/** Least elbow travel (lockout to bottom) for a push-up to count. */
+const MIN_TRAVEL_DEG = 30;
+
 export class RepCounter {
   phase: RepPhase = 'top';
   count = 0;
@@ -186,7 +192,9 @@ export class RepCounter {
     const r = this.cfg.rep;
     const drop = this.dropRatio(m);
     if (m.elbowDeg !== null) {
-      if (m.elbowDeg > r.downElbowDeg) return false;
+      // Deep enough, and at least 30° of bend from the lockout in use: a
+      // bent-arm start can't turn small wiggles into reps.
+      if (m.elbowDeg > Math.min(r.downElbowDeg, this.upDeg - MIN_TRAVEL_DEG)) return false;
       // Elbow says deep; confirm with shoulder drop when we can measure it.
       return drop === null ? true : drop >= r.minDropRatio;
     }
@@ -310,6 +318,9 @@ export class RepCounter {
       faults.push('hips-piking');
     }
     if (f.enabled && durationMs < r.rushedRepMs) faults.push('rushed');
+    // Knees let down mid-set (a full start was straight-legged): the rep counts, flagged.
+    const knee = percentile(a.knees, FORM_PCT);
+    if (f.enabled && !this.cfg.allowKneeling && knee !== null && knee < this.cfg.plank.minKneeDeg - this.cfg.hold.kneeBendDeg) faults.push('knees-bent');
     // Front view: what head-on shows that side-on can't.
     if (f.enabled && this.cfg.view === 'front') {
       const flare = percentile(a.flares, 1 - FORM_PCT);
@@ -352,6 +363,7 @@ export class RepCounter {
       necks: [],
       flares: [],
       tilts: [],
+      knees: [],
       lastDepthOk: false,
     };
     this.track(a, m);
@@ -365,6 +377,7 @@ export class RepCounter {
     if (m.neckDeg !== null) a.necks.push(m.neckDeg);
     if (m.elbowFlare !== null && m.elbowFlare !== undefined) a.flares.push(m.elbowFlare);
     if (m.shoulderTilt !== null && m.shoulderTilt !== undefined) a.tilts.push(m.shoulderTilt);
+    if (m.kneeDeg !== null) a.knees.push(m.kneeDeg);
   }
 }
 

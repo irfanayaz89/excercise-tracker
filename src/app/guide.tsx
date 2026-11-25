@@ -50,7 +50,7 @@ export default function Guide() {
     <View style={{ flex: 1, backgroundColor: color.ground }}>
       <View style={[styles.top, { paddingTop: insets.top + space.lg }]}>
         <View style={styles.header}>
-          <Label tone="vial">{`${viewOnly ? 'How to do' : 'Before your set of'} ${EXERCISES[exercise].label.toLowerCase()}`}</Label>
+          <Label tone="vial">{`${viewOnly ? 'How to' : 'Before your set'} · ${EXERCISES[exercise].label}`}</Label>
           <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
             <Label tone="chalk">Close</Label>
           </Pressable>
@@ -83,7 +83,7 @@ export default function Guide() {
               router.replace('/session');
             })}
           >
-            <Label tone="muted">I know this, skip the guide from now on</Label>
+            <Label tone="muted">I know this · skip the guide from now on</Label>
           </Pressable>
         )}
       </View>

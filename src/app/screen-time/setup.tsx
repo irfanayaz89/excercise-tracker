@@ -300,7 +300,7 @@ export default function ScreenTimeSetup() {
           <Summary label="Always allowed" value={countLabel(rules.allowed)} />
           <Summary label="Daily limit" value={rules.dailyLimitMin === null ? 'None' : formatMin(rules.dailyLimitMin)} />
           <Summary label="Lock times" value={rules.lockTimes.length ? rules.lockTimes.map(describeLock).join('\n') : 'None'} />
-          <Summary label="Earning" value={`Up to ${formatMin(rules.earning.dailyCapMin)} a day, 1 min per clean push-up`} />
+          <Summary label="Earning" value={`Up to ${formatMin(rules.earning.dailyCapMin)} a day · 10 push-ups earn 15 min, 20 earn 30`} />
           <Summary label="Strictness" value={rules.strictness[0].toUpperCase() + rules.strictness.slice(1)} />
           <Button label="Turn on" size="lg" onPress={finish} />
         </Block>

@@ -329,7 +329,11 @@ export function turnOff() {
 export function creditSet(summary: SessionSummary, sessionId: string, demo: boolean, now = Date.now()): EarnResult | null {
   const s = getScreenTime();
   if (!s.meta.setUp) return null;
-  const res = earnFromSet(deviceZone, s.rules, s.days[0] ?? rollDay(deviceZone, null, now), { summary, sessionId, demo }, now);
+  // Came back after a break: the last day with a set was two or more days ago.
+  const today = rollDay(deviceZone, s.days[0] ?? null, now);
+  const lastActive = s.days.find((d) => d.day !== today.day && d.grants.length > 0);
+  const cameBack = !!lastActive && (Date.parse(`${today.day}T12:00:00`) - Date.parse(`${lastActive.day}T12:00:00`)) / 86_400_000 >= 2;
+  const res = earnFromSet(deviceZone, s.rules, s.days[0] ?? today, { summary, sessionId, demo, cameBack }, now);
   if (res.reason === 'earned') {
     publish({ ...s, days: withToday(s.days, res.log) });
     syncScreenTime(now);

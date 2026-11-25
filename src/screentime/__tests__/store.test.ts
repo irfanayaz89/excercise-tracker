@@ -135,11 +135,12 @@ describe('screen time store', () => {
   it('a finished set earns minutes, once, and the phone is told at once', () => {
     const st = setUp();
     const res = st.creditSet(set('pushup', 20, 20), 'set-1', false);
-    expect(res).toMatchObject({ minutes: 20, reason: 'earned' });
-    expect(mockPhone.plans.at(-1)!.earnedLeftMin).toBe(20);
+    // 20 reps + 10 for the milestones + 3 for the first set of the day = 33: 30 at full rate, then half.
+    expect(res).toMatchObject({ minutes: 31, reason: 'earned' });
+    expect(mockPhone.plans.at(-1)!.earnedLeftMin).toBe(31);
     expect(st.creditSet(set('pushup', 20, 20), 'set-1', false)).toMatchObject({ minutes: 0, reason: 'duplicate' });
     expect(st.creditSet(set('pushup', 20, 20), 'demo', true)).toMatchObject({ minutes: 0, reason: 'demo' });
-    expect(st.getScreenTime().today.earnedMin).toBe(20);
+    expect(st.getScreenTime().today.earnedMin).toBe(31);
   });
 
   it('nothing is earned before screen time is set up', () => {
@@ -149,11 +150,12 @@ describe('screen time store', () => {
 
   it('earned minutes spent on the phone come off what is left', () => {
     const st = setUp();
-    st.creditSet(set('pushup', 30, 30), 'set-1', false);
+    // 17 + 5 (milestone) + 3 (first set) = 25 earned.
+    st.creditSet(set('pushup', 17, 17), 'set-1', false);
     mockPhone.report = { ...emptyReport(Date.now()), earnedSpentMin: 10 };
     st.syncScreenTime();
-    expect(st.getScreenTime().decision.earnedLeftMin).toBe(20);
-    expect(mockPhone.plans.at(-1)!.earnedLeftMin).toBe(20);
+    expect(st.getScreenTime().decision.earnedLeftMin).toBe(15);
+    expect(mockPhone.plans.at(-1)!.earnedLeftMin).toBe(15);
   });
 
   it('"Earn time" tapped on the blocked screen opens the earn screen once', () => {
@@ -227,7 +229,7 @@ describe('screen time store', () => {
     const st = setUp();
     st.creditSet(set('crunch', 20, 20), 'set-1', false);
     const again = load();
-    expect(again.getScreenTime()).toMatchObject({ meta: { setUp: true }, rules: { blocked: BLOCKED, dailyLimitMin: 60 }, today: { earnedMin: 10 } });
+    expect(again.getScreenTime()).toMatchObject({ meta: { setUp: true }, rules: { blocked: BLOCKED, dailyLimitMin: 60 }, today: { earnedMin: 11 } });
   });
 
   it('turning off stops the phone blocking', () => {

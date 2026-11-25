@@ -37,7 +37,7 @@ import {
   useScreenTimeTick,
   type ScreenTimeState,
 } from '@/screentime/store';
-import { formatClock, formatMin, summarizeDays } from '@/screentime/summary';
+import { formatClock, formatMin, rateText, summarizeDays } from '@/screentime/summary';
 import { deviceZone } from '@/screentime/time';
 import type { ChangeResult } from '@/screentime/rules';
 import type { RulesCore, Strictness } from '@/screentime/types';
@@ -55,7 +55,7 @@ const LIMITS: [number | null, string][] = [
   [120, '2 h'],
   [180, '3 h'],
 ];
-const CAPS = [30, 60, 120, 180, 240];
+const CAPS = [30, 60, 90, 120];
 
 const STRICTNESS: Record<Strictness, { label: string; hint: string }> = {
   nudge: { label: 'Nudge', hint: 'Changes apply at once and the blocked screen offers "1 more minute" three times a day.' },
@@ -285,8 +285,8 @@ export default function ScreenTimeScreen() {
               <Strong>{l.name}</Strong>
               <Body tone="muted" size={13}>
                 {describeLock(l)}
-                {l.earnable ? ', earned time works' : ''}
-                {l.apps === 'all' ? ', everything except always allowed' : l.apps !== 'main' ? `, ${countLabel(l.apps)}` : ''}
+                {l.earnable ? ' · earned time works' : ''}
+                {l.apps === 'all' ? ' · everything except always allowed' : l.apps !== 'main' ? ` · ${countLabel(l.apps)}` : ''}
               </Body>
               {l.skipDate && (
                 <Mono size={11} tone="cue">
@@ -415,11 +415,14 @@ function EarningSection({ st, change }: { st: ScreenTimeState; change: (p: Parti
               <View key={x} style={styles.rateRow}>
                 <Body size={14}>{EXERCISES[x].label}</Body>
                 <Mono size={12} tone="muted">
-                  {r.per10s !== undefined ? `${r.per10s} min per 10 s in good form` : `${r.perCleanRep} min per clean rep, ${r.perFlaggedRep} flagged`}
+                  {r.per10s !== undefined ? rateText(r) : `${rateText(r)} · ${r.perFlaggedRep} flagged`}
                 </Mono>
               </View>
             );
           })}
+          <Body size={13} tone="muted">
+            {`A set earns ${formatMin(e.milestoneMin)} more at 10 and again at 20 push-up equivalents (10 push-ups 15 min, 20 push-ups 30 min), up to ${e.setCapPe} a set. First set of the day +${formatMin(e.firstSetMin)}, coming back after a break +${formatMin(e.comebackMin)}. After ${formatMin(e.fullRateMin)} earned in a day, sets earn half until the daily most.`}
+          </Body>
           <Rule style={{ marginVertical: space.sm }} />
           <Strong size={14}>Most you can earn a day</Strong>
           <View style={styles.chips}>
@@ -542,21 +545,21 @@ function HistorySection({ st }: { st: ScreenTimeState }) {
                 {`${formatMin(d.usedMin)} used`}
               </Mono>
               <Mono size={12} tone="good">
-                {`, +${formatMin(d.earnedMin)}`}
+                {` · +${formatMin(d.earnedMin)}`}
               </Mono>
               {d.unlocks > 0 && (
                 <Mono size={12} tone="muted">
-                  {`, ${d.unlocks} unlock${d.unlocks > 1 ? 's' : ''}`}
+                  {` · ${d.unlocks} unlock${d.unlocks > 1 ? 's' : ''}`}
                 </Mono>
               )}
               {d.focusMin > 0 && (
                 <Mono size={12} tone="vial">
-                  {`, focus ${formatMin(d.focusMin)}`}
+                  {` · focus ${formatMin(d.focusMin)}`}
                 </Mono>
               )}
               {d.offMin > 0 && (
                 <Mono size={12} tone="fault">
-                  {`, off ${formatMin(d.offMin)}`}
+                  {` · off ${formatMin(d.offMin)}`}
                 </Mono>
               )}
             </View>

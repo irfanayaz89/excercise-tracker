@@ -11,9 +11,9 @@ export type Experience = 'guided' | 'quick';
 export type DailyGoal = 'none' | 'light' | 'regular' | 'serious';
 
 /** Health notes from the onboarding safety check (stored on the phone only). */
-export type SafetyFlag = 'back' | 'neck' | 'wrist' | 'pregnancy' | 'injury';
+export type SafetyFlag = 'heart' | 'back' | 'neck' | 'wrist' | 'pregnancy' | 'injury';
 
-export const SAFETY_FLAGS: SafetyFlag[] = ['back', 'neck', 'wrist', 'pregnancy', 'injury'];
+export const SAFETY_FLAGS: SafetyFlag[] = ['heart', 'back', 'neck', 'wrist', 'pregnancy', 'injury'];
 
 /** What each daily goal asks for: counted reps (push-ups, crunches) and time in good form (planks). */
 export const GOAL_TARGETS: Record<Exclude<DailyGoal, 'none'>, { reps: number; holdMs: number }> = {

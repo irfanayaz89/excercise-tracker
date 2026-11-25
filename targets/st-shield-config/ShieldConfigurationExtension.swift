@@ -22,10 +22,10 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
   }
 
   // Trueline's colours (src/ui/theme.ts): pool-tile ground, chalk type, spirit-level vial yellow.
-  private let ink = UIColor(red: 0xF8 / 255, green: 0xFA / 255, blue: 0xFC / 255, alpha: 1)
-  private let accent = UIColor(red: 0xF9 / 255, green: 0x73 / 255, blue: 0x16 / 255, alpha: 1)
-  private let accentInk = UIColor(red: 0x0F / 255, green: 0x17 / 255, blue: 0x2A / 255, alpha: 1)
-  private let bg = UIColor(red: 0x1F / 255, green: 0x29 / 255, blue: 0x37 / 255, alpha: 1)
+  private let ink = UIColor(red: 0xEE / 255, green: 0xF1 / 255, blue: 0xEA / 255, alpha: 1)
+  private let accent = UIColor(red: 0xF3 / 255, green: 0xD6 / 255, blue: 0x4B / 255, alpha: 1)
+  private let accentInk = UIColor(red: 0x1D / 255, green: 0x1A / 255, blue: 0x05 / 255, alpha: 1)
+  private let bg = UIColor(red: 0x0C / 255, green: 0x1A / 255, blue: 0x1D / 255, alpha: 1)
 
   private func make(_ name: String?, app appToken: ApplicationToken?, site: WebDomainToken?, category: ActivityCategoryToken?) -> ShieldConfiguration {
     let s = STShared.status()

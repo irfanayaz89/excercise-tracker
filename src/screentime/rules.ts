@@ -14,7 +14,7 @@ export const MIN_LOCK_MIN = 15;
 export const MAX_APPS = 50;
 /** What a stored list keeps at most (Android has no 50-app limit, so this is only a sanity bound). */
 const MAX_STORED_APPS = 1000;
-export const MAX_DAILY_CAP_MIN = 240;
+export const MAX_DAILY_CAP_MIN = 120;
 /** Strict: a loosening change waits this long. */
 export const STRICT_WAIT_MS = 24 * 60 * 60 * 1000;
 /** Strict: turning it off early costs this many verified push-ups (or the 24 h wait). */
@@ -35,14 +35,33 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const EMPTY_SELECTION: Selection = { apps: [], categories: [], domains: [] };
 
+/**
+ * Minutes per unit of work, weighted by effort (research notes: no published
+ * conversion exists, so these are design weights to tune with real use).
+ * A push-up moves about 64% of body weight; a pull-up nearly all of it and is
+ * far harder for most people, so it is worth 2.5. Crunches are a lighter
+ * effort class (2.8 METs against 3.8–7.5), so they can't become the easy way
+ * to farm minutes. Planks earn 1 min per 6 s in good form: a 60 s plank is
+ * worth about 10 push-ups.
+ */
 export const DEFAULT_RATES: Record<Exercise, Rate> = {
   pushup: { perCleanRep: 1, perFlaggedRep: 0.5 },
-  // A pull-up is far harder than a push-up for most people: worth twice the time.
-  pullup: { perCleanRep: 2, perFlaggedRep: 1 },
-  crunch: { perCleanRep: 0.5, perFlaggedRep: 0.25 },
-  plank: { per10s: 2 },
-  sidePlank: { per10s: 2 },
+  pullup: { perCleanRep: 2.5, perFlaggedRep: 1.25 },
+  crunch: { perCleanRep: 0.4, perFlaggedRep: 0.2 },
+  plank: { per10s: 10 / 6 },
+  sidePlank: { per10s: 10 / 6 },
 };
+
+/**
+ * Set milestones, in push-up equivalents (PE: 1 push-up, 2.5 a pull-up, 0.4 a
+ * crunch, 6 s of plank). Each one reached in a set adds `milestoneMin`: 10
+ * push-ups earn 15 min, 20 earn 30, and two sets of 10 pay the same as one of
+ * 20, so splitting a set gains nothing (research: a linear rate with visible
+ * milestones, Kivetz 2006 goal gradient).
+ */
+export const MILESTONES_PE = [10, 20] as const;
+/** A set smaller than this earns no day bonuses (first set, coming back). */
+export const MIN_BONUS_PE = 5;
 
 export const DEFAULT_RULES: ScreenTimeRules = {
   version: 1,
@@ -50,7 +69,8 @@ export const DEFAULT_RULES: ScreenTimeRules = {
   allowed: EMPTY_SELECTION,
   dailyLimitMin: 60,
   lockTimes: [],
-  earning: { enabled: true, rates: DEFAULT_RATES, dailyCapMin: 120 },
+  // A 60 min base plus a 60 min earning most: exercise adds to the day, it doesn't double it.
+  earning: { enabled: true, rates: DEFAULT_RATES, dailyCapMin: 60, fullRateMin: 30, milestoneMin: 5, setCapPe: 40, firstSetMin: 3, comebackMin: 5 },
   strictness: 'standard',
   appLimits: [],
   pause: { enabled: false, seconds: 10 },
@@ -155,6 +175,11 @@ function earning(v: unknown): EarningRules {
     enabled: o.enabled !== false,
     rates,
     dailyCapMin: num(o.dailyCapMin, 0, MAX_DAILY_CAP_MIN) ?? DEFAULT_RULES.earning.dailyCapMin,
+    fullRateMin: num(o.fullRateMin, 0, MAX_DAILY_CAP_MIN) ?? DEFAULT_RULES.earning.fullRateMin,
+    milestoneMin: num(o.milestoneMin, 0, 10) ?? DEFAULT_RULES.earning.milestoneMin,
+    setCapPe: num(o.setCapPe, 10, 100) ?? DEFAULT_RULES.earning.setCapPe,
+    firstSetMin: num(o.firstSetMin, 0, 10) ?? DEFAULT_RULES.earning.firstSetMin,
+    comebackMin: num(o.comebackMin, 0, 10) ?? DEFAULT_RULES.earning.comebackMin,
   };
 }
 
@@ -336,6 +361,8 @@ export function loosens(prev: RulesCore, next: RulesCore): boolean {
   if (order.indexOf(next.strictness) < order.indexOf(prev.strictness)) return true;
   if (next.earning.enabled && !prev.earning.enabled) return true;
   if (next.earning.dailyCapMin > prev.earning.dailyCapMin) return true;
+  const e = (k: 'fullRateMin' | 'milestoneMin' | 'setCapPe' | 'firstSetMin' | 'comebackMin') => next.earning[k] > prev.earning[k];
+  if (e('fullRateMin') || e('milestoneMin') || e('setCapPe') || e('firstSetMin') || e('comebackMin')) return true;
   for (const e of EXERCISE_IDS) {
     const a = prev.earning.rates[e];
     const b = next.earning.rates[e];

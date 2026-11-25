@@ -262,7 +262,11 @@ export class PullupCounter {
 
   update(r: PullupReading): RepEvent | null {
     const c = this.cfg.pullup;
-    if (r.wrist && r.overhead && r.bothWrists) {
+    // Learn the bar only from a straight-armed hang, never mid-rep: otherwise
+    // hands brought down to the mouth while standing would drag the "bar" with
+    // them and count as pull-ups (found in an audit).
+    const straight = r.elbowDeg !== null ? r.elbowDeg >= c.hangElbowDeg : this.phase === 'hanging' || this.phase === 'resting';
+    if (r.wrist && r.overhead && r.bothWrists && straight && (this.phase === 'hanging' || this.phase === 'resting')) {
       this.bars.push(r.wrist.y);
       if (this.bars.length > BAR_WINDOW) this.bars.shift();
     }

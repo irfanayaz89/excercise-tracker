@@ -197,6 +197,51 @@ export function getSession(id: string): { row: SessionRow; summary: SessionSumma
   }
 }
 
+/**
+ * "Fix my count": the user corrects a set's rep total after the camera missed
+ * or added some. History and calories follow the fix; screen time already
+ * earned does not (so a fix can never be a way to earn more). Returns false if
+ * nothing was saved.
+ */
+export function correctReps(id: string, totalReps: number): boolean {
+  const d = getDb();
+  if (!d) return false;
+  const total = Math.max(0, Math.min(500, Math.round(totalReps)));
+  try {
+    const r = d.getFirstSync<{ summary: string; clean_reps: number; total_reps: number }>(
+      'SELECT summary, clean_reps, total_reps FROM sessions WHERE id = ?',
+      id,
+    );
+    if (!r) return false;
+    let summary: Record<string, unknown> = {};
+    try {
+      summary = JSON.parse(r.summary) as Record<string, unknown>;
+    } catch {
+      // Keep going with the columns alone.
+    }
+    const clean = Math.min(r.clean_reps, total);
+    const countedReps = typeof summary.countedReps === 'number' ? summary.countedReps : r.total_reps;
+    const next = { ...summary, totalReps: total, cleanReps: clean, countedReps };
+    d.runSync('UPDATE sessions SET total_reps = ?, clean_reps = ?, summary = ? WHERE id = ?', total, clean, JSON.stringify(next), id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The best set of an exercise before this one (null if this is the first). */
+export function bestBefore(exercise: Exercise, id: string): number | null {
+  const d = getDb();
+  if (!d) return null;
+  try {
+    const col = isTimed(exercise) ? 'hold_ms' : 'total_reps';
+    const r = d.getFirstSync<{ best: number | null }>(`SELECT MAX(${col}) AS best FROM sessions WHERE exercise = ? AND id != ?`, exercise, id);
+    return r?.best ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function deleteSession(id: string): void {
   try {
     getDb()?.runSync('DELETE FROM sessions WHERE id = ?', id);

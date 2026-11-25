@@ -39,7 +39,7 @@ describe('the plan sent to the phone', () => {
     const r = rules({ dailyLimitMin: 60 });
     expect(toNativePlan(london, r, day({ usedMin: 59 }), NOON).limitReached).toBe(false);
     const p = toNativePlan(london, r, day({ usedMin: 60, earnedMin: 30, earnedUsedMin: 12 }), NOON);
-    expect(p).toMatchObject({ limitReached: true, earnedLeftMin: 18, earnCapLeftMin: 90, dailyLimitMin: 60 });
+    expect(p).toMatchObject({ limitReached: true, earnedLeftMin: 18, earnCapLeftMin: 30, dailyLimitMin: 60 });
   });
 
   it('no daily limit is never "reached"', () => {

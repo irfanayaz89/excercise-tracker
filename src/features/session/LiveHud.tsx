@@ -8,7 +8,7 @@ import { DepthGauge } from '@/ui/DepthGauge';
 import { LineGauge } from '@/ui/LineGauge';
 import { Body, Button, Display, Label, Mono } from '@/ui/primitives';
 import { Tally } from '@/ui/Tally';
-import { color, radius, space, type, font } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 import { EXERCISES, isTimed } from '@/engine/exercises';
 
 /** The giant rep counter column, readable from across a room. */
@@ -23,12 +23,12 @@ export function CountColumn({ snap, repMarks, compact }: { snap: SessionSnapshot
 
   return (
     <View style={styles.count}>
-      <Label>{snap.targetReps ? `Reps, target ${snap.targetReps}` : 'Reps'}</Label>
+      <Label>{snap.targetReps ? `Reps · target ${snap.targetReps}` : 'Reps'}</Label>
       <Animated.View style={popStyle}>
         <Display
           size={size}
           tone={snap.reps > 0 && !lastClean ? 'cue' : 'chalk'}
-          style={{ fontFamily: font.displayBlack }}
+          style={{ fontFamily: 'BigShouldersDisplay_900Black' }}
           accessibilityLabel={`${snap.reps} reps`}
         >
           {snap.reps}
@@ -56,15 +56,15 @@ export function TimerColumn({ snap, compact }: { snap: SessionSnapshot; compact:
   const breaks = h?.breaks ?? 0;
   const side = snap.exercise === 'sidePlank';
   const name = EXERCISES[snap.exercise].label;
-  const which = side && snap.activeSide ? `, ${snap.activeSide}` : '';
+  const which = side && snap.activeSide ? ` · ${snap.activeSide}` : '';
   const each = side ? ' each' : '';
   return (
     <View style={styles.count}>
-      <Label>{target ? `${name}${which}, target ${formatDuration(target)}${each}` : `${name}${which}`}</Label>
+      <Label>{target ? `${name}${which} · target ${formatDuration(target)}${each}` : `${name}${which}`}</Label>
       <Display
         size={size}
         tone={tone}
-        style={{ fontFamily: font.displayBlack, fontVariant: ['tabular-nums'] }}
+        style={{ fontFamily: 'BigShouldersDisplay_900Black', fontVariant: ['tabular-nums'] }}
         accessibilityLabel={`${Math.floor(goodMs / 1000)} seconds in good form`}
       >
         {formatDuration(goodMs)}
@@ -78,7 +78,7 @@ export function TimerColumn({ snap, compact }: { snap: SessionSnapshot; compact:
         <Mono tone={h?.state === 'broken' ? 'fault' : h?.state === 'warning' ? 'cue' : 'good'}>
           {h?.state === 'broken' ? 'clock stopped' : h?.state === 'warning' ? 'form slipping' : 'good form'}
         </Mono>
-        <Mono tone="muted">{`${h?.variant === 'forearm' ? 'forearm' : side ? 'straight arm' : 'high'}, ${breaks} ${breaks === 1 ? 'break' : 'breaks'}`}</Mono>
+        <Mono tone="muted">{`${h?.variant === 'forearm' ? 'forearm' : side ? 'straight arm' : 'high'} · ${breaks} ${breaks === 1 ? 'break' : 'breaks'}`}</Mono>
       </View>
       {side && (
         <View style={styles.subRow}>
@@ -148,7 +148,7 @@ export function PausedPanel({ snap, onEnd }: { snap: SessionSnapshot; onEnd: () 
   const notReal = snap.pauseReason === 'not-real';
   return (
     <View style={[styles.paused, notReal && styles.alert]} accessibilityRole={notReal ? 'alert' : undefined}>
-      <Label tone={notReal ? 'fault' : 'cue'}>{notReal ? `Not counted: ${saved}` : `Paused: ${saved}`}</Label>
+      <Label tone={notReal ? 'fault' : 'cue'}>{notReal ? `Not counted · ${saved}` : `Paused · ${saved}`}</Label>
       <Display size={type.liveCue} tone={notReal ? 'fault' : 'chalk'}>
         {c.short}
       </Display>

@@ -55,7 +55,7 @@ export default function KeyScreen() {
       ) : key ? (
         <>
           <View style={styles.card} accessibilityLabel="Your key, a QR code">
-            <QRCode value={keyText(key.secret)} size={240} color="#1F2937" backgroundColor="#FFFFFF" getRef={(c) => (qr.current = c)} />
+            <QRCode value={keyText(key.secret)} size={240} color="#0C1A1D" backgroundColor="#FFFFFF" getRef={(c) => (qr.current = c)} />
           </View>
           <Body tone="muted" size={14}>
             Save it on another device or print it, and keep it out of easy reach. During a key lock, scan it in Trueline to unlock. Only this

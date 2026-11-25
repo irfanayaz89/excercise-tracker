@@ -401,6 +401,7 @@ export function plankIssueCopy(issue: PlankIssue, exercise: Exercise, view: Came
 }
 
 export const FAULT_COPY: Record<RepFault, Copy> = {
+  'knees-bent': { short: 'Straighten your legs', detail: 'Keep your knees off the floor and your legs straight. Easy mode allows knee push-ups.', say: 'Legs straight' },
   'hips-sagging': { short: 'Hips sagging', detail: 'Brace your core and squeeze your glutes.', say: 'Hips up' },
   'hips-piking': { short: 'Hips too high', detail: 'Keep a straight line from shoulders to heels.', say: 'Hips down' },
   rushed: { short: 'Slow down', detail: 'Control the way down. Aim for about two seconds a rep.', say: 'Slow it down' },

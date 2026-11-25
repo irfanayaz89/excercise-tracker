@@ -6,9 +6,8 @@ import {
   fatGrams,
   ftInToCm,
   lowestHealthyKg,
+  relativeFatMass,
   maintenance,
-  metFor,
-  netKcal,
   strengthFuel,
   weightPlan,
   type Body,
@@ -28,16 +27,13 @@ describe('energy', () => {
     expect(maintenance(man)).toBeCloseTo(2136, 0);
   });
 
-  test('net calories from the 2024 Compendium METs', () => {
-    expect(metFor('pushup')).toBe(7.5);
-    expect(metFor('pullup', 12)).toBe(7.5);
-    expect(metFor('pushup', 5)).toBe(3.8);
-    expect(metFor('plank')).toBe(2.8);
-    // 2 minutes of push-ups at 80 kg: (7.5 − 1) × 3.5 × 80 × 2 / 200 = 18.2 kcal
-    expect(netKcal('pushup', 120_000, 80, 40)).toBeCloseTo(18.2, 5);
-    // 1 minute of plank at 65 kg: 1.8 × 3.5 × 65 / 200 = 2.05 kcal
-    expect(netKcal('plank', 60_000, 65)).toBeCloseTo(2.0475, 4);
-    expect(netKcal('pushup', 0, 80)).toBe(0);
+  test('muscular people use Ten Haaf, and waist gives a body-fat estimate', () => {
+    // 11.936×80 + 587.728×1.8 − 8.129×30 + 191.027 + 29.279 ≈ 1989
+    expect(bmr({ ...man, muscular: true })).toBeCloseTo(1989.2, 0);
+    // RFM: men 64 − 20 × 180/90 = 24 %; women 76 − 20 × 165/80 = 34.75 %
+    expect(relativeFatMass('male', 180, 90)).toBeCloseTo(24, 5);
+    expect(relativeFatMass('female', 165, 80)).toBeCloseTo(34.75, 5);
+    expect(relativeFatMass('male', 180, 0)).toBeNull();
   });
 
   test('BMI bands and the lowest healthy target', () => {
@@ -58,6 +54,16 @@ describe('energy', () => {
     expect(p.by).toBe(10 * 7 * 86_400_000);
   });
 
+  test('workouts bring the date forward, counted at 80% (people eat back about a fifth)', () => {
+    const body = { ...man, activity: 'some' as const };
+    // 550 from eating + 0.8 × 100 from workouts = 630 a day: 5 kg × 7,700 / (630 × 7) = 8.7 → 9 weeks.
+    const p = weightPlan(body, 75, 0.5, 0, 100);
+    expect(p.dailyGap).toBeCloseTo(630, 0);
+    expect(p.weeks).toBe(9);
+    expect(p.eatKcal).toBe(weightPlan(body, 75, 0.5, 0).eatKcal);
+    expect(weightPlan(body, 75, 0.5, 0).weeks).toBe(10);
+  });
+
   test('eating never drops below resting energy or 1,200 kcal', () => {
     const small: Body = { sex: 'female', age: 60, heightCm: 150, weightKg: 55, activity: 'low' };
     const p = weightPlan(small, 50, 0.75, 0);
@@ -71,12 +77,12 @@ describe('energy', () => {
     expect(tiny.weeks).toBe(Infinity);
   });
 
-  test('long-term change follows Hall (24 kcal a day ≈ 1 kg, half in a year), not 7,700 kcal per kg', () => {
-    const r = eventualChangeKg(240);
+  test('long-term change follows Hall (22 kcal a day ≈ 1 kg, half in a year), not 7,700 kcal per kg', () => {
+    const r = eventualChangeKg(220);
     expect(r.eventual).toBeCloseTo(10, 5);
     expect(r.inAYear).toBeCloseTo(5, 5);
-    // The static rule would claim 240 × 365 / 7700 ≈ 11.4 kg in a year: about twice as much.
-    expect((240 * 365) / 7700).toBeGreaterThan(r.inAYear * 2);
+    // The static rule would claim 220 × 365 / 7700 ≈ 10.4 kg in a year: about twice as much.
+    expect((220 * 365) / 7700).toBeGreaterThan(r.inAYear * 2);
   });
 
   test('fat equivalent and strength fuel', () => {

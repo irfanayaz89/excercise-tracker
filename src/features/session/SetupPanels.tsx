@@ -44,7 +44,7 @@ export function PhonePanel({
       : { short: 'Hold still…', detail: 'Let the phone settle on the floor.' };
   return (
     <View style={styles.panel}>
-      <StepTag n={1} of={3} label={`Place your phone: ${PLACEMENT[orientation].label.toLowerCase()}`} />
+      <StepTag n={1} of={3} label={`Place your phone · ${PLACEMENT[orientation].label.toLowerCase()}`} />
       <Display size={type.liveCue} tone={p.issue || noSensor ? 'chalk' : 'vial'}>
         {copy.short}
       </Display>

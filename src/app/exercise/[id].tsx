@@ -9,6 +9,10 @@ import { setupSteps } from '@/features/exercise/setupSteps';
 import { TechniqueSteps } from '@/features/exercise/TechniqueList';
 import { safetyNotes } from '@/features/onboarding/safety';
 import { HistoryList } from '@/features/history/HistoryList';
+import { AddWeightForCalories, CaloriesHow, useEnergyBody } from '@/features/energy/Calories';
+import { TYPICAL_SET, typicalSetKcal } from '@/fitness/energy';
+import { kcalText } from '@/fitness/format';
+import { setsKcal } from '@/fitness/goal';
 import { FOCUS_CHOICES, type FocusChoice } from '@/screentime/focus';
 import { effectiveStrictness } from '@/screentime/rules';
 import { setFocusBlockAll, setFocusChoice, useScreenTime } from '@/screentime/store';
@@ -57,6 +61,8 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
   const show = (v: number) => (timed ? formatDuration(v) : String(v));
   const today = values[values.length - 1] ?? 0;
   const weekTotal = values.reduce((a, b) => a + b, 0);
+  const body = useEnergyBody();
+  const weekKcal = body ? setsKcal(weekRows.filter((r) => r.exercise === exercise), body) : null;
   const guided = settings.experience !== 'quick';
   const levelCopy = difficultyCopy(settings.difficulty, exercise);
   const art = Math.min(width, 560) - space.xl * 4;
@@ -118,6 +124,16 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
           <Stat label={timed ? 'Best hold' : 'Best set'} value={best === null ? '—' : show(best)} />
         </View>
         <WeekBars days={week.map((d) => d.day)} values={values} label={`${show(weekTotal)} ${info.unit} in the last 7 days`} height={56} />
+        {body ? (
+          <View style={{ gap: space.xs }}>
+            <Mono size={12} tone="muted">
+              {`${weekKcal && weekKcal.kcal >= 1 ? `${kcalText(weekKcal)} this week from ${info.label.toLowerCase()} · ` : ''}${TYPICAL_SET[exercise].label} ${kcalText(typicalSetKcal(exercise, body))}`}
+            </Mono>
+            <CaloriesHow />
+          </View>
+        ) : (
+          <AddWeightForCalories />
+        )}
       </View>
 
       <View style={styles.card}>
@@ -215,7 +231,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
       </View>
 
       <View style={{ gap: space.md }}>
-        <Label>{info.perSide ? 'Target, each side' : 'Target'}</Label>
+        <Label>{info.perSide ? 'Target · each side' : 'Target'}</Label>
         <View style={styles.chips}>
           {timed
             ? HOLD_TARGETS.map((t) => (
@@ -246,7 +262,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
 
       <View style={{ gap: space.md }}>
         <Label>History</Label>
-        <HistoryList rows={rows} guard={guard} showExercise={false} empty="No sets yet. Each finished set is saved here." />
+        <HistoryList rows={rows} guard={guard} showExercise={false} body={body} empty="No sets yet. Each finished set is saved here." />
       </View>
     </ScrollView>
   );

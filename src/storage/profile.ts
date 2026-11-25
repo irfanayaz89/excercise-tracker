@@ -3,7 +3,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { PACES, type Activity, type Body, type Pace, type Sex } from '@/fitness/energy';
 
 /** What the user wants out of the app; it shapes the goal and Home. */
-export type Aim = 'lose-fat' | 'get-stronger' | 'stay-active';
+export type Aim = 'lose-fat' | 'get-stronger' | 'stay-active' | 'less-screen';
+
+/** Why it matters to the user, in their words (shown back on Home). */
+export type Why = 'energy' | 'health' | 'confidence' | 'sport' | 'mood' | 'focus';
+export const WHYS: Why[] = ['energy', 'health', 'confidence', 'sport', 'mood', 'focus'];
 
 export type Units = 'metric' | 'imperial';
 
@@ -39,12 +43,18 @@ export interface Profile {
   log: WeighIn[];
   /** When the goal was first met (for the one-off celebration). */
   goalMetAt: number | null;
+  /** What makes it worth it, picked in onboarding (optional). */
+  why: Why[];
+  /** Lifts weights regularly or carries a lot of muscle (switches the resting-energy equation). */
+  muscular: boolean;
+  /** Waist at the navel, relaxed, for a body-fat estimate (optional). */
+  waistCm: number | null;
 }
 
 const KEY = 'profile.v1';
-const AIMS: Aim[] = ['lose-fat', 'get-stronger', 'stay-active'];
+const AIMS: Aim[] = ['lose-fat', 'get-stronger', 'stay-active', 'less-screen'];
 
-export const LIMITS = { age: [16, 90], heightCm: [120, 230], weightKg: [35, 250], days: [2, 7], reps: [1, 100] } as const;
+export const LIMITS = { age: [16, 90], heightCm: [120, 230], weightKg: [35, 250], days: [2, 7], reps: [1, 100], waistCm: [50, 200] } as const;
 
 const clamp = (v: number, [lo, hi]: readonly [number, number]) => Math.min(hi, Math.max(lo, v));
 const num = (v: unknown, fallback: number, lim: readonly [number, number]) =>
@@ -67,6 +77,9 @@ export function defaultProfile(now = Date.now()): Profile {
     startKg: 75,
     log: [],
     goalMetAt: null,
+    why: [],
+    muscular: false,
+    waistCm: null,
   };
 }
 
@@ -103,6 +116,9 @@ export function normalizeProfile(raw: unknown): Profile | null {
     startKg: num(o.startKg, weightKg, LIMITS.weightKg),
     log,
     goalMetAt: typeof o.goalMetAt === 'number' ? o.goalMetAt : null,
+    why: Array.isArray(o.why) ? [...new Set(o.why.filter((w): w is Why => WHYS.includes(w as Why)))] : [],
+    muscular: o.muscular === true,
+    waistCm: typeof o.waistCm === 'number' && Number.isFinite(o.waistCm) ? clamp(o.waistCm, LIMITS.waistCm) : null,
   };
 }
 
@@ -124,7 +140,14 @@ function saveProfile(p: Profile | null): void {
   }
 }
 
-export const bodyOf = (p: Profile): Body => ({ sex: p.sex, age: p.age, heightCm: p.heightCm, weightKg: p.weightKg, activity: p.activity });
+export const bodyOf = (p: Profile): Body => ({
+  sex: p.sex,
+  age: p.age,
+  heightCm: p.heightCm,
+  weightKg: p.weightKg,
+  activity: p.activity,
+  muscular: p.muscular,
+});
 
 /** Adds a weigh-in (one per day: a second one the same day replaces the first). */
 export function withWeighIn(p: Profile, kg: number, at = Date.now()): Profile {

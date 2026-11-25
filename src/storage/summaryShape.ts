@@ -14,6 +14,7 @@ const FAULTS: RepFault[] = [
   'neck-pulling',
   'elbows-flaring',
   'uneven',
+  'knees-bent',
 ];
 const MISSES: MissReason[] = ['not-deep-enough', 'no-lockout', 'too-slow', 'not-high-enough', 'not-back-down'];
 const HOLD_FAULTS: HoldFault[] = [
@@ -104,6 +105,7 @@ export function normalizeSummary(
     hold: isTimed(exercise) ? normalizeHold(o.hold, row.holdMs ?? 0) : undefined,
     holdSides: exercise === 'sidePlank' ? normalizeSides(o.holdSides) : undefined,
     difficulty: typeof o.difficulty === 'string' ? o.difficulty : undefined,
+    view: o.view === 'front' || o.view === 'side' ? o.view : undefined,
     startedAt: num(o.startedAt, row.startedAt),
     endedAt: num(o.endedAt, row.endedAt),
     activeMs: num(o.activeMs, row.activeMs),

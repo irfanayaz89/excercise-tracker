@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HINT_FAULTS, type MissReason, type RepFault, type RepRecord } from '@/engine/repCounter';
 import type { Exercise } from '@/engine/types';
@@ -8,14 +8,13 @@ import type { SessionSummary } from '@/engine/session';
 import type { HoldFault, HoldSummary } from '@/engine/holdTimer';
 import { DIFFICULTY_COPY, FAULT_COPY, HOLD_COPY, faultCopy, formatDuration, missCopy } from '@/session/copy';
 import { getLastSummary } from '@/session/lastSummary';
-import { getSession } from '@/storage/history';
-import { useProfile } from '@/storage/profile';
-import { fatGrams, netKcal } from '@/fitness/energy';
+import { bestBefore, correctReps, getSession } from '@/storage/history';
+import { SetCalories } from '@/features/energy/Calories';
 import { useSettings } from '@/storage/settings';
 import { Body, Button, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Tally } from '@/ui/Tally';
-import { color, radius, space, type, font } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 import { EXERCISES, isTimed } from '@/engine/exercises';
 
@@ -24,7 +23,7 @@ function EarnedNote({
   earned,
   focus,
 }: {
-  earned: { minutes: number; capped: boolean } | null;
+  earned: { minutes: number; capped: boolean; bonus?: number; halfRate?: boolean } | null;
   focus?: { heldMin: number; continuesUntil: number | null } | null;
 }) {
   if (!earned && !focus) return null;
@@ -32,14 +31,14 @@ function EarnedNote({
   if (earned)
     parts.push(
       earned.minutes > 0
-        ? `+${earned.minutes} min screen time${earned.capped ? ', today’s earning limit reached' : ''}`
+        ? `+${earned.minutes} min screen time${earned.bonus ? `, including ${earned.bonus} min of bonuses` : ''}${earned.capped ? ' · today’s earning limit reached' : earned.halfRate ? ' · half rate after your first hour today' : ''}`
         : 'Today’s earning limit is reached: this set earned no screen time.',
     );
   if (focus?.continuesUntil)
     parts.push(`Focus continues until ${new Date(focus.continuesUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
   else if (focus && focus.heldMin > 0) parts.push(`Focus held ${focus.heldMin} min`);
   if (!parts.length) return null;
-  const text = parts.join(', ');
+  const text = parts.join(' · ');
   return (
     <View style={styles.earned} accessible accessibilityLabel={text}>
       <Mono tone={earned && earned.minutes === 0 && !focus ? 'muted' : 'good'}>{text}</Mono>
@@ -76,12 +75,18 @@ export default function SummaryScreen() {
             demo: !!last.demo,
             earned: last.earned ?? null,
             focus: last.focus ?? null,
+            savedId: last.savedId,
+            fresh: true,
           }
         : null;
     }
     const stored = id ? getSession(id) : null;
-    return stored ? { summary: stored.summary, wallStart: stored.row.startedAt, saved: true, demo: false, earned: null, focus: null } : null;
+    return stored
+      ? { summary: stored.summary, wallStart: stored.row.startedAt, saved: true, demo: false, earned: null, focus: null, savedId: id, fresh: false }
+      : null;
   }, [id]);
+  // A count fixed by hand on this screen (history and calories follow it).
+  const [fixed, setFixed] = useState<number | null>(null);
 
   if (!data) {
     return (
@@ -93,7 +98,8 @@ export default function SummaryScreen() {
     );
   }
 
-  const { summary: s, wallStart, saved, demo, earned, focus } = data;
+  const { wallStart, saved, demo, earned, focus, savedId, fresh } = data;
+  const s = fixed === null ? data.summary : { ...data.summary, totalReps: fixed, cleanReps: Math.min(data.summary.cleanReps, fixed) };
   const faults = (Object.entries(s.faultCounts) as [RepFault, number][]).sort((a, b) => b[1] - a[1]);
   const misses = (Object.entries(s.missCounts) as [MissReason, number][]).sort((a, b) => b[1] - a[1]);
   const missTotal = misses.reduce((n, [, c]) => n + c, 0);
@@ -103,7 +109,7 @@ export default function SummaryScreen() {
   const note = END_NOTE[s.endReason];
   const level = s.difficulty === 'easy' || s.difficulty === 'medium' || s.difficulty === 'hard' ? s.difficulty : null;
   const levelLabel = level ? `${DIFFICULTY_COPY[level].label} mode` : null;
-  const header = `${new Date(wallStart).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}, ${formatDuration(s.activeMs)}${levelLabel ? `, ${levelLabel}` : ''}`;
+  const header = `${new Date(wallStart).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${formatDuration(s.activeMs)}${levelLabel ? ` · ${levelLabel}` : ''}`;
 
   if (isTimed(s.exercise ?? 'pushup')) {
     return (
@@ -126,7 +132,9 @@ export default function SummaryScreen() {
           easy={level === 'easy'}
           exercise={s.exercise ?? 'plank'}
         />
+        {saved && savedId && !demo && <PersonalBest exercise={s.exercise ?? 'plank'} id={savedId} value={s.hold?.goodMs ?? 0} />}
         <View style={{ gap: space.md }}>
+          {fresh && <RestTimer />}
           <Button
             label={`Another ${EXERCISES[s.exercise ?? 'plank'].label.toLowerCase()}`}
             size="lg"
@@ -165,7 +173,7 @@ export default function SummaryScreen() {
       ) : (
         <View style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.md }}>
-            <Display size={type.hero * 1.8} style={{ fontFamily: font.displayBlack }}>
+            <Display size={type.hero * 1.8} style={{ fontFamily: 'BigShouldersDisplay_900Black' }}>
               {s.totalReps}
             </Display>
             <Body tone="muted" style={{ marginBottom: 18 }}>
@@ -173,13 +181,22 @@ export default function SummaryScreen() {
             </Body>
           </View>
           <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />
-          <Energy exercise={ex} activeMs={s.activeMs} reps={s.totalReps} />
+          <SetCalories exercise={ex} activeMs={s.activeMs} holdMs={0} reps={s.totalReps} avgRepMs={s.avgRepMs} />
         </View>
+      )}
+      {saved && savedId && !demo && s.totalReps > 0 && <PersonalBest exercise={ex} id={savedId} value={s.totalReps} />}
+      {saved && savedId && !demo && (
+        <FixCount
+          total={s.totalReps}
+          onFix={(n) => {
+            if (correctReps(savedId, n)) setFixed(n);
+          }}
+        />
       )}
 
       {note && <Mono tone="vial">{note}</Mono>}
       {demo ? (
-        <Mono tone="muted">Demo set, not added to your history.</Mono>
+        <Mono tone="muted">Demo set · not added to your history.</Mono>
       ) : (
         !saved && s.totalReps > 0 && <Mono tone="cue">This set could not be saved to history.</Mono>
       )}
@@ -233,7 +250,7 @@ export default function SummaryScreen() {
 
       {misses.length > 0 && (
         <View style={{ gap: space.md }}>
-          <Label>{`Not counted: ${missTotal}`}</Label>
+          <Label>{`Not counted · ${missTotal}`}</Label>
           <View style={styles.list}>
             {misses.map(([m, n], i) => (
               <View key={m}>
@@ -258,6 +275,7 @@ export default function SummaryScreen() {
       )}
 
       <View style={{ gap: space.md }}>
+        {fresh && <RestTimer />}
         <Button label="Another set" size="lg" onPress={guard(() => router.replace('/session'))} />
         <Button label="Done" variant="ghost" onPress={() => router.dismissTo('/')} />
       </View>
@@ -293,7 +311,7 @@ function PlankResult({
         <Body tone="muted">
           Hold a plank on straight arms or forearms, side-on to the phone, with your body in view. The clock starts once you are steady.
         </Body>
-        {demo && <Mono tone="muted">Demo set, not added to your history.</Mono>}
+        {demo && <Mono tone="muted">Demo set · not added to your history.</Mono>}
       </View>
     );
   }
@@ -311,7 +329,7 @@ function PlankResult({
     <>
       <View style={{ gap: space.sm }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.md }}>
-          <Display size={type.hero * 1.5} style={{ fontFamily: font.displayBlack }}>
+          <Display size={type.hero * 1.5} style={{ fontFamily: 'BigShouldersDisplay_900Black' }}>
             {formatDuration(hold.goodMs)}
           </Display>
           <Body tone="muted" style={{ marginBottom: 16 }}>
@@ -321,14 +339,14 @@ function PlankResult({
         <View style={styles.formBar} accessible accessibilityLabel={`${pct} percent of the hold in good form`}>
           <View style={{ width: `${pct}%`, height: '100%', backgroundColor: color.good }} />
         </View>
-        <Energy exercise={exercise} activeMs={hold.goodMs} reps={null} />
+        <SetCalories exercise={exercise} activeMs={hold.totalMs} holdMs={hold.goodMs} reps={0} />
       </View>
 
       {sides && <SideBalance sides={sides} />}
 
       {note && <Mono tone="vial">{note}</Mono>}
       {demo ? (
-        <Mono tone="muted">Demo set, not added to your history.</Mono>
+        <Mono tone="muted">Demo set · not added to your history.</Mono>
       ) : (
         !saved && <Mono tone="cue">This plank could not be saved to history.</Mono>
       )}
@@ -427,18 +445,78 @@ function NextTime({
   );
 }
 
-/** What the set burned, from the user's weight (only once a goal is set up). */
-function Energy({ exercise, activeMs, reps }: { exercise: Exercise; activeMs: number; reps: number | null }) {
-  const [profile] = useProfile();
-  if (!profile) return null;
-  const k = netKcal(exercise, activeMs, profile.weightKg, reps);
-  if (k < 0.5) return null;
-  const g = fatGrams(k);
+/** A new best set, or the first set of an exercise: worth a moment. */
+function PersonalBest({ exercise, id, value }: { exercise: Exercise; id: string; value: number }) {
+  const [prev] = useState(() => bestBefore(exercise, id));
+  if (value <= 0 || (prev !== null && value <= prev)) return null;
+  const timed = isTimed(exercise);
+  const text =
+    prev === null
+      ? `Your first ${EXERCISES[exercise].label.toLowerCase()} set is saved. This is the number to beat.`
+      : `Up from ${timed ? formatDuration(prev) : prev}. That's a new best.`;
   return (
-    <Body size={15} tone="chalk2">
-      <Strong size={15}>{`About ${Math.round(k)} kcal`}</Strong>
-      {` above resting, the energy in ${g < 1 ? 'under 1 g' : `about ${Math.round(g)} g`} of fat.`}
-    </Body>
+    <View style={styles.best} accessible accessibilityLabel={`${prev === null ? 'First set' : 'New personal best'}. ${text}`}>
+      <Label tone="good">{prev === null ? 'First set' : 'New personal best'}</Label>
+      <Body size={15}>{text}</Body>
+    </View>
+  );
+}
+
+/**
+ * "Count wrong? Fix it": the camera can miss or add a rep. The fix goes into
+ * history and calories, never into screen time already earned.
+ */
+function FixCount({ total, onFix }: { total: number; onFix: (n: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [n, setN] = useState(total);
+  if (!open) {
+    return (
+      <Pressable accessibilityRole="button" hitSlop={8} onPress={() => (setN(total), setOpen(true))} style={{ alignSelf: 'flex-start' }}>
+        <Label tone="vial">Count wrong? Fix it ›</Label>
+      </Pressable>
+    );
+  }
+  return (
+    <View style={styles.fix}>
+      <Label>Reps you did</Label>
+      <View style={styles.fixRow}>
+        <Button label="−" variant="quiet" size="sm" onPress={() => setN((v) => Math.max(0, v - 1))} accessibilityLabel="One fewer rep" />
+        <Display size={44} accessibilityLiveRegion="polite">
+          {n}
+        </Display>
+        <Button label="+" variant="quiet" size="sm" onPress={() => setN((v) => Math.min(500, v + 1))} accessibilityLabel="One more rep" />
+      </View>
+      <Body tone="muted" size={13}>
+        Fixing the count updates your history, best set and calories. Screen time already earned stays the same.
+      </Body>
+      <View style={{ flexDirection: 'row', gap: space.sm }}>
+        <Button
+          label="Save"
+          style={{ flex: 1 }}
+          disabled={n === total}
+          onPress={() => {
+            onFix(n);
+            setOpen(false);
+          }}
+        />
+        <Button label="Cancel" variant="ghost" style={{ flex: 1 }} onPress={() => setOpen(false)} />
+      </View>
+    </View>
+  );
+}
+
+/** A rest countdown after a fresh set: 60–90 s is plenty; going sooner is fine. */
+function RestTimer({ seconds = 75 }: { seconds?: number }) {
+  const [left, setLeft] = useState(seconds);
+  useEffect(() => {
+    if (left <= 0) return;
+    const t = setTimeout(() => setLeft((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [left]);
+  return (
+    <Mono tone={left > 0 ? 'muted' : 'good'} accessibilityLiveRegion={left === 0 ? 'polite' : 'none'}>
+      {left > 0 ? `Rest ${formatDuration(left * 1000)} before the next set, or go when ready` : 'Rested. Ready for the next set.'}
+    </Mono>
   );
 }
 
@@ -458,7 +536,7 @@ function TempoChart({ reps }: { reps: RepRecord[] }) {
   const max = Math.max(...reps.map((r) => r.durationMs));
   return (
     <View style={{ gap: space.sm }}>
-      <Label>Each rep, bar height is time taken</Label>
+      <Label>Each rep · bar height is time taken</Label>
       <View
         style={styles.chart}
         accessible
@@ -487,6 +565,9 @@ function TempoChart({ reps }: { reps: RepRecord[] }) {
 }
 
 const styles = StyleSheet.create({
+  best: { gap: space.xs, padding: space.lg, borderRadius: radius.md, backgroundColor: color.goodSoft, borderWidth: 1, borderColor: color.good },
+  fix: { gap: space.sm, padding: space.lg, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1, borderColor: color.lineSoft },
+  fixRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   earned: { alignSelf: 'flex-start', paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.md, backgroundColor: color.goodSoft },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
   empty: { flex: 1, backgroundColor: color.ground, padding: space.xl, gap: space.lg },

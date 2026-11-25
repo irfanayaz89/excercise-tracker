@@ -1,7 +1,6 @@
-import type { Exercise } from '@/engine/types';
 import type { SessionRow } from '@/storage/history';
 import type { Profile } from '@/storage/profile';
-import { netKcal } from './energy';
+import { addKcal, setKcal, workoutKcal, ZERO_KCAL, type ExerciseBody, type Kcal } from './energy';
 
 /** How far along the goal is: 0–1, and whether it is met. */
 export interface GoalProgress {
@@ -46,7 +45,8 @@ export function goalProgress(p: Profile, rows: SessionRow[], now = Date.now()): 
   }
   if (p.aim === 'get-stronger' && p.repGoal) {
     const g = p.repGoal;
-    const best = rows.filter((r) => r.exercise === g.exercise && r.startedAt >= p.startedAt).reduce((m, r) => Math.max(m, r.totalReps), 0);
+    // The goal is a set of strict reps: reps flagged for form don't count towards it.
+    const best = rows.filter((r) => r.exercise === g.exercise && r.startedAt >= p.startedAt).reduce((m, r) => Math.max(m, r.cleanReps), 0);
     return {
       fraction: Math.min(1, best / g.reps),
       met: best >= g.reps,
@@ -65,18 +65,50 @@ export function goalProgress(p: Profile, rows: SessionRow[], now = Date.now()): 
   };
 }
 
-/** Net calories of saved sets (energy above resting), at the given body weight. */
-export function setsKcal(rows: SessionRow[], weightKg: number): number {
-  return rows.reduce((s, r) => s + netKcal(r.exercise, r.activeMs, weightKg, isRepCounted(r.exercise) ? r.totalReps : null), 0);
+/** Net calories of saved sets (energy above resting), with their range. */
+export function setsKcal(rows: SessionRow[], body: ExerciseBody): Kcal {
+  return rows.reduce((s, r) => addKcal(s, setKcal(r, body)), ZERO_KCAL);
 }
 
-const isRepCounted = (e: Exercise) => e === 'pushup' || e === 'pullup' || e === 'crunch';
-
 /**
- * A suggested daily workout: about 10 minutes of sets, half strength work
- * (push-ups or pull-ups) and half core (crunches, planks). Used to show
- * what the workouts add, honestly: a few hundred calories a week at most.
+ * Weekly streak: weeks in a row (Monday to Sunday) with at least `target`
+ * workout days. Forgiving by design: the week in progress never breaks the
+ * streak (it only adds once met), and missing a single day is fine as long as
+ * the week reaches its target. A broken streak demotivates most when people
+ * blame themselves, so Home also shows the best streak and totals kept.
  */
-export function workoutKcal(weightKg: number): number {
-  return netKcal('pushup', 5 * 60_000, weightKg) + netKcal('plank', 5 * 60_000, weightKg);
+export function weekStreak(rows: SessionRow[], target: number, now = Date.now()): { current: number; best: number; thisWeekMet: boolean } {
+  const WEEK = 7 * 86_400_000;
+  const start = weekStart(now);
+  const days = new Map<number, Set<string>>();
+  for (const r of rows) {
+    if (r.startedAt > now) continue;
+    const k = Math.floor((start - weekStart(r.startedAt)) / WEEK + 0.5);
+    if (!days.has(k)) days.set(k, new Set());
+    days.get(k)!.add(new Date(r.startedAt).toDateString());
+  }
+  const met = (k: number) => (days.get(k)?.size ?? 0) >= target;
+  const thisWeekMet = met(0);
+  let current = thisWeekMet ? 1 : 0;
+  for (let k = 1; met(k); k++) current++;
+  let best = 0;
+  let run = 0;
+  const oldest = Math.max(0, ...days.keys());
+  for (let k = oldest; k >= 0; k--) {
+    run = met(k) ? run + 1 : 0;
+    best = Math.max(best, run);
+  }
+  return { current, best: Math.max(best, current), thisWeekMet };
+}
+
+/** Days since the last saved set (null with no sets). */
+export function daysSinceLastSet(rows: SessionRow[], now = Date.now()): number | null {
+  if (rows.length === 0) return null;
+  const last = Math.max(...rows.map((r) => r.startedAt));
+  return Math.floor((now - last) / 86_400_000);
+}
+
+/** The plan's workouts averaged over a day (net kcal), for the target date. */
+export function planWorkoutKcalPerDay(p: Pick<Profile, 'weightKg' | 'heightCm' | 'sex' | 'daysPerWeek'>): number {
+  return (workoutKcal({ weightKg: p.weightKg, heightCm: p.heightCm, sex: p.sex }).kcal * p.daysPerWeek) / 7;
 }

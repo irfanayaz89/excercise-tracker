@@ -140,6 +140,8 @@ export interface SessionSummary {
   exercise?: Exercise;
   /** Difficulty the set ran at, when known. */
   difficulty?: string;
+  /** Where the camera saw the body from. Head-on can't see the hip line, so it earns less. */
+  view?: 'front' | 'side';
   startedAt: number;
   endedAt: number;
   activeMs: number;
@@ -1167,6 +1169,7 @@ export class PushupSession {
     return {
       exercise: this.exercise,
       difficulty: this.difficulty,
+      view: this.front ? 'front' : 'side',
       startedAt: this.startedAt ?? this.now,
       endedAt: this.now,
       activeMs: this.activeMs,

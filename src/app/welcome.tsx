@@ -1,5 +1,4 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
 import { DeviceMotion } from 'expo-sensors';
 import { useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -16,24 +15,28 @@ import {
   kgToLb,
   lbToKg,
   lowestHealthyKg,
+  relativeFatMass,
   maintenance,
   PACES,
   strengthFuel,
   weightPlan,
+  workoutKcal,
   type Activity,
   type Pace,
   type Sex,
 } from '@/fitness/energy';
-import { dayMonth, kcal, paceLabel, weight } from '@/fitness/format';
+import { dayMonth, kcal, paceLabel, weight, WHY_LABELS } from '@/fitness/format';
 import { fatGrams } from '@/fitness/energy';
-import { workoutKcal } from '@/fitness/goal';
+import { ProjectionCard } from '@/features/energy/Projection';
+import { planWorkoutKcalPerDay } from '@/fitness/goal';
 import { rotationCopy } from '@/session/copy';
-import { bodyOf, defaultProfile, LIMITS, startProfile, useProfile, type Aim, type Profile } from '@/storage/profile';
+import { useScreenTime } from '@/screentime/store';
+import { bodyOf, defaultProfile, LIMITS, startProfile, useProfile, WHYS, type Aim, type Profile } from '@/storage/profile';
 import { SAFETY_FLAGS, useSettings, type SafetyFlag } from '@/storage/settings';
 import { NumberField } from '@/ui/NumberField';
-import { Body, Button, Display, Label, Strong } from '@/ui/primitives';
-import { Scoreboard } from '@/ui/Scoreboard';
-import { color, font, radius, space } from '@/ui/theme';
+import { Body, Button, Chip, Display, Label, Mono, Strong } from '@/ui/primitives';
+import { ExerciseGlyph } from '@/ui/Diagrams';
+import { color, font, radius, space, type } from '@/ui/theme';
 
 type StepId = 'intro' | 'aim' | 'you' | 'goal' | 'plan' | 'access' | 'rotation';
 
@@ -42,6 +45,7 @@ const FOCUS: Record<Aim, Exercise[]> = {
   'lose-fat': ['pushup', 'plank', 'crunch', 'pullup', 'sidePlank'],
   'get-stronger': ['pushup', 'pullup', 'plank'],
   'stay-active': [...EXERCISE_IDS],
+  'less-screen': ['pushup', 'plank', 'crunch', 'pullup', 'sidePlank'],
 };
 
 /**
@@ -54,6 +58,7 @@ export default function Welcome() {
   const { redo } = useLocalSearchParams<{ redo?: string }>();
   const [settings, updateSettings] = useSettings();
   const [saved, setProfile] = useProfile();
+  const screenTime = useScreenTime();
   const [p, setP] = useState<Profile>(() => (redo && saved ? { ...saved } : defaultProfile()));
   const [safety, setSafety] = useState<SafetyFlag[]>(settings.safety);
   const set = (patch: Partial<Profile>) => setP((d) => ({ ...d, ...patch }));
@@ -80,15 +85,25 @@ export default function Welcome() {
   const [skipped, setSkipped] = useState(false);
   const finish = () => {
     if (!skipped) setProfile(startProfile(p, redo ? saved : null));
+    // A heart condition or recent injury starts gently.
+    const gentle = safety.includes('heart') || safety.includes('injury');
+    const first = skipped ? settings.exercise : FOCUS[p.aim][0];
     updateSettings({
       experience: settings.experience ?? 'guided',
-      difficulty: redo ? settings.difficulty : 'medium',
+      difficulty: gentle ? 'easy' : redo ? settings.difficulty : 'medium',
       focus: skipped ? [] : FOCUS[p.aim],
-      exercise: skipped ? settings.exercise : FOCUS[p.aim][0],
+      exercise: first,
       safety,
     });
-    if (redo && router.canGoBack()) router.back();
-    else router.replace('/');
+    if (redo && router.canGoBack()) {
+      router.back();
+      return;
+    }
+    // First launch: straight into the first set (the first counted set decides whether people come back),
+    // or for "less phone time", into Screen time setup.
+    router.replace('/');
+    if (!skipped && p.aim === 'less-screen' && screenTime.availability !== 'unsupported' && !screenTime.meta.setUp) router.push('/screen-time/setup');
+    else router.push({ pathname: '/exercise/[id]', params: { id: first } });
   };
 
   const questions: StepId[] = steps.filter((s) => s !== 'intro' && s !== 'access' && s !== 'rotation');
@@ -107,14 +122,19 @@ export default function Welcome() {
 
   return (
     <View style={{ flex: 1, backgroundColor: color.ground }}>
-      <View style={[styles.top, { paddingTop: insets.top + space.md }]}>
+      <View style={[styles.top, { paddingTop: insets.top + space.lg }]}>
         <View style={styles.header}>
           {index > 0 || redo ? (
-            <Pressable accessibilityRole="button" onPress={back} hitSlop={12} style={styles.back}>
-              <Strong size={16}>‹ Back</Strong>
+            <Pressable accessibilityRole="button" onPress={back} hitSlop={12}>
+              <Label tone="chalk">‹ Back</Label>
             </Pressable>
           ) : (
-            <Display size={24}>Trueline</Display>
+            <View style={styles.wordmark}>
+              <View style={styles.markLine} />
+              <Display size={20} style={{ letterSpacing: 4 }}>
+                TRUELINE
+              </Display>
+            </View>
           )}
           {qIndex >= 0 && (
             <Label tone="muted">
@@ -125,7 +145,7 @@ export default function Welcome() {
         {qIndex >= 0 && (
           <View style={styles.progress} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
             {questions.map((s, i) => (
-              <View key={s} style={[styles.seg, i <= qIndex && { backgroundColor: color.vial }]} />
+              <View key={s} style={[styles.dot, i <= qIndex && { backgroundColor: color.vial }]} />
             ))}
           </View>
         )}
@@ -176,15 +196,19 @@ function renderStep(at: StepId, props: StepProps): ReactNode {
 function IntroStep({ next, skip }: StepProps) {
   return (
     <>
-      <View style={{ gap: space.lg, marginTop: space.xl }}>
-        <Scoreboard value="25" fraction={0.62} size={200} label="" />
-        <Display size={44}>Pick a goal. Your camera counts the reps.</Display>
-        <Body tone="chalk2">
+      <View style={{ gap: space.md, marginTop: space.xl }}>
+        <Display size={46}>Pick a goal. Your camera counts the reps.</Display>
+        <Body tone="muted">
           Three quick questions give you a plan with real numbers: what to eat, when you will get there and what your workouts burn. Video
           never leaves your phone.
         </Body>
       </View>
-      <View style={{ gap: space.sm, marginTop: space.lg }}>
+      <View style={styles.glyphRow}>
+        {EXERCISE_IDS.map((e) => (
+          <ExerciseGlyph key={e} exercise={e} size={64} />
+        ))}
+      </View>
+      <View style={{ gap: space.md }}>
         <Button label="Set my goal" size="lg" onPress={next} />
         <Button label="Skip, just count reps" variant="ghost" onPress={skip} />
       </View>
@@ -196,7 +220,9 @@ const AIMS: { value: Aim; title: string; detail: string }[] = [
   { value: 'lose-fat', title: 'Lose fat', detail: 'A target weight, a safe pace and a daily calorie number.' },
   { value: 'get-stronger', title: 'Get stronger', detail: 'Work up to a big set of push-ups or pull-ups.' },
   { value: 'stay-active', title: 'Stay active', detail: 'A few short workouts every week, counted for you.' },
+  { value: 'less-screen', title: 'Spend less time on my phone', detail: 'Exercise to earn your scrolling time back.' },
 ];
+
 
 function AimStep({ p, set, next }: StepProps) {
   return (
@@ -209,16 +235,29 @@ function AimStep({ p, set, next }: StepProps) {
             title={a.title}
             detail={a.detail}
             selected={p.aim === a.value}
-            onPress={() => {
+            onPress={() =>
               set({
                 aim: a.value,
                 repGoal: a.value === 'get-stronger' ? (p.repGoal ?? { exercise: 'pushup', reps: 20 }) : p.repGoal,
-              });
-              next();
-            }}
+              })
+            }
           />
         ))}
       </View>
+      <View style={{ gap: space.sm }}>
+        <Label>What would make it worth it? Optional</Label>
+        <View style={styles.chips}>
+          {WHYS.map((w) => (
+            <Chip
+              key={w}
+              label={WHY_LABELS[w]}
+              selected={p.why.includes(w)}
+              onPress={() => set({ why: p.why.includes(w) ? p.why.filter((x) => x !== w) : [...p.why, w] })}
+            />
+          ))}
+        </View>
+      </View>
+      <Button label="Continue" size="lg" onPress={next} />
     </>
   );
 }
@@ -239,9 +278,18 @@ function YouStep({ p, set, next, safety, setSafety }: StepProps) {
   const imperial = p.units === 'imperial';
   const { ft, inch } = cmToFtIn(p.heightCm);
   const toggle = (f: SafetyFlag) => setSafety(safety.includes(f) ? safety.filter((x) => x !== f) : [...safety, f]);
+  // A calorie plan needs sex, height and activity; otherwise weight and age are enough for each set's calories.
+  const full = p.aim === 'lose-fat' || p.aim === 'get-stronger';
   return (
     <>
-      <Title title="A bit about you" detail="Used for the calorie maths. It stays on this phone." />
+      <Title
+        title="A bit about you"
+        detail={
+          full
+            ? 'Used for your calorie plan and the calories each set burns. It stays on this phone.'
+            : 'Your weight and age give the calories each set burns. It stays on this phone.'
+        }
+      />
       <Segmented
         label="Units"
         value={p.units}
@@ -251,8 +299,8 @@ function YouStep({ p, set, next, safety, setSafety }: StepProps) {
         ]}
         onChange={(units) => set({ units })}
       />
-      <Segmented label="Sex" value={p.sex} options={SEXES} onChange={(sex) => set({ sex })} />
-      {p.sex === 'unspecified' && (
+      {full && <Segmented label="Sex" value={p.sex} options={SEXES} onChange={(sex) => set({ sex })} />}
+      {full && p.sex === 'unspecified' && (
         <Body tone="muted" size={14}>
           Calorie needs differ by sex, so the plan uses a midpoint. It may be off by about 80 kcal a day.
         </Body>
@@ -281,7 +329,7 @@ function YouStep({ p, set, next, safety, setSafety }: StepProps) {
           />
         )}
       </View>
-      {imperial ? (
+      {!full ? null : imperial ? (
         <View style={styles.pair}>
           <NumberField label="Height" value={ft} onChange={(f) => set({ heightCm: clampH(ftInToCm(f, inch)) })} min={4} max={7} unit="ft" />
           <NumberField label="and" value={inch} onChange={(i) => set({ heightCm: clampH(ftInToCm(ft, i)) })} min={0} max={11} unit="in" />
@@ -296,29 +344,92 @@ function YouStep({ p, set, next, safety, setSafety }: StepProps) {
           unit="cm"
         />
       )}
-      <View style={{ gap: space.sm }}>
-        <Label>Outside workouts, you are</Label>
-        {ACTIVITY.map((a) => (
-          <Lane key={a.value} title={a.title} detail={a.detail} compact selected={p.activity === a.value} onPress={() => set({ activity: a.value })} />
-        ))}
-      </View>
-      <View style={{ gap: space.sm }}>
-        <Label>Anything to take care with? Optional</Label>
-        <View style={styles.chips}>
-          {SAFETY_FLAGS.map((f) => (
-            <Tag key={f} label={SAFETY_LABELS[f]} on={safety.includes(f)} onPress={() => toggle(f)} />
+      {full && (
+        <Segmented
+          label="Build"
+          value={p.muscular ? 'muscular' : 'average'}
+          options={[
+            ['average', 'Average'],
+            ['muscular', 'I lift / very muscular'],
+          ]}
+          onChange={(v) => set({ muscular: v === 'muscular' })}
+        />
+      )}
+      {full && <WaistField p={p} set={set} />}
+      {full && (
+        <View style={{ gap: space.sm }}>
+          <Label>Outside workouts, you are</Label>
+          {ACTIVITY.map((a) => (
+            <Lane key={a.value} title={a.title} detail={a.detail} compact selected={p.activity === a.value} onPress={() => set({ activity: a.value })} />
           ))}
         </View>
+      )}
+      <View style={{ gap: space.sm }}>
+        <Label>Anything to take care with? Optional</Label>
+        {SAFETY_FLAGS.map((f) => (
+          <Lane key={f} title={SAFETY_LABELS[f]} compact multi selected={safety.includes(f)} onPress={() => toggle(f)} />
+        ))}
       </View>
+      {(safety.includes('heart') || safety.includes('injury')) && (
+        <Note tone="cue">Check with your doctor before you start. Trueline will start you on Easy, and you can stop any time.</Note>
+      )}
       <Button label="Continue" size="lg" onPress={next} />
     </>
+  );
+}
+
+/** Optional waist, for a body-fat estimate (Relative Fat Mass). It never changes workout calories. */
+function WaistField({ p, set }: Pick<StepProps, 'p' | 'set'>) {
+  const imperial = p.units === 'imperial';
+  if (p.waistCm === null) {
+    return (
+      <Pressable accessibilityRole="button" hitSlop={8} onPress={() => set({ waistCm: p.sex === 'female' ? 80 : 90 })} style={{ alignSelf: 'flex-start' }}>
+        <Label tone="vial">Add your waist for a body-fat estimate (optional) ›</Label>
+      </Pressable>
+    );
+  }
+  const bf = relativeFatMass(p.sex, p.heightCm, p.waistCm);
+  return (
+    <View style={{ gap: space.sm }}>
+      <NumberField
+        label="Waist, at the navel, relaxed"
+        value={imperial ? Math.round(p.waistCm / 2.54) : p.waistCm}
+        onChange={(v) => set({ waistCm: imperial ? v * 2.54 : v })}
+        min={imperial ? 20 : LIMITS.waistCm[0]}
+        max={imperial ? 79 : LIMITS.waistCm[1]}
+        unit={imperial ? 'in' : 'cm'}
+      />
+      {bf !== null && (
+        <Body tone="muted" size={14}>
+          {`Body fat about ${Math.round(bf)}% (give or take 5), from your waist and height. Watch it fall even when the scale doesn't move.`}
+        </Body>
+      )}
+      <Pressable accessibilityRole="button" hitSlop={8} onPress={() => set({ waistCm: null })} style={{ alignSelf: 'flex-start' }}>
+        <Label tone="muted">Remove waist</Label>
+      </Pressable>
+    </View>
   );
 }
 
 const clampH = (cm: number) => Math.min(LIMITS.heightCm[1], Math.max(LIMITS.heightCm[0], cm));
 
 function GoalStep(props: StepProps) {
-  const { p } = props;
+  const { p, set, safety } = props;
+  if (p.aim === 'lose-fat' && (p.age < 18 || safety.includes('pregnancy'))) {
+    return (
+      <>
+        <Title
+          title="Let's not set a weight-loss goal"
+          detail={
+            p.age < 18
+              ? 'Under 18, your body is still growing, so Trueline won’t set a weight or calorie target. Regular workouts are the plan.'
+              : 'While pregnant or soon after birth, dieting to lose weight isn’t advised. Ask your midwife or doctor what suits you; gentle, regular workouts are the plan here.'
+          }
+        />
+        <Button label="Stay active instead" size="lg" onPress={() => set({ aim: 'stay-active' })} />
+      </>
+    );
+  }
   if (p.aim === 'lose-fat') return <WeightGoal {...props} />;
   if (p.aim === 'get-stronger') return <StrengthGoal {...props} />;
   return <ActiveGoal {...props} />;
@@ -346,7 +457,7 @@ function WeightGoal({ p, set, next }: StepProps) {
     );
   }
 
-  const plan = weightPlan(bodyOf(p), target, p.pace);
+  const plan = weightPlan(bodyOf(p), target, p.pace, undefined, planWorkoutKcalPerDay(p));
   const imperial = p.units === 'imperial';
   return (
     <>
@@ -390,7 +501,7 @@ function WeightGoal({ p, set, next }: StepProps) {
       </View>
       <Body size={15}>
         {Number.isFinite(plan.weeks)
-          ? `${plan.floored ? 'Without eating too little, that' : 'That'} gets you to ${weight(target, p.units)} by about ${dayMonth(plan.by)}, in ${plan.weeks} weeks.`
+          ? `${plan.floored ? 'Without eating too little, that' : 'That'} gets you to ${weight(target, p.units)} by about ${dayMonth(plan.by)}, in ${plan.weeks} weeks, counting your ${p.daysPerWeek} workouts a week.`
           : 'Your body already runs on very little, so eating less is not safe. Workouts and strength are the way forward.'}
       </Body>
       <DaysPicker {...{ p, set }} />
@@ -434,7 +545,14 @@ function StrengthGoal({ p, set, next }: StepProps) {
 function ActiveGoal({ p, set, next }: StepProps) {
   return (
     <>
-      <Title title="How many days a week?" detail="Each workout is about 10 minutes of sets. Two days is a good start." />
+      <Title
+        title="How many days a week?"
+        detail={
+          p.aim === 'less-screen'
+            ? 'On workout days your sets earn screen time back. Each workout is about 10 minutes; two days is a good start.'
+            : 'Each workout is about 10 minutes of sets. Two days is a good start.'
+        }
+      />
       <DaysPicker {...{ p, set }} hideLabel />
       <Button label="See my plan" size="lg" onPress={next} />
     </>
@@ -445,23 +563,9 @@ function DaysPicker({ p, set, hideLabel }: Pick<StepProps, 'p' | 'set'> & { hide
   return (
     <View style={{ gap: space.sm }}>
       {!hideLabel && <Label>Workout days a week</Label>}
-      <View style={styles.days} accessibilityRole="radiogroup">
+      <View style={styles.chips} accessibilityRole="radiogroup">
         {[2, 3, 4, 5, 6, 7].map((n) => (
-          <Pressable
-            key={n}
-            accessibilityRole="radio"
-            accessibilityLabel={`${n} days a week`}
-            accessibilityState={{ selected: p.daysPerWeek === n }}
-            onPress={() => {
-              void Haptics.selectionAsync();
-              set({ daysPerWeek: n });
-            }}
-            style={[styles.day, p.daysPerWeek === n && styles.dayOn]}
-          >
-            <Display size={30} tone={p.daysPerWeek === n ? 'ink' : 'chalk'}>
-              {n}
-            </Display>
-          </Pressable>
+          <Chip key={n} label={`${n} days`} selected={p.daysPerWeek === n} onPress={() => set({ daysPerWeek: n })} />
         ))}
       </View>
     </View>
@@ -471,26 +575,37 @@ function DaysPicker({ p, set, hideLabel }: Pick<StepProps, 'p' | 'set'> & { hide
 function PlanStep({ p, next, safety }: StepProps) {
   const b = bodyOf(p);
   const maint = maintenance(b);
-  const perWorkout = workoutKcal(p.weightKg);
-  const week = perWorkout * p.daysPerWeek;
+  const exerciseBody = { weightKg: p.weightKg, heightCm: p.heightCm, sex: p.sex };
+  const perWorkout = workoutKcal(exerciseBody);
+  const week = perWorkout.kcal * p.daysPerWeek;
   const noDiet = safety.includes('pregnancy') || p.age < 18;
   const workouts = (
     <Fact
       big={kcal(week)}
-      unit="kcal a week from workouts"
-      text={`${p.daysPerWeek} workouts of about 10 minutes, on top of what you burn anyway. That is the energy in about ${Math.round(fatGrams(week))} g of body fat.`}
+      unit={`kcal a week from workouts (${kcal(perWorkout.low * p.daysPerWeek)}–${kcal(perWorkout.high * p.daysPerWeek)})`}
+      text={`${p.daysPerWeek} workouts of about 10 minutes (3 × 10 push-ups, 2 × 20 crunches, a 60 s plank), above what you burn anyway. That is the energy in about ${Math.round(fatGrams(week))} g of body fat.`}
+    />
+  );
+  const lose = p.aim === 'lose-fat' && p.targetKg !== null && !noDiet;
+  const projection = (
+    <ProjectionCard
+      perSession={perWorkout}
+      perWeek={p.daysPerWeek}
+      units={p.units}
+      dailyDeficit={lose ? weightPlan(b, p.targetKg!, p.pace).dailyDeficit : 0}
+      targetChangeKg={lose ? p.weightKg - p.targetKg! : null}
     />
   );
 
   let head: ReactNode;
   let facts: ReactNode;
   if (p.aim === 'lose-fat' && p.targetKg !== null && !noDiet) {
-    const plan = weightPlan(b, p.targetKg, p.pace);
+    const plan = weightPlan(b, p.targetKg, p.pace, undefined, planWorkoutKcalPerDay(p));
     const lasting = eventualChangeKg(week / 7);
     head = (
       <>
         <Label>Eat about this much a day</Label>
-        <Scoreboard value={kcal(plan.eatKcal)} fraction={1} size={120} label={`${kcal(plan.eatKcal)} kcal a day`} />
+        <Big value={kcal(plan.eatKcal)} label={`${kcal(plan.eatKcal)} kcal a day`} />
         <Strong size={17}>
           kcal a day, to reach {weight(p.targetKg, p.units)}
           {Number.isFinite(plan.by) ? ` by ${dayMonth(plan.by)}` : ''}
@@ -520,7 +635,7 @@ function PlanStep({ p, next, safety }: StepProps) {
     head = (
       <>
         <Label>Protein a day</Label>
-        <Scoreboard value={`${fuel.proteinG}`} fraction={1} size={140} label={`${fuel.proteinG} grams of protein a day`} />
+        <Big value={`${fuel.proteinG} g`} label={`${fuel.proteinG} grams of protein a day`} />
         <Strong size={17}>grams of protein, about {kcal(fuel.eatKcal)} kcal a day in all</Strong>
       </>
     );
@@ -537,11 +652,29 @@ function PlanStep({ p, next, safety }: StepProps) {
         {workouts}
       </>
     );
+  } else if (p.aim === 'less-screen') {
+    head = (
+      <>
+        <Label>Earn your screen time</Label>
+        <Big value={String(p.daysPerWeek)} label={`${p.daysPerWeek} workout days a week`} />
+        <Strong size={17}>workout days, about 10 minutes each</Strong>
+      </>
+    );
+    facts = (
+      <>
+        <Fact
+          big="15 / 30"
+          unit="min for 10 / 20 push-ups in a set"
+          text="1 min a clean push-up, plus 5 min when a set reaches 10 and 5 more at 20. Other exercises count as push-up equivalents: a pull-up is 2.5, a crunch 0.4, 6 s of plank 1. Set it up in Screen time, with a daily most."
+        />
+        {workouts}
+      </>
+    );
   } else {
     head = (
       <>
         <Label>Your week</Label>
-        <Scoreboard value={String(p.daysPerWeek)} fraction={1} size={160} label={`${p.daysPerWeek} workout days a week`} />
+        <Big value={String(p.daysPerWeek)} label={`${p.daysPerWeek} workout days a week`} />
         <Strong size={17}>workout days, about 10 minutes each</Strong>
       </>
     );
@@ -560,6 +693,7 @@ function PlanStep({ p, next, safety }: StepProps) {
     <>
       <View style={{ gap: space.sm }}>{head}</View>
       <View style={{ gap: space.lg }}>{facts}</View>
+      {projection}
       {noDiet && (
         <Note tone="cue">
           {p.age < 18
@@ -568,7 +702,9 @@ function PlanStep({ p, next, safety }: StepProps) {
         </Note>
       )}
       <Body tone="faint" size={13}>
-        {`Estimates from standard equations (Mifflin–St Jeor and the 2024 Compendium of Physical Activities). Real needs vary by about 10%; your weekly weight is the true check. BMI now ${bmiNow.value.toFixed(1)}. Not medical advice.`}
+        {p.aim === 'lose-fat' || p.aim === 'get-stronger'
+          ? `Daily needs from ${p.muscular ? 'Ten Haaf’s equation for muscular people' : 'Mifflin–St Jeor'}, accurate to about 10% for most adults; your weekly weight is the true check. Workout calories from your weight, height and rep speed, about ±30% a set. BMI now ${bmiNow.value.toFixed(1)}. Not medical advice.`
+          : 'Workout calories from your weight, height and rep speed, using lab measurements of push-ups and planks: about ±30% for any one set. Not medical advice.'}
       </Body>
       <Button label="Looks good" size="lg" onPress={next} />
     </>
@@ -644,50 +780,53 @@ function RotationStep({ next }: StepProps) {
 function Title({ title, detail }: { title: string; detail?: string }) {
   return (
     <View style={{ gap: space.sm }}>
-      <Display size={40}>{title}</Display>
-      {detail && <Body tone="chalk2">{detail}</Body>}
+      <Display size={38}>{title}</Display>
+      {detail && <Body tone="muted">{detail}</Body>}
     </View>
   );
 }
 
-/** A full-width choice. Selected fills with effort orange, like a lit lane. */
+/** A big number on the plan, in the display face. */
+function Big({ value, label }: { value: string; label: string }) {
+  return (
+    <Display size={type.hero} tone="vial" style={{ fontFamily: font.displayBlack }} accessibilityLabel={label}>
+      {value}
+    </Display>
+  );
+}
+
+/** A choice row: title, one line of detail and a round (or square, for multi) mark. */
 function Lane({
   title,
   detail,
   selected,
   onPress,
   compact = false,
+  multi = false,
 }: {
   title: string;
   detail?: string;
   selected: boolean;
   onPress: () => void;
   compact?: boolean;
+  multi?: boolean;
 }) {
   return (
     <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected }}
-      onPress={() => {
-        void Haptics.selectionAsync();
-        onPress();
-      }}
-      style={({ pressed }) => [styles.lane, compact && styles.laneCompact, selected && styles.laneOn, pressed && { opacity: 0.88 }]}
+      accessibilityRole={multi ? 'checkbox' : 'radio'}
+      accessibilityState={multi ? { checked: selected } : { selected }}
+      onPress={onPress}
+      style={({ pressed }) => [styles.option, compact && { paddingVertical: space.md }, selected && styles.selected, pressed && { opacity: 0.85 }]}
     >
-      {compact ? (
-        <Strong size={17} tone={selected ? 'ink' : 'chalk'}>
-          {title}
-        </Strong>
-      ) : (
-        <Display size={30} tone={selected ? 'ink' : 'chalk'}>
-          {title}
-        </Display>
-      )}
-      {detail && (
-        <Body size={14} style={{ color: selected ? color.vialInk : color.chalk2 }}>
-          {detail}
-        </Body>
-      )}
+      <View style={{ flex: 1, gap: 4 }}>
+        <Strong size={17}>{title}</Strong>
+        {detail && (
+          <Body tone="muted" size={14}>
+            {detail}
+          </Body>
+        )}
+      </View>
+      <View style={[styles.mark, multi && { borderRadius: 6 }, selected && styles.markOn]} />
     </Pressable>
   );
 }
@@ -706,21 +845,16 @@ function Segmented<T extends string>({
   return (
     <View style={{ gap: space.sm }}>
       <Label>{label}</Label>
-      <View style={styles.segmented} accessibilityRole="radiogroup" accessibilityLabel={label}>
+      <View style={styles.row} accessibilityRole="radiogroup" accessibilityLabel={label}>
         {options.map(([v, l]) => (
           <Pressable
             key={v}
             accessibilityRole="radio"
             accessibilityState={{ selected: value === v }}
-            onPress={() => {
-              void Haptics.selectionAsync();
-              onChange(v);
-            }}
-            style={[styles.segItem, value === v && styles.segOn]}
+            onPress={() => onChange(v)}
+            style={[styles.choice, value === v && styles.selected]}
           >
-            <Strong size={15} tone={value === v ? 'ink' : 'chalk'}>
-              {l}
-            </Strong>
+            <Strong size={15}>{l}</Strong>
           </Pressable>
         ))}
       </View>
@@ -728,41 +862,27 @@ function Segmented<T extends string>({
   );
 }
 
-function Tag({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: on }}
-      onPress={onPress}
-      style={[styles.tag, on && { backgroundColor: color.cueSoft, borderColor: color.cue }]}
-    >
-      <Body size={14} style={{ fontFamily: font.bodyMed }}>
-        {label}
-      </Body>
-    </Pressable>
-  );
-}
-
 /** A number with what it means, used on the plan. */
 function Fact({ big, unit, text }: { big: string; unit: string; text: string }) {
   return (
-    <View style={styles.fact}>
+    <View style={styles.card}>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space.sm, flexWrap: 'wrap' }}>
-        <Display size={40} style={{ fontFamily: font.displayBlack }}>
-          {big}
-        </Display>
-        <Strong size={15}>{unit}</Strong>
+        <Display size={40}>{big}</Display>
+        <Mono size={12} tone="muted">
+          {unit}
+        </Mono>
       </View>
-      <Body tone="chalk2" size={14}>
+      <Body tone="muted" size={14}>
         {text}
       </Body>
     </View>
   );
 }
 
-function Note({ children, tone }: { children: ReactNode; tone: 'cue' }) {
+function Note({ children }: { children: ReactNode; tone: 'cue' }) {
   return (
-    <View style={[styles.note, { borderLeftColor: tone === 'cue' ? color.cue : color.vial }]}>
+    <View style={styles.warn}>
+      <Label tone="cue">Take care</Label>
       <Body size={14}>{children}</Body>
     </View>
   );
@@ -772,7 +892,7 @@ function Point({ text }: { text: string }) {
   return (
     <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
       <View style={styles.tick} />
-      <Body size={16} style={{ flex: 1 }}>
+      <Body size={15} style={{ flex: 1 }}>
         {text}
       </Body>
     </View>
@@ -791,31 +911,55 @@ const styles = StyleSheet.create({
     backgroundColor: color.ground,
     zIndex: 2,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 44 },
-  back: { minHeight: 44, justifyContent: 'center' },
-  progress: { flexDirection: 'row', gap: 3 },
-  seg: { flex: 1, height: 3, backgroundColor: color.line },
-  page: { paddingHorizontal: space.xl, paddingTop: space.lg, gap: space.xl, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 28 },
+  wordmark: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  markLine: { width: 22, height: 4, borderRadius: 2, backgroundColor: color.vial },
+  progress: { flexDirection: 'row', gap: 4, marginTop: space.xs },
+  dot: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line },
+  page: { paddingHorizontal: space.xl, paddingTop: space.lg, gap: space.lg, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  glyphRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.lg, justifyContent: 'center', paddingVertical: space.xl },
   pair: { flexDirection: 'row', gap: space.md },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  lane: { gap: 4, paddingVertical: space.lg, paddingHorizontal: space.lg, borderRadius: radius.md, backgroundColor: color.surface },
-  laneCompact: { paddingVertical: space.md, gap: 2 },
-  laneOn: { backgroundColor: color.vial },
-  segmented: { flexDirection: 'row', gap: 2 },
-  segItem: { flex: 1, minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: color.surface, paddingHorizontal: space.sm },
-  segOn: { backgroundColor: color.vial },
-  tag: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: space.md,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: color.line,
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    padding: space.lg,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1.5,
+    borderColor: color.lineSoft,
   },
-  days: { flexDirection: 'row', gap: 2 },
-  day: { flex: 1, height: 56, alignItems: 'center', justifyContent: 'center', backgroundColor: color.surface },
-  dayOn: { backgroundColor: color.vial },
-  fact: { gap: 4, borderLeftWidth: 3, borderLeftColor: color.vial, paddingLeft: space.md },
-  note: { borderLeftWidth: 3, paddingLeft: space.md, paddingVertical: space.xs },
-  tick: { width: 14, height: 3, backgroundColor: color.vial, marginTop: 11 },
+  selected: { borderColor: color.vial, backgroundColor: color.raised },
+  mark: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: color.line },
+  markOn: { borderColor: color.vial, backgroundColor: color.vial },
+  row: { flexDirection: 'row', gap: space.md },
+  choice: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: color.surface,
+    borderWidth: 1.5,
+    borderColor: color.lineSoft,
+  },
+  card: {
+    gap: space.sm,
+    padding: space.lg,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.lineSoft,
+  },
+  warn: {
+    gap: space.sm,
+    padding: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: color.cueSoft,
+    borderWidth: 1,
+    borderColor: color.cue,
+  },
+  tick: { width: 14, height: 4, borderRadius: 2, backgroundColor: color.vial, marginTop: 10 },
 });

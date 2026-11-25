@@ -51,6 +51,16 @@ export interface EarningRules {
   rates: Record<Exercise, Rate>;
   /** Most minutes that can be earned in one day. */
   dailyCapMin: number;
+  /** Minutes a day earned at the full rate; after this, sets earn at half rate up to the cap. */
+  fullRateMin: number;
+  /** Bonus minutes each time a set reaches a milestone (10 and 20 push-up equivalents). */
+  milestoneMin: number;
+  /** Most push-up equivalents one set is paid for (milestones still count). */
+  setCapPe: number;
+  /** Bonus for the first real set of the day. */
+  firstSetMin: number;
+  /** Bonus for coming back after a day or more without a set. */
+  comebackMin: number;
 }
 
 /**

@@ -84,3 +84,26 @@ export function summarizeDays(rules: ScreenTimeRules, days: DayLog[]): DaySummar
     offMin: Math.round((d.gaps ?? []).reduce((n, g) => n + Math.max(0, g.to - g.from), 0) / 60_000),
   }));
 }
+
+/** A rate in words: "2.5 min per clean rep" or "10 min per minute in good form". */
+export function rateText(r: { perCleanRep?: number; per10s?: number }): string {
+  const n = (v: number) => String(Math.round(v * 100) / 100);
+  return r.per10s !== undefined ? `${n(r.per10s * 6)} min per minute in good form` : `${n(r.perCleanRep ?? 0)} min per clean rep`;
+}
+
+/**
+ * The milestone tiers in words, for one exercise: "10 push-ups 15 min · 20 push-ups 30 min",
+ * "60 s 15 min · 120 s 30 min". Each milestone is a number of push-up equivalents.
+ */
+export function tierText(r: { perCleanRep?: number; per10s?: number }, milestoneMin: number, unit: string, milestones: readonly number[] = [10, 20]): string {
+  const parts = milestones.map((pe, i) => {
+    const minutes = pe + milestoneMin * (i + 1);
+    if (r.per10s !== undefined) {
+      const s = r.per10s > 0 ? Math.ceil((pe / r.per10s) * 10) : 0;
+      return `${s} s: ${minutes} min`;
+    }
+    const n = r.perCleanRep ? Math.ceil(pe / r.perCleanRep) : 0;
+    return `${n} ${unit}: ${minutes} min`;
+  });
+  return parts.join(' · ');
+}

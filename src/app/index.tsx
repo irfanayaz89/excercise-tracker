@@ -6,18 +6,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EXERCISE_IDS, EXERCISES, isTimed } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { HistoryList } from '@/features/history/HistoryList';
+import { AddWeightForCalories, CaloriesHow } from '@/features/energy/Calories';
 import { ScreenTimeCard } from '@/features/screentime/ScreenTimeCard';
-import { fatGrams, kgToLb, lbToKg, weightPlan } from '@/fitness/energy';
-import { dayMonth, kcal, weight } from '@/fitness/format';
-import { goalProgress, setsKcal } from '@/fitness/goal';
+import { fatGrams, kgToLb, lbToKg, scaleKcal, weightPlan, workoutKcal, ZERO_KCAL } from '@/fitness/energy';
+import { ProjectionCard } from '@/features/energy/Projection';
+import { dayMonth, kcal, kcalText, weight, WHY_LABELS } from '@/fitness/format';
+import { daysSinceLastSet, goalProgress, planWorkoutKcalPerDay, setsKcal, weekStreak } from '@/fitness/goal';
 import { formatDuration } from '@/session/copy';
 import { dailyTotals, listSessions, listSessionsSince, type SessionRow } from '@/storage/history';
 import { bodyOf, LIMITS, useProfile, withWeighIn, type Profile } from '@/storage/profile';
 import { GOAL_TARGETS, useSettings } from '@/storage/settings';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { NumberField } from '@/ui/NumberField';
-import { Body, Button, Chip, Display, Label, Strong } from '@/ui/primitives';
-import { Scoreboard } from '@/ui/Scoreboard';
+import { Body, Button, Chip, Display, Label, Mono, Strong } from '@/ui/primitives';
 import { color, font, radius, space } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
@@ -41,12 +42,15 @@ export default function Home() {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [weekRows, setWeekRows] = useState<SessionRow[]>([]);
   const [goalRows, setGoalRows] = useState<SessionRow[]>([]);
+  // Half a year of sets for the weekly streak.
+  const [streakRows, setStreakRows] = useState<SessionRow[]>([]);
   const [filter, setFilter] = useState<Exercise | 'all'>('all');
 
   const reload = useCallback(() => {
     setRows(listSessions());
     // Totals need every set of the last 7 days, not just the latest 60.
     setWeekRows(listSessionsSince(startOfToday() - 6 * 86_400_000));
+    setStreakRows(listSessions(5000, startOfToday() - 26 * 7 * 86_400_000));
     const g = profile?.repGoal;
     setGoalRows(profile && profile.aim === 'get-stronger' && g ? listSessions(2000, profile.startedAt, g.exercise) : []);
   }, [profile]);
@@ -84,71 +88,142 @@ export default function Home() {
     }
   }, [profile, progress?.met, setProfile]);
 
+  const body = profile ? { weightKg: profile.weightKg, heightCm: profile.heightCm, sex: profile.sex } : null;
+  // 30/60-day outlook: from the user's own last two weeks when there are some, else the plan's 10-minute workout.
+  const DAY = 86_400_000;
+  const since14 = startOfToday() - 13 * DAY;
+  const recent = streakRows.filter((r) => r.startedAt >= since14);
+  const recentDays = new Set(recent.map((r) => new Date(r.startedAt).toDateString())).size;
+  const perSession = body ? (recentDays >= 2 ? scaleKcal(setsKcal(recent, body), 1 / recentDays) : workoutKcal(body)) : null;
+  const fx = profile?.repGoal?.exercise ?? 'pushup';
+  const fxRecent = recent.filter((r) => r.exercise === fx);
+  const forecast =
+    fxRecent.length > 0 && streakRows.some((r) => r.exercise === fx && r.startedAt < since14)
+      ? { label: fx === 'pullup' ? 'Pull-ups' : 'Push-ups', best: Math.max(...fxRecent.map((r) => r.totalReps)) }
+      : null;
+  const deficit =
+    profile && profile.aim === 'lose-fat' && profile.targetKg !== null && profile.weightKg > profile.targetKg
+      ? weightPlan(bodyOf(profile), profile.targetKg, profile.pace).dailyDeficit
+      : 0;
+
+  const streakTarget = Math.min(profile?.daysPerWeek ?? 2, 3);
+  const streak = weekStreak(streakRows, streakTarget);
+  const away = daysSinceLastSet(rows);
+
   if (settings.experience === null) return <Redirect href="/welcome" />;
 
-  const burned = profile ? setsKcal(todayRows, profile.weightKg) : 0;
+  const burned = body ? setsKcal(todayRows, body) : ZERO_KCAL;
+  const weekBurned = body ? setsKcal(weekRows, body) : ZERO_KCAL;
   const editGoal = guard(() => router.push({ pathname: '/welcome', params: { redo: '1' } }));
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: color.ground }}
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={[styles.page, { paddingTop: insets.top + space.md, paddingBottom: insets.bottom + space.huge }]}
+      contentContainerStyle={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.huge }]}
     >
       <View style={styles.header}>
-        <Display size={26}>Trueline</Display>
-        <Pressable accessibilityRole="button" onPress={guard(() => router.push('/settings'))} hitSlop={12} style={styles.headerBtn}>
-          <Strong size={16}>Settings</Strong>
+        <View style={styles.wordmark}>
+          <View style={styles.markLine} />
+          <Display size={28} style={{ letterSpacing: 5 }}>
+            TRUELINE
+          </Display>
+        </View>
+        <Pressable accessibilityRole="button" onPress={guard(() => router.push('/settings'))} hitSlop={12}>
+          <Label tone="chalk">Settings</Label>
         </Pressable>
       </View>
+
+      {away !== null && away >= 7 && (
+        <View style={styles.back}>
+          <Label tone="vial">Welcome back</Label>
+          <Body size={15}>
+            {`It's been ${away} days. Everything you did is still here: ${rows.length} sets saved. Start with an easy set; any set counts.`}
+          </Body>
+        </View>
+      )}
 
       {profile && progress ? (
         <GoalBlock profile={profile} progress={progress} onEdit={editGoal} onWeigh={(kg) => setProfile(withWeighIn(profile, kg))} />
       ) : (
         <View style={{ gap: space.md }}>
           <Display size={40}>No goal yet</Display>
-          <Body tone="chalk2">Set one and Trueline works out the calories, a target date and how far along you are.</Body>
+          <Body tone="muted">Set one and Trueline works out the calories, a target date and how far along you are.</Body>
           <Button label="Set a goal" size="lg" onPress={editGoal} />
         </View>
       )}
 
+      {profile && perSession && (
+        <ProjectionCard
+          perSession={perSession}
+          perWeek={profile.daysPerWeek}
+          units={profile.units}
+          dailyDeficit={deficit}
+          forecast={forecast}
+          targetChangeKg={deficit > 0 && profile.targetKg !== null ? profile.weightKg - profile.targetKg : null}
+        />
+      )}
+
       <View style={{ gap: space.md }}>
-        <Label>Today</Label>
+        <View style={styles.todayHead}>
+          <Label>Today</Label>
+          {(streak.current > 0 || streak.best > 0) && (
+            <Mono
+              size={12}
+              tone={streak.current > 0 ? 'vial' : 'muted'}
+              accessibilityLabel={`Weekly streak: ${streak.current} weeks in a row with ${streakTarget} workout days. Best ${streak.best}.`}
+            >
+              {streak.current > 0
+                ? `${streak.current}-week streak${streak.thisWeekMet ? '' : `, ${streakTarget} days to keep it`}`
+                : `Best streak ${streak.best} ${streak.best === 1 ? 'week' : 'weeks'}`}
+            </Mono>
+          )}
+        </View>
         {doneToday.length === 0 ? (
-          <Body tone="chalk2">No sets yet today. Pick an exercise below to start.</Body>
+          <Display size={40}>Nothing yet today</Display>
         ) : (
           <>
             <View style={styles.todayRow}>
               {doneToday.map((e) => (
                 <View key={e}>
-                  <Display size={48} style={{ fontFamily: font.displayBlack }}>
+                  <Display size={56} style={{ fontFamily: font.displayBlack }}>
                     {show(e, today![e])}
                   </Display>
-                  <Body size={14} tone="chalk2">
+                  <Mono size={12} tone="muted">
                     {EXERCISES[e].unit}
-                  </Body>
+                  </Mono>
                 </View>
               ))}
             </View>
-            {profile && burned > 0 && (
-              <Body size={15} accessibilityLabel={`${Math.round(burned)} calories burned in sets today`}>
-                <Strong size={15}>{kcal(burned)} kcal</Strong>
-                {` burned in sets, the energy in about ${Math.max(1, Math.round(fatGrams(burned)))} g of fat.`}
+            {profile && burned.kcal > 0 && (
+              <Body size={15} tone="muted" accessibilityLabel={`About ${Math.max(1, Math.round(burned.kcal))} calories burned in sets today`}>
+                <Strong size={15} tone="chalk">{kcalText(burned)}</Strong>
+                {' burned in sets today, above resting.'}
               </Body>
             )}
           </>
         )}
+        {profile && weekBurned.kcal >= 1 && (
+          <View style={{ gap: space.xs }}>
+            <Body size={15} tone="muted">
+              <Strong size={15} tone="chalk">{`${kcalText(weekBurned)} this week`}</Strong>
+              {`, about the energy in ${Math.max(1, Math.round(fatGrams(weekBurned.kcal)))} g of body fat.`}
+            </Body>
+            <CaloriesHow />
+          </View>
+        )}
+        {!profile && doneToday.length > 0 && <AddWeightForCalories />}
         {daily && (
           <View
-            style={{ gap: space.sm }}
+            style={styles.goal}
             accessibilityLabel={`Daily goal: ${repsToday} of ${daily.reps} reps, ${formatDuration(holdToday)} of ${formatDuration(daily.holdMs)} plank`}
           >
-            <GoalBar label="Reps" value={repsToday} target={daily.reps} text={`${repsToday} of ${daily.reps}`} />
+            <GoalBar label="Reps" value={repsToday} target={daily.reps} text={`${repsToday} / ${daily.reps}`} />
             <GoalBar
               label="Plank"
               value={holdToday}
               target={daily.holdMs}
-              text={`${formatDuration(holdToday)} of ${formatDuration(daily.holdMs)}`}
+              text={`${formatDuration(holdToday)} / ${formatDuration(daily.holdMs)}`}
             />
           </View>
         )}
@@ -158,7 +233,7 @@ export default function Home() {
 
       <View style={{ gap: space.md }}>
         <Label>Exercises</Label>
-        <View style={{ gap: 2 }}>
+        <View style={styles.grid}>
           {order.map((e) => {
             const last = settings.exercise === e;
             return (
@@ -167,23 +242,20 @@ export default function Home() {
                 accessibilityRole="button"
                 accessibilityLabel={`${EXERCISES[e].label}. ${EXERCISES[e].tagline}. ${show(e, weekTotal(e))} this week.`}
                 onPress={guard(() => router.push({ pathname: '/exercise/[id]', params: { id: e } }))}
-                style={({ pressed }) => [styles.lane, pressed && { backgroundColor: color.raised }]}
+                style={({ pressed }) => [styles.card, last && styles.cardLast, pressed && { opacity: 0.85 }]}
               >
-                <View style={[styles.laneMark, last && { backgroundColor: color.vial }]} />
-                <ExerciseGlyph exercise={e} active size={44} />
-                <View style={{ flex: 1, gap: 0 }}>
-                  <Display size={26}>{EXERCISES[e].label}</Display>
-                  <Body size={13} tone="chalk2">
+                <ExerciseGlyph exercise={e} active size={56} />
+                <View style={{ gap: 2 }}>
+                  <Strong size={17}>{EXERCISES[e].label}</Strong>
+                  <Mono size={12} tone={last ? 'vial' : 'muted'}>
                     {EXERCISES[e].tagline}
-                  </Body>
+                  </Mono>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Display size={26} style={{ fontVariant: ['tabular-nums'] }}>
-                    {show(e, weekTotal(e))}
-                  </Display>
-                  <Body size={12} tone="muted">
-                    this week
-                  </Body>
+                <View style={styles.cardFoot}>
+                  <Mono size={12} tone="muted">
+                    This week
+                  </Mono>
+                  <Strong size={15}>{show(e, weekTotal(e))}</Strong>
                 </View>
               </Pressable>
             );
@@ -202,11 +274,19 @@ export default function Home() {
           </View>
         )}
         <HistoryList
+          body={body}
           rows={shown.slice(0, 30)}
           guard={guard}
-          empty={rows.length === 0 ? 'Each finished set is saved here.' : 'No sets of this exercise yet.'}
+          empty={
+            rows.length === 0 ? 'No sets yet. Pick an exercise above; each finished set is saved here.' : 'No sets of this exercise yet.'
+          }
         />
       </View>
+      {rows.length === 0 && (
+        <Body tone="faint" size={13}>
+          More exercises are on the way.
+        </Body>
+      )}
     </ScrollView>
   );
 }
@@ -215,6 +295,7 @@ function goalTitle(p: Profile): string {
   if (p.aim === 'lose-fat' && p.targetKg !== null) return `Get to ${weight(p.targetKg, p.units)}`;
   if (p.aim === 'get-stronger' && p.repGoal)
     return `${p.repGoal.reps} ${p.repGoal.exercise === 'pullup' ? 'pull-ups' : 'push-ups'} in one set`;
+  if (p.aim === 'less-screen') return `${p.daysPerWeek} workout days a week, earning your screen time`;
   return `${p.daysPerWeek} workout days a week`;
 }
 
@@ -234,9 +315,11 @@ function GoalBlock({
   const [draft, setDraft] = useState(p.weightKg);
   const imperial = p.units === 'imperial';
   const lose = p.aim === 'lose-fat' && p.targetKg !== null;
-  const plan = lose ? weightPlan(bodyOf(p), p.targetKg!, p.pace) : null;
+  const plan = lose ? weightPlan(bodyOf(p), p.targetKg!, p.pace, undefined, planWorkoutKcalPerDay(p)) : null;
   // The date set at the start, so it does not drift with every weigh-in.
-  const startPlan = lose ? weightPlan({ ...bodyOf(p), weightKg: p.startKg }, p.targetKg!, p.pace, p.startedAt) : null;
+  const startPlan = lose
+    ? weightPlan({ ...bodyOf(p), weightKg: p.startKg }, p.targetKg!, p.pace, p.startedAt, planWorkoutKcalPerDay({ ...p, weightKg: p.startKg }))
+    : null;
   const lastWeigh = p.log[p.log.length - 1];
   const weighedToday = lastWeigh && new Date(lastWeigh.at).toDateString() === new Date().toDateString();
   const value = lose && imperial ? String(Math.round(kgToLb(Number(progress.value)))) : progress.value;
@@ -247,39 +330,44 @@ function GoalBlock({
   return (
     <View style={{ gap: space.md }}>
       <View style={styles.goalHead}>
-        <Strong size={17} style={{ flex: 1 }}>
-          {goalTitle(p)}
-        </Strong>
-        <Pressable accessibilityRole="button" accessibilityLabel="Change goal" onPress={onEdit} hitSlop={10} style={styles.headerBtn}>
-          <Strong size={15} tone="vial">
-            Change
-          </Strong>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Label>{goalTitle(p)}</Label>
+          {p.why.length > 0 && (
+            <Mono size={12} tone="muted">
+              {`For ${p.why.map((w) => WHY_LABELS[w].toLowerCase()).join(', ')}`}
+            </Mono>
+          )}
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Change goal" onPress={onEdit} hitSlop={12}>
+          <Label tone="vial">Change</Label>
         </Pressable>
       </View>
-      <View style={styles.score}>
-        <Scoreboard value={value} fraction={progress.fraction} met={progress.met} size={176} label={`${value} ${unit}, ${of}`} />
-        <View style={styles.scoreSide} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
-          <Strong size={18}>{unit}</Strong>
-          <Display size={30} tone={progress.met ? 'good' : 'chalk2'}>
-            {of}
-          </Display>
-        </View>
+      <View style={styles.score} accessible accessibilityLabel={`${value} ${unit}, ${of}`}>
+        <Display size={72} tone={progress.met ? 'good' : 'chalk'} style={{ fontFamily: font.displayBlack }}>
+          {value}
+        </Display>
+        <Mono size={12} tone="muted" style={{ marginBottom: 14 }}>
+          {`${unit}, ${of}`}
+        </Mono>
+      </View>
+      <View style={styles.track}>
+        <View
+          style={[styles.fill, { width: `${Math.round(progress.fraction * 100)}%`, backgroundColor: progress.met ? color.good : color.vial }]}
+        />
       </View>
 
       {reached ? (
         <View style={styles.won}>
-          <Display size={32} tone="ink">
-            Goal reached
-          </Display>
-          <Body size={15} tone="ink">
+          <Label tone="good">Goal reached</Label>
+          <Body size={15}>
             {p.goalMetAt ? `You got there on ${dayMonth(p.goalMetAt)}.` : 'You got there.'} Set the next one when you are ready.
           </Body>
-          <Button label="Set a new goal" variant="quiet" onPress={onEdit} style={{ backgroundColor: color.ground, marginTop: space.xs }} />
+          <Button label="Set a new goal" onPress={onEdit} style={{ marginTop: space.xs }} />
         </View>
       ) : p.aim === 'stay-active' && progress.met ? (
         <Body tone="good">This week is done. Anything more is a bonus.</Body>
       ) : lose && startPlan && plan ? (
-        <Body tone="chalk2">
+        <Body tone="muted">
           {Number.isFinite(startPlan.by) ? `Planned for ${dayMonth(startPlan.by)}. ` : ''}
           {`Eat about ${kcal(plan.eatKcal)} kcal a day.`}
         </Body>
@@ -334,12 +422,12 @@ function GoalBar({ label, value, target, text }: { label: string; value: number;
   return (
     <View style={{ gap: 4 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Body size={13} tone="chalk2">
+        <Mono size={12} tone="muted">
           {label}
-        </Body>
-        <Strong size={13} tone={k >= 1 ? 'good' : 'chalk'}>
-          {k >= 1 ? `${text}, done` : text}
-        </Strong>
+        </Mono>
+        <Mono size={12} tone={k >= 1 ? 'good' : 'chalk'}>
+          {k >= 1 ? `${text} ✓` : text}
+        </Mono>
       </View>
       <View style={styles.track}>
         <View style={[styles.fill, { width: `${Math.round(k * 100)}%`, backgroundColor: k >= 1 ? color.good : color.vial }]} />
@@ -349,25 +437,38 @@ function GoalBar({ label, value, target, text }: { label: string; value: number;
 }
 
 const styles = StyleSheet.create({
-  track: { height: 6, backgroundColor: color.lineSoft, overflow: 'hidden' },
-  fill: { height: 6 },
+  goal: { gap: space.sm, marginTop: space.xs },
+  track: { height: 6, borderRadius: 3, backgroundColor: color.lineSoft, overflow: 'hidden' },
+  fill: { height: 6, borderRadius: 3 },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerBtn: { minHeight: 44, justifyContent: 'center' },
-  score: { flexDirection: 'row', alignItems: 'flex-end', gap: space.lg, marginTop: -space.lg },
-  scoreSide: { flex: 1, paddingBottom: 30, gap: 2 },
+  wordmark: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  markLine: { width: 22, height: 4, borderRadius: 2, backgroundColor: color.vial },
+  todayHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.md },
+  back: { gap: space.xs, padding: space.lg, borderRadius: radius.md, backgroundColor: color.surface, borderWidth: 1, borderColor: color.vial },
   goalHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  won: { gap: space.xs, padding: space.lg, borderRadius: radius.md, backgroundColor: color.good },
-  todayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xl },
-  lane: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.md,
-    paddingVertical: space.md,
-    paddingRight: space.lg,
-    backgroundColor: color.surface,
-    minHeight: 72,
+  score: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, flexWrap: 'wrap' },
+  won: {
+    gap: space.sm,
+    padding: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: color.goodSoft,
+    borderWidth: 1,
+    borderColor: color.good,
   },
-  laneMark: { width: 4, alignSelf: 'stretch', backgroundColor: 'transparent' },
+  todayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.xl },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
+  card: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    gap: space.md,
+    padding: space.lg,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1.5,
+    borderColor: color.lineSoft,
+  },
+  cardLast: { borderColor: color.vial },
+  cardFoot: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
 });
