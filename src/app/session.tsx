@@ -18,7 +18,7 @@ import { BodyPanel, PhonePanel } from '@/features/session/SetupPanels';
 import { usePhoneAttitude } from '@/sensors/usePhoneAttitude';
 import { setLastSummary } from '@/session/lastSummary';
 import { useSnapshot } from '@/session/snapshotStore';
-import { useSessionController, type Controller } from '@/session/useSessionController';
+import { useControllerUi, useSessionController, type Controller } from '@/session/useSessionController';
 import { saveSession } from '@/storage/history';
 import { useSettings, type Settings } from '@/storage/settings';
 import { PlankGhost } from '@/ui/Diagrams';
@@ -209,7 +209,8 @@ function LiveSession({
       let earned: { minutes: number; capped: boolean; bonus?: number; halfRate?: boolean } | null = null;
       try {
         const res = id ? creditSet(summary, id, demo) : null;
-        if (res && (res.minutes > 0 || res.reason === 'cap-reached')) earned = { minutes: res.minutes, capped: res.capped, bonus: res.bonus, halfRate: res.halfRate };
+        if (res && (res.minutes > 0 || res.reason === 'cap-reached'))
+          earned = { minutes: res.minutes, capped: res.capped, bonus: res.bonus, halfRate: res.halfRate };
       } catch {
         // Screen time must never get in the way of saving a set.
       }
@@ -220,7 +221,11 @@ function LiveSession({
           // A set with nothing in it didn't complete the workout a focus was waiting for.
           const empty = summary.totalReps === 0 && (summary.hold?.goodMs ?? 0) < 1000;
           const res = endFocusNow(empty ? 'abandoned' : 'completed');
-          focus = res.ended ? { heldMin: focusMinutes(res.record), continuesUntil: null } : res.focus ? { heldMin: 0, continuesUntil: res.focus.until } : null;
+          focus = res.ended
+            ? { heldMin: focusMinutes(res.record), continuesUntil: null }
+            : res.focus
+              ? { heldMin: 0, continuesUntil: res.focus.until }
+              : null;
         }
       } catch {
         // Never let screen time get in the way of the summary.
@@ -287,6 +292,13 @@ function LiveSession({
     [ctrl],
   );
   const onInterruptStart = useCallback(() => ctrl.interrupt(), [ctrl]);
+  // The camera running again means any interruption is over, even if its "ended" event never came
+  // (otherwise the set can stay on "Paused · Welcome back" for good).
+  const poseStarted = pose.onCameraStarted;
+  const onCameraStarted = useCallback(() => {
+    poseStarted();
+    ctrl.resume();
+  }, [poseStarted, ctrl]);
   const onInterruptEnd = useCallback(() => ctrl.resume(), [ctrl]);
   // Portrait frames are wider than a tall phone screen; "cover" would crop the
   // sides, which is exactly where the head and feet are. Show the whole frame.
@@ -342,7 +354,8 @@ function LiveSession({
 
   return (
     <View style={styles.root}>
-      <View style={StyleSheet.absoluteFill} onLayout={onLayout}>
+      {/* The camera picture and its drawn guides are visual only: the HUD says the same in words. */}
+      <View style={StyleSheet.absoluteFill} onLayout={onLayout} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         {device && !demo ? (
           <Camera
             key={cameraKey}
@@ -350,7 +363,7 @@ function LiveSession({
             device={device}
             isActive={appActive}
             outputs={pose.outputs}
-            onStarted={pose.onCameraStarted}
+            onStarted={onCameraStarted}
             constraints={constraints}
             resizeMode={fit}
             // Frames follow the locked screen, not the phone's physical angle,
@@ -478,6 +491,7 @@ function Hud({
 }) {
   const insets = useSafeAreaInsets();
   const snap = useSnapshot(ctrl.store);
+  const ui = useControllerUi(ctrl);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const counting = snap.phase === 'counting';
   const plank = isTimed(snap.exercise);
@@ -551,7 +565,7 @@ function Hud({
             )}
             {snap.phase === 'body-check' && <BodyPanel snap={snap} orientation={orientation} guided={guided} config={ctrl.config} />}
             {snap.phase === 'paused' && <PausedPanel snap={snap} onEnd={requestEnd} confirming={confirmEnd} />}
-            {counting && <CueBanner banner={ctrl.banner} detailed={guided} />}
+            {counting && <CueBanner banner={ui.banner} detailed={guided} />}
           </View>
         </View>
 
@@ -560,7 +574,7 @@ function Hud({
             (plank ? (
               <TimerColumn snap={snap} compact={!landscape} />
             ) : (
-              <CountColumn snap={snap} repMarks={ctrl.repMarks} compact={!landscape} />
+              <CountColumn snap={snap} repMarks={ui.repMarks} compact={!landscape} />
             ))}
           <View style={{ flex: 1 }} />
           <Button

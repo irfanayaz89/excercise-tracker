@@ -1,6 +1,6 @@
 import { Linking, StyleSheet, View } from 'react-native';
 import { Body, Button, Display, Label } from '@/ui/primitives';
-import { color, space } from '@/ui/theme';
+import { color, space, type } from '@/ui/theme';
 
 /** Full-screen explainer for anything that blocks the camera from starting. */
 export function Gate({
@@ -20,7 +20,7 @@ export function Gate({
     <View style={styles.wrap}>
       <View style={styles.card}>
         <Label tone="vial">{eyebrow}</Label>
-        <Display size={44}>{title}</Display>
+        <Display size={type.pageHero}>{title}</Display>
         <Body tone="muted" style={{ maxWidth: 460 }}>
           {body}
         </Body>

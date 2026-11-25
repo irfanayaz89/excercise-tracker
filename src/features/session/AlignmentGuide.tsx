@@ -4,7 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withTiming } fr
 import type { SessionSnapshot } from '@/engine/session';
 import { Label, Strong } from '@/ui/primitives';
 import type { PreviewFit } from '@/ui/SkeletonOverlay';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 
 type Edge = 'left' | 'right';
 
@@ -151,7 +151,7 @@ function EdgeHint({
       />
       <View style={[styles.chip, chipStyle, { top: insetTop, borderColor: tint }]}>
         <Label tone={strong ? 'cue' : 'muted'}>{label}</Label>
-        <Strong size={17}>{action}</Strong>
+        <Strong size={type.callout}>{action}</Strong>
       </View>
     </>
   );

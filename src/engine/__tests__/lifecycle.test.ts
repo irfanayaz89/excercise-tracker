@@ -29,4 +29,38 @@ describe('a set and the app going away', () => {
     h.session.end('user');
     expect(h.events.filter((e) => e.type === 'ended')).toHaveLength(1);
   });
+
+  test('walking away during setup ends the set after 10 minutes, so the camera stops', () => {
+    const h = harness();
+    expect(h.session.snapshot().phase).toBe('phone-setup');
+    h.session.tick(h.t + 1000);
+    h.session.tick(h.t + 1000 + 9 * 60_000);
+    expect(h.session.snapshot().phase).toBe('phone-setup');
+    h.session.tick(h.t + 1000 + 10 * 60_000 + 1);
+    expect(h.session.snapshot().phase).toBe('ended');
+    expect(h.events.find((e) => e.type === 'ended')).toMatchObject({ summary: { endReason: 'idle', totalReps: 0 } });
+  });
+
+  test('a long setup followed by a real set is not cut off by the setup timeout', () => {
+    const h = harness();
+    h.session.tick(h.t + 1000);
+    h.t += 9 * 60_000;
+    h.session.tick(h.t);
+    startCounting(h);
+    // Two more minutes of push-ups: past 10 minutes since setup began.
+    h.segments(Array.from({ length: 75 }, () => rep(1600)));
+    expect(h.session.snapshot().phase).toBe('counting');
+    expect(h.session.snapshot().reps).toBeGreaterThan(60);
+  });
+
+  test('a long call during setup does not end the set', () => {
+    const h = harness();
+    h.session.tick(h.t + 1000);
+    h.session.interrupt(h.t + 2000);
+    h.session.tick(h.t + 12 * 60_000);
+    expect(h.session.snapshot().phase).not.toBe('ended');
+    h.session.resumeFromInterrupt(h.t + 12 * 60_000 + 10);
+    h.session.tick(h.t + 12 * 60_000 + 260);
+    expect(h.session.snapshot().phase).not.toBe('ended');
+  });
 });

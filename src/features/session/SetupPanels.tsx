@@ -154,7 +154,7 @@ export function BodyPanel({
           ? { short: 'Lie still…', detail: 'Starting as soon as you are still.' }
           : snap.exercise === 'pullup'
             ? { short: 'Hang still…', detail: 'Starting as soon as you hang still.' }
-          : { short: 'Hold it…', detail: 'Starting as soon as you are steady.' };
+            : { short: 'Hold it…', detail: 'Starting as soon as you are steady.' };
   return (
     <View style={styles.panel}>
       <StepTag n={2} of={3} label={framed ? 'Get into position' : 'Get in frame'} />
@@ -224,7 +224,7 @@ function Check({ label, state }: { label: string; state: 'ok' | 'pending' | 'idl
           state === 'pending' && { borderColor: color.cue },
         ]}
       />
-      <Body size={15} tone={state === 'idle' ? 'muted' : 'chalk'}>
+      <Body size={type.detail} tone={state === 'idle' ? 'muted' : 'chalk'}>
         {label}
       </Body>
     </View>
