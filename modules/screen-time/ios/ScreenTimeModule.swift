@@ -50,9 +50,18 @@ public class ScreenTimeModule: Module {
         promise.reject("NO_VIEW", "Nothing to present the picker from")
         return
       }
+      // Already presenting or dismissing something: presenting now would fail and leave the promise hanging.
+      if presenter.isBeingDismissed || presenter.isBeingPresented || presenter.presentedViewController != nil {
+        promise.reject("BUSY", "Another screen is showing")
+        return
+      }
       let start = STShared.Sel(apps: current["apps"] ?? [], categories: current["categories"] ?? [], domains: current["domains"] ?? []).family
-      var host: UIViewController?
+      weak var host: UIViewController?
+      var settled = false
       let sheet = PickerSheet(selection: start, title: title) { picked in
+        // A double tap on Done must not answer twice.
+        guard !settled else { return }
+        settled = true
         host?.dismiss(animated: true)
         promise.resolve(picked.map { Self.summary($0) })
       }

@@ -857,7 +857,9 @@ enum STShared {
     let cal = Calendar.current
     guard let endOfDay = cal.date(bySettingHour: 23, minute: 59, second: 59, of: now) else { return nil }
     let start = min(now, endOfDay.addingTimeInterval(-16 * 60))
-    let parts: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
+    // With the time zone: a schedule made of bare components follows the phone's zone, so a zone
+    // change (travel) would shift it by the offset.
+    let parts: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second, .timeZone]
     do {
       try center.startMonitoring(
         DeviceActivityName("st.limit"),
@@ -871,7 +873,8 @@ enum STShared {
   @discardableResult
   static func wakeAt(_ at: Date, name: String) -> String? {
     let cal = Calendar.current
-    let parts: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
+    // With the time zone, so a wake-up keeps its moment if the phone's zone changes.
+    let parts: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second, .timeZone]
     let center = DeviceActivityCenter()
     center.stopMonitoring([DeviceActivityName(name)])
     do {
@@ -911,8 +914,8 @@ enum STShared {
     guard #available(iOS 17.4, *), minutes > 0, let p = plan, let main = selection("main") else { return }
     let cal = Calendar.current
     let now = Date()
-    let start = cal.dateComponents([.year, .month, .day, .hour, .minute], from: cal.startOfDay(for: now))
-    var end = cal.dateComponents([.year, .month, .day], from: now)
+    let start = cal.dateComponents([.year, .month, .day, .hour, .minute, .timeZone], from: cal.startOfDay(for: now))
+    var end = cal.dateComponents([.year, .month, .day, .timeZone], from: now)
     end.hour = 23
     end.minute = 59
     end.second = 59
