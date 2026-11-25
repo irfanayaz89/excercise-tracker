@@ -42,7 +42,11 @@ export function LevelVial({ rollDeg, pitchDeg, toleranceDeg, steady }: Props) {
   const lineGap = (toleranceDeg / range) * ((W - BUBBLE) / 2) + BUBBLE / 2 + 2;
 
   return (
-    <View style={styles.wrap} accessibilityLabel={known ? `Phone tilt ${Math.round(rollDeg)} degrees` : 'Tilt sensor unavailable'}>
+    <View
+      style={styles.wrap}
+      accessible
+      accessibilityLabel={known ? `Phone tilt ${Math.round(rollDeg)} degrees` : 'Tilt sensor unavailable'}
+    >
       <View style={[styles.vial, { borderColor: level ? color.vial : color.line }]}>
         <View style={[styles.fill, { width: `${Math.round(steady * 100)}%` }]} />
         <View style={[styles.mark, { left: W / 2 - lineGap }]} />

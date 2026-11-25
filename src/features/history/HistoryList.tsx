@@ -7,7 +7,7 @@ import { setKcal, type ExerciseBody } from '@/fitness/energy';
 import { kcalText } from '@/fitness/format';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Body, Display, Mono, Rule, Strong } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 
 /** A set's headline number: reps, or time in good form. */
 export function rowValue(r: SessionRow): string {
@@ -45,12 +45,12 @@ export function HistoryList({
               onPress={guard(() => router.push({ pathname: '/summary/[id]', params: { id: r.id } }))}
               style={({ pressed }) => [styles.row, pressed && { backgroundColor: color.surface }]}
             >
-              <Display size={36} style={{ minWidth: 72 }}>
+              <Display size={type.stat} style={{ minWidth: 72 }}>
                 {rowValue(r)}
               </Display>
               <View style={{ flex: 1, gap: 2 }}>
-                <Strong size={15}>{formatWhen(r.startedAt)}</Strong>
-                <Mono size={12} tone="muted">
+                <Strong size={type.detail}>{formatWhen(r.startedAt)}</Strong>
+                <Mono size={type.small} tone="muted">
                   {`${showExercise ? `${EXERCISES[r.exercise].label} · ` : ''}${
                     timed ? `${Math.round(share * 100)}% good form` : `${r.cleanReps} clean · ${formatDuration(r.activeMs)}`
                   }${body ? ` · ${kcalText(setKcal(r, body), false)}` : ''}`}

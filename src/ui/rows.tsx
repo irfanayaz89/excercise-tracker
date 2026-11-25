@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 import { Body, Chip, Label, Strong } from './primitives';
-import { color, radius, space } from './theme';
+import { color, radius, space, type } from './theme';
 
 /** Grouped rows used by Settings and the Screen Time screens. */
 export function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -30,7 +30,7 @@ export function ToggleRow({
     <View style={[styles.row, disabled && { opacity: 0.45 }]}>
       <View style={{ flex: 1, gap: 2 }}>
         <Strong>{label}</Strong>
-        <Body tone="muted" size={13}>
+        <Body tone="muted" size={type.caption}>
           {hint}
         </Body>
       </View>
@@ -62,7 +62,7 @@ export function ChoiceRow({
   return (
     <View style={[styles.row, { flexDirection: 'column', alignItems: 'stretch' }]}>
       <Strong>{label}</Strong>
-      <Body tone="muted" size={13}>
+      <Body tone="muted" size={type.caption}>
         {hint}
       </Body>
       <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm, flexWrap: 'wrap' }}>
@@ -75,7 +75,19 @@ export function ChoiceRow({
 }
 
 /** A row that opens something: label, hint and a value on the right. */
-export function LinkRow({ label, hint, value, onPress, disabled }: { label: string; hint?: string; value?: string; onPress: () => void; disabled?: boolean }) {
+export function LinkRow({
+  label,
+  hint,
+  value,
+  onPress,
+  disabled,
+}: {
+  label: string;
+  hint?: string;
+  value?: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -87,13 +99,13 @@ export function LinkRow({ label, hint, value, onPress, disabled }: { label: stri
       <View style={{ flex: 1, gap: 2 }}>
         <Strong>{label}</Strong>
         {hint ? (
-          <Body tone="muted" size={13}>
+          <Body tone="muted" size={type.caption}>
             {hint}
           </Body>
         ) : null}
       </View>
       {value ? (
-        <Body tone="muted" size={14}>
+        <Body tone="muted" size={type.note}>
           {value}
         </Body>
       ) : null}

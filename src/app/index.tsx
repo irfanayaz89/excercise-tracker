@@ -1,4 +1,4 @@
-import { Redirect, router, useFocusEffect } from 'expo-router';
+import { Redirect, router, useFocusEffect, useIsFocused } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppState, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -13,13 +13,21 @@ import { ProjectionCard } from '@/features/energy/Projection';
 import { dayMonth, kcal, kcalText, weight, WHY_LABELS } from '@/fitness/format';
 import { daysSinceLastSet, goalProgress, planWorkoutKcalPerDay, setsKcal, weekStreak } from '@/fitness/goal';
 import { formatDuration } from '@/session/copy';
-import { countSessions, dailyTotals, listSessions, listSessionsSince, type SessionRow } from '@/storage/history';
+import {
+  activeDays,
+  countSessions,
+  dailyTotals,
+  firstSessionAt,
+  listSessions,
+  listSessionsSince,
+  type SessionRow,
+} from '@/storage/history';
 import { bodyOf, LIMITS, useProfile, withWeighIn, type Profile } from '@/storage/profile';
 import { GOAL_TARGETS, useSettings } from '@/storage/settings';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { NumberField } from '@/ui/NumberField';
 import { Body, Button, Chip, Display, Label, Mono, Strong } from '@/ui/primitives';
-import { color, font, radius, space } from '@/ui/theme';
+import { color, font, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
 const show = (e: Exercise, v: number) => (isTimed(e) ? formatDuration(v) : String(v));
@@ -45,29 +53,48 @@ export default function Home() {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [weekRows, setWeekRows] = useState<SessionRow[]>([]);
   const [goalRows, setGoalRows] = useState<SessionRow[]>([]);
-  // Half a year of sets for the weekly streak.
-  const [streakRows, setStreakRows] = useState<SessionRow[]>([]);
+  // The last two weeks of sets (calorie outlook), and one entry per active day ever (streaks).
+  const [recent, setRecent] = useState<SessionRow[]>([]);
+  const [days, setDays] = useState<number[]>([]);
+  const [firstFx, setFirstFx] = useState<number | null>(null);
   const [filter, setFilter] = useState<Exercise | 'all'>('all');
   const [totalSets, setTotalSets] = useState(0);
+  const fx = profile?.repGoal?.exercise ?? 'pushup';
 
   const reload = useCallback(() => {
     setRows(listSessions());
     setTotalSets(countSessions());
     // Totals need every set of the last 7 days, not just the latest 60.
     setWeekRows(listSessionsSince(startOfDay(6)));
-    setStreakRows(listSessions(5000, startOfDay(26 * 7)));
+    setRecent(listSessionsSince(startOfDay(13)));
+    setDays(activeDays());
+    setFirstFx(firstSessionAt(fx));
     const g = profile?.repGoal;
     setGoalRows(profile && profile.aim === 'get-stronger' && g ? listSessions(2000, profile.startedAt, g.exercise) : []);
-  }, [profile]);
+  }, [profile, fx]);
   useFocusEffect(reload);
-  // Coming back to the app (e.g. the next morning) does not refocus the screen,
-  // but "Today" must move on to the new day.
+  // Coming back to the app (e.g. the next morning) does not refocus the screen, but "Today" must
+  // move on to the new day. Only while Home is showing: not under a live set.
+  const focused = useIsFocused();
   useEffect(() => {
+    if (!focused) return;
     const sub = AppState.addEventListener('change', (st) => {
       if (st === 'active') reload();
     });
-    return () => sub.remove();
-  }, [reload]);
+    // Left open past midnight: "Today" starts again, every midnight it stays open.
+    let midnight: ReturnType<typeof setTimeout>;
+    const atMidnight = () => {
+      midnight = setTimeout(() => {
+        reload();
+        atMidnight();
+      }, startOfDay(-1) - Date.now() + 1000);
+    };
+    atMidnight();
+    return () => {
+      sub.remove();
+      clearTimeout(midnight);
+    };
+  }, [reload, focused]);
 
   const week = useMemo(() => dailyTotals(weekRows, 7), [weekRows]);
   const today = week[week.length - 1]?.byExercise;
@@ -80,7 +107,12 @@ export default function Home() {
   const repsToday = (today?.pushup ?? 0) + (today?.crunch ?? 0) + (today?.pullup ?? 0);
   const holdToday = (today?.plank ?? 0) + (today?.sidePlank ?? 0);
   // A filter reads that exercise's own sets, not just those among the latest 60.
-  const shown = useMemo(() => (filter === 'all' ? rows : listSessions(30, 0, filter)), [filter, rows]);
+  // "Show more" adds 30 at a time; one extra row tells whether there is more to show.
+  const [limit, setLimit] = useState(30);
+  const shown = useMemo(
+    () => (filter === 'all' && limit < rows.length ? rows : listSessions(limit + 1, 0, filter === 'all' ? undefined : filter)),
+    [filter, rows, limit],
+  );
 
   const progress = useMemo(
     () => (profile ? goalProgress(profile, profile.aim === 'get-stronger' ? goalRows : weekRows) : null),
@@ -98,13 +130,16 @@ export default function Home() {
   const body = profile ? { weightKg: profile.weightKg, heightCm: profile.heightCm, sex: profile.sex } : null;
   // 30/60-day outlook: from the user's own last two weeks when there are some, else the plan's 10-minute workout.
   const since14 = startOfDay(13);
-  const recent = streakRows.filter((r) => r.startedAt >= since14);
-  const recentDays = new Set(recent.map((r) => new Date(r.startedAt).toDateString())).size;
-  const perSession = body ? (recentDays >= 2 ? scaleKcal(setsKcal(recent, body), 1 / recentDays) : workoutKcal(body)) : null;
-  const fx = profile?.repGoal?.exercise ?? 'pushup';
+  const recentDays = useMemo(() => new Set(recent.map((r) => new Date(r.startedAt).toDateString())).size, [recent]);
+  const perSession = useMemo(
+    () => (body ? (recentDays >= 2 ? scaleKcal(setsKcal(recent, body), 1 / recentDays) : workoutKcal(body)) : null),
+    // body is rebuilt each render from these three numbers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [recent, recentDays, body?.weightKg, body?.heightCm, body?.sex],
+  );
   const fxRecent = recent.filter((r) => r.exercise === fx);
   const forecast =
-    fxRecent.length > 0 && streakRows.some((r) => r.exercise === fx && r.startedAt < since14)
+    fxRecent.length > 0 && firstFx !== null && firstFx < since14
       ? { label: fx === 'pullup' ? 'Pull-ups' : 'Push-ups', best: Math.max(...fxRecent.map((r) => r.totalReps)) }
       : null;
   const deficit =
@@ -113,7 +148,14 @@ export default function Home() {
       : 0;
 
   const streakTarget = Math.min(profile?.daysPerWeek ?? 2, 3);
-  const streak = weekStreak(streakRows, streakTarget);
+  const streak = useMemo(
+    () =>
+      weekStreak(
+        days.map((startedAt) => ({ startedAt })),
+        streakTarget,
+      ),
+    [days, streakTarget],
+  );
   const away = daysSinceLastSet(rows);
 
   if (settings.experience === null) return <Redirect href="/welcome" />;
@@ -131,7 +173,7 @@ export default function Home() {
       <View style={styles.header}>
         <View style={styles.wordmark}>
           <View style={styles.markLine} />
-          <Display size={28} style={{ letterSpacing: 5 }}>
+          <Display size={type.displayS} style={{ letterSpacing: 5 }}>
             TRUELINE
           </Display>
         </View>
@@ -143,7 +185,7 @@ export default function Home() {
       {away !== null && away >= 7 && (
         <View style={styles.back}>
           <Label tone="vial">Welcome back</Label>
-          <Body size={15}>
+          <Body size={type.detail}>
             {`It's been ${away} days. Everything you did is still here: ${totalSets} sets saved. Start with an easy set; any set counts.`}
           </Body>
         </View>
@@ -153,7 +195,7 @@ export default function Home() {
         <GoalBlock profile={profile} progress={progress} onEdit={editGoal} onWeigh={(kg) => setProfile(withWeighIn(profile, kg))} />
       ) : (
         <View style={{ gap: space.md }}>
-          <Display size={40}>No goal yet</Display>
+          <Display size={type.headline}>No goal yet</Display>
           <Body tone="muted">Set one and Trueline works out the calories, a target date and how far along you are.</Body>
           <Button label="Set a goal" size="lg" onPress={editGoal} />
         </View>
@@ -175,7 +217,7 @@ export default function Home() {
           <Label>Today</Label>
           {(streak.current > 0 || streak.best > 0) && (
             <Mono
-              size={12}
+              size={type.small}
               tone={streak.current > 0 ? 'vial' : 'muted'}
               accessibilityLabel={`Weekly streak: ${streak.current} weeks in a row with ${streakTarget} workout days. Best ${streak.best}.`}
             >
@@ -186,24 +228,30 @@ export default function Home() {
           )}
         </View>
         {doneToday.length === 0 ? (
-          <Display size={40}>Nothing yet today</Display>
+          <Display size={type.headline}>Nothing yet today</Display>
         ) : (
           <>
             <View style={styles.todayRow}>
               {doneToday.map((e) => (
                 <View key={e}>
-                  <Display size={56} style={{ fontFamily: font.displayBlack }}>
+                  <Display size={type.big} style={{ fontFamily: font.displayBlack }}>
                     {show(e, today![e])}
                   </Display>
-                  <Mono size={12} tone="muted">
+                  <Mono size={type.small} tone="muted">
                     {EXERCISES[e].unit}
                   </Mono>
                 </View>
               ))}
             </View>
             {profile && burned.kcal > 0 && (
-              <Body size={15} tone="muted" accessibilityLabel={`About ${Math.max(1, Math.round(burned.kcal))} calories burned in sets today`}>
-                <Strong size={15} tone="chalk">{kcalText(burned)}</Strong>
+              <Body
+                size={type.detail}
+                tone="muted"
+                accessibilityLabel={`About ${Math.max(1, Math.round(burned.kcal))} calories burned in sets today`}
+              >
+                <Strong size={type.detail} tone="chalk">
+                  {kcalText(burned)}
+                </Strong>
                 {' burned in sets today, above resting.'}
               </Body>
             )}
@@ -211,8 +259,8 @@ export default function Home() {
         )}
         {profile && weekBurned.kcal >= 1 && (
           <View style={{ gap: space.xs }}>
-            <Body size={15} tone="muted">
-              <Strong size={15} tone="chalk">{`${kcalText(weekBurned)} in the last 7 days`}</Strong>
+            <Body size={type.detail} tone="muted">
+              <Strong size={type.detail} tone="chalk">{`${kcalText(weekBurned)} in the last 7 days`}</Strong>
               {`, about the energy in ${Math.max(1, Math.round(fatGrams(weekBurned.kcal)))} g of body fat.`}
             </Body>
             <CaloriesHow />
@@ -252,16 +300,16 @@ export default function Home() {
               >
                 <ExerciseGlyph exercise={e} active size={56} />
                 <View style={{ gap: 2 }}>
-                  <Strong size={17}>{EXERCISES[e].label}</Strong>
-                  <Mono size={12} tone={last ? 'vial' : 'muted'}>
+                  <Strong size={type.callout}>{EXERCISES[e].label}</Strong>
+                  <Mono size={type.small} tone={last ? 'vial' : 'muted'}>
                     {EXERCISES[e].tagline}
                   </Mono>
                 </View>
                 <View style={styles.cardFoot}>
-                  <Mono size={12} tone="muted">
+                  <Mono size={type.small} tone="muted">
                     Last 7 days
                   </Mono>
-                  <Strong size={15}>{show(e, weekTotal(e))}</Strong>
+                  <Strong size={type.detail}>{show(e, weekTotal(e))}</Strong>
                 </View>
               </Pressable>
             );
@@ -273,23 +321,39 @@ export default function Home() {
         <Label>Recent sets</Label>
         {rows.length > 0 && (
           <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Show sets of">
-            <Chip label="All" selected={filter === 'all'} onPress={() => setFilter('all')} />
+            <Chip
+              label="All"
+              selected={filter === 'all'}
+              onPress={() => {
+                setFilter('all');
+                setLimit(30);
+              }}
+            />
             {EXERCISE_IDS.map((e) => (
-              <Chip key={e} label={EXERCISES[e].label} selected={filter === e} onPress={() => setFilter(e)} />
+              <Chip
+                key={e}
+                label={EXERCISES[e].label}
+                selected={filter === e}
+                onPress={() => {
+                  setFilter(e);
+                  setLimit(30);
+                }}
+              />
             ))}
           </View>
         )}
         <HistoryList
           body={body}
-          rows={shown.slice(0, 30)}
+          rows={shown.slice(0, limit)}
           guard={guard}
           empty={
             rows.length === 0 ? 'No sets yet. Pick an exercise above; each finished set is saved here.' : 'No sets of this exercise yet.'
           }
         />
+        {shown.length > limit && <Button label="Show more" variant="ghost" size="sm" onPress={() => setLimit((n) => n + 30)} />}
       </View>
       {rows.length === 0 && (
-        <Body tone="muted" size={13}>
+        <Body tone="muted" size={type.caption}>
           More exercises are on the way.
         </Body>
       )}
@@ -324,7 +388,13 @@ function GoalBlock({
   const plan = lose ? weightPlan(bodyOf(p), p.targetKg!, p.pace, undefined, planWorkoutKcalPerDay(p)) : null;
   // The date set at the start, so it does not drift with every weigh-in.
   const startPlan = lose
-    ? weightPlan({ ...bodyOf(p), weightKg: p.startKg }, p.targetKg!, p.pace, p.startedAt, planWorkoutKcalPerDay({ ...p, weightKg: p.startKg }))
+    ? weightPlan(
+        { ...bodyOf(p), weightKg: p.startKg },
+        p.targetKg!,
+        p.pace,
+        p.startedAt,
+        planWorkoutKcalPerDay({ ...p, weightKg: p.startKg }),
+      )
     : null;
   const lastWeigh = p.log[p.log.length - 1];
   const weighedToday = lastWeigh && new Date(lastWeigh.at).toDateString() === new Date().toDateString();
@@ -339,7 +409,7 @@ function GoalBlock({
         <View style={{ flex: 1, gap: 2 }}>
           <Label>{goalTitle(p)}</Label>
           {p.why.length > 0 && (
-            <Mono size={12} tone="muted">
+            <Mono size={type.small} tone="muted">
               {`For ${p.why.map((w) => WHY_LABELS[w].toLowerCase()).join(', ')}`}
             </Mono>
           )}
@@ -349,23 +419,26 @@ function GoalBlock({
         </Pressable>
       </View>
       <View style={styles.score} accessible accessibilityLabel={`${value} ${unit}, ${of}`}>
-        <Display size={72} tone={progress.met ? 'good' : 'chalk'} style={{ fontFamily: font.displayBlack }}>
+        <Display size={type.hero} tone={progress.met ? 'good' : 'chalk'} style={{ fontFamily: font.displayBlack }}>
           {value}
         </Display>
-        <Mono size={12} tone="muted" style={{ marginBottom: 14 }}>
+        <Mono size={type.small} tone="muted" style={{ marginBottom: 14 }}>
           {`${unit}, ${of}`}
         </Mono>
       </View>
       <View style={styles.track}>
         <View
-          style={[styles.fill, { width: `${Math.round(progress.fraction * 100)}%`, backgroundColor: progress.met ? color.good : color.vial }]}
+          style={[
+            styles.fill,
+            { width: `${Math.round(progress.fraction * 100)}%`, backgroundColor: progress.met ? color.good : color.vial },
+          ]}
         />
       </View>
 
       {reached ? (
         <View style={styles.won}>
           <Label tone="good">Goal reached</Label>
-          <Body size={15}>
+          <Body size={type.detail}>
             {p.goalMetAt ? `You got there on ${dayMonth(p.goalMetAt)}.` : 'You got there.'} Set the next one when you are ready.
           </Body>
           <Button label="Set a new goal" onPress={onEdit} style={{ marginTop: space.xs }} />
@@ -380,8 +453,9 @@ function GoalBlock({
         </Body>
       ) : null}
 
-      {lose && !reached && (
-        weighing ? (
+      {/* Weigh-ins stay open after the goal is reached: keeping the weight off is part of it. */}
+      {lose &&
+        (weighing ? (
           <View style={{ gap: space.md }}>
             <NumberField
               label="Today’s weight"
@@ -404,7 +478,7 @@ function GoalBlock({
               />
               <Button label="Cancel" variant="ghost" style={{ flex: 1 }} onPress={() => setWeighing(false)} />
             </View>
-            <Body tone="muted" size={13}>
+            <Body tone="muted" size={type.caption}>
               Weight swings by a kilo or two from water and food. Weigh in at the same time each week, before breakfast.
             </Body>
           </View>
@@ -417,8 +491,7 @@ function GoalBlock({
               setWeighing(true);
             }}
           />
-        )
-      )}
+        ))}
     </View>
   );
 }
@@ -429,10 +502,10 @@ function GoalBar({ label, value, target, text }: { label: string; value: number;
   return (
     <View style={{ gap: 4 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Mono size={12} tone="muted">
+        <Mono size={type.small} tone="muted">
           {label}
         </Mono>
-        <Mono size={12} tone={k >= 1 ? 'good' : 'chalk'}>
+        <Mono size={type.small} tone={k >= 1 ? 'good' : 'chalk'}>
           {k >= 1 ? `${text} ✓` : text}
         </Mono>
       </View>
@@ -448,11 +521,33 @@ const styles = StyleSheet.create({
   track: { height: 6, borderRadius: 3, backgroundColor: color.lineSoft, overflow: 'hidden' },
   fill: { height: 6, borderRadius: 3 },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  // Wraps at large text sizes instead of pushing Settings off the screen.
+  header: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    rowGap: space.sm,
+    columnGap: space.lg,
+  },
   wordmark: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   markLine: { width: 22, height: 4, borderRadius: 2, backgroundColor: color.vial },
-  todayHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.md },
-  back: { gap: space.xs, padding: space.lg, borderRadius: radius.md, backgroundColor: color.surface, borderWidth: 1, borderColor: color.vial },
+  todayHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    rowGap: space.xs,
+    alignItems: 'center',
+    gap: space.md,
+  },
+  back: {
+    gap: space.xs,
+    padding: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.vial,
+  },
   goalHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   score: { flexDirection: 'row', alignItems: 'flex-end', gap: space.md, flexWrap: 'wrap' },
   won: {
@@ -476,6 +571,13 @@ const styles = StyleSheet.create({
     borderColor: color.lineSoft,
   },
   cardLast: { borderColor: color.vial },
-  cardFoot: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  cardFoot: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'baseline',
+  },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
 });

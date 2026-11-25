@@ -39,24 +39,48 @@ export function Display({ tone = 'chalk', size = type.headline, style, ...rest }
     <Text
       // Headlines follow the phone's text size (up to 1.3×); big numerals are already as large as fits.
       maxFontSizeMultiplier={size >= 60 ? 1 : 1.3}
-      style={[{ fontFamily: font.display, fontSize: size, lineHeight: Math.round(size * 1.08), color: toneColor[tone], letterSpacing: 0.5 }, style]}
+      style={[
+        { fontFamily: font.display, fontSize: size, lineHeight: Math.round(size * 1.08), color: toneColor[tone], letterSpacing: 0.5 },
+        style,
+      ]}
       {...rest}
     />
   );
 }
 
+/**
+ * How far text follows the phone's text size. Body copy grows up to 2× (the largest accessibility
+ * sizes stay readable without one word per line); small letter-spaced labels up to 1.5×, past
+ * which they no longer fit beside what they label.
+ */
+const BODY_SCALE = 2;
+const LABEL_SCALE = 1.5;
+
 export function Body({ tone = 'chalk', size = type.body, style, ...rest }: TProps) {
-  return <Text style={[{ fontFamily: font.body, fontSize: size, lineHeight: size * 1.45, color: toneColor[tone] }, style]} {...rest} />;
+  return (
+    <Text
+      maxFontSizeMultiplier={BODY_SCALE}
+      style={[{ fontFamily: font.body, fontSize: size, lineHeight: size * 1.45, color: toneColor[tone] }, style]}
+      {...rest}
+    />
+  );
 }
 
 export function Strong({ tone = 'chalk', size = type.body, style, ...rest }: TProps) {
-  return <Text style={[{ fontFamily: font.bodySemi, fontSize: size, lineHeight: size * 1.35, color: toneColor[tone] }, style]} {...rest} />;
+  return (
+    <Text
+      maxFontSizeMultiplier={BODY_SCALE}
+      style={[{ fontFamily: font.bodySemi, fontSize: size, lineHeight: size * 1.35, color: toneColor[tone] }, style]}
+      {...rest}
+    />
+  );
 }
 
 /** Uppercase utility label, monospaced, letter-spaced. */
 export function Label({ tone = 'muted', size = type.micro, style, ...rest }: TProps) {
   return (
     <Text
+      maxFontSizeMultiplier={LABEL_SCALE}
       style={[{ fontFamily: font.monoMed, fontSize: size, letterSpacing: 1.4, textTransform: 'uppercase', color: toneColor[tone] }, style]}
       {...rest}
     />
@@ -65,7 +89,11 @@ export function Label({ tone = 'muted', size = type.micro, style, ...rest }: TPr
 
 export function Mono({ tone = 'chalk', size = type.caption, style, ...rest }: TProps) {
   return (
-    <Text style={[{ fontFamily: font.mono, fontSize: size, color: toneColor[tone], fontVariant: ['tabular-nums'] }, style]} {...rest} />
+    <Text
+      maxFontSizeMultiplier={LABEL_SCALE}
+      style={[{ fontFamily: font.mono, fontSize: size, color: toneColor[tone], fontVariant: ['tabular-nums'] }, style]}
+      {...rest}
+    />
   );
 }
 
@@ -103,6 +131,8 @@ export function Button({ label, variant = 'vial', size = 'md', icon, style, disa
     >
       {icon}
       <Text
+        // Big condensed button text follows headlines (1.3×), or a full-width button fills the screen.
+        maxFontSizeMultiplier={size === 'lg' ? 1.3 : BODY_SCALE}
         style={{
           fontFamily: size === 'lg' ? font.display : font.bodySemi,
           fontSize: size === 'lg' ? 26 : size === 'md' ? 16 : 14,
@@ -126,8 +156,52 @@ export function Chip({ label, selected, onPress }: { label: string; selected: bo
       onPress={onPress}
       style={({ pressed }) => [styles.chip, selected && styles.chipOn, pressed && { opacity: 0.8 }]}
     >
-      <Text style={{ fontFamily: font.monoMed, fontSize: 14, color: selected ? color.vialInk : color.chalk2 }}>{label}</Text>
+      <Text
+        maxFontSizeMultiplier={LABEL_SCALE}
+        style={{ fontFamily: font.monoMed, fontSize: type.note, color: selected ? color.vialInk : color.chalk2 }}
+      >
+        {label}
+      </Text>
     </Pressable>
+  );
+}
+
+/**
+ * A labelled number. "sm": a quiet figure in a card (Earned left, Used today). "lg": a headline
+ * figure (Best set, Avg rep).
+ */
+export function Stat({
+  label,
+  value,
+  size = 'sm',
+  tone = 'chalk',
+  style,
+}: {
+  label: string;
+  value: string;
+  size?: 'sm' | 'lg';
+  tone?: Tone;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[{ flex: 1, gap: size === 'lg' ? 4 : 2 }, style]} accessible accessibilityLabel={`${label}: ${value}`}>
+      {size === 'lg' ? (
+        <Label>{label}</Label>
+      ) : (
+        <Mono size={type.micro} tone="muted">
+          {label}
+        </Mono>
+      )}
+      {size === 'lg' ? (
+        <Display size={type.stat} tone={tone}>
+          {value}
+        </Display>
+      ) : (
+        <Strong size={type.callout} tone={tone}>
+          {value}
+        </Strong>
+      )}
+    </View>
   );
 }
 

@@ -18,11 +18,11 @@ import { effectiveStrictness } from '@/screentime/rules';
 import { setFocusBlockAll, setFocusChoice, useScreenTime } from '@/screentime/store';
 import { difficultyCopy, formatDuration, rotationCopy } from '@/session/copy';
 import { bestFor, dailyTotals, listSessionsFor, listSessionsSince, type SessionRow } from '@/storage/history';
-import { HOLD_TARGETS, TARGETS, useSettings } from '@/storage/settings';
+import { HOLD_TARGETS, TARGETS, targetFor, useSettings } from '@/storage/settings';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { ExerciseAnimation } from '@/ui/ExerciseAnimation';
 import { OrientationPicker } from '@/ui/OrientationPicker';
-import { Body, Button, Chip, Display, Label, Mono, Strong } from '@/ui/primitives';
+import { Body, Button, Chip, Display, Label, Mono, Stat, Strong } from '@/ui/primitives';
 import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 import { WeekBars } from '@/ui/WeekBars';
@@ -118,16 +118,16 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
         <View style={styles.titleRow}>
           <ExerciseGlyph exercise={exercise} size={72} />
           <View style={{ flex: 1, gap: 2 }}>
-            <Display size={40}>{info.label}</Display>
+            <Display size={type.headline}>{info.label}</Display>
             <Mono tone="vial">{info.tagline}</Mono>
           </View>
         </View>
 
         <View style={{ gap: space.sm }}>
           <View style={styles.statsRow}>
-            <Stat label="Today" value={show(today)} />
-            <Stat label="Last 7 days" value={show(weekTotal)} />
-            <Stat label={timed ? 'Best hold' : 'Best set'} value={best === null ? '—' : show(best)} />
+            <Stat size="lg" label="Today" value={show(today)} />
+            <Stat size="lg" label="Last 7 days" value={show(weekTotal)} />
+            <Stat size="lg" label={timed ? 'Best hold' : 'Best set'} value={best === null ? '—' : show(best)} />
           </View>
           <WeekBars
             days={week.map((d) => d.day)}
@@ -137,7 +137,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
           />
           {body ? (
             <View style={{ gap: space.xs }}>
-              <Mono size={12} tone="muted">
+              <Mono size={type.small} tone="muted">
                 {`${weekKcal && weekKcal.kcal >= 1 ? `${kcalText(weekKcal)} this week from ${info.label.toLowerCase()} · ` : ''}${TYPICAL_SET[exercise].label} ${kcalText(typicalSetKcal(exercise, body))}`}
               </Mono>
               <CaloriesHow />
@@ -166,7 +166,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
           <View style={styles.warn}>
             <Label tone="cue">Take care</Label>
             {notes.map((n) => (
-              <Body key={n} size={14}>
+              <Body key={n} size={type.note}>
                 {n}
               </Body>
             ))}
@@ -188,7 +188,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
                 onPress={() => update({ views: { ...settings.views, [exercise]: 'front' } })}
               />
             </View>
-            <Body tone="muted" size={14}>
+            <Body tone="muted" size={type.note}>
               {view === 'side'
                 ? 'The phone beside you sees your whole body line: the strictest form checks.'
                 : exercise === 'plank'
@@ -205,12 +205,12 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
             <View style={{ gap: space.md }}>
               {setupSteps(exercise, settings.difficulty, settings.orientation, view).map((s, i) => (
                 <View key={i} style={{ flexDirection: 'row', gap: space.md }}>
-                  <Display size={28} tone="vial" style={{ width: 22 }}>
+                  <Display size={type.displayS} tone="vial" style={{ width: 22 }}>
                     {i + 1}
                   </Display>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Strong>{s.title}</Strong>
-                    <Body tone="muted" size={14}>
+                    <Body tone="muted" size={type.note}>
                       {s.body}
                     </Body>
                   </View>
@@ -226,8 +226,8 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
         )}
 
         <View style={{ gap: space.md }}>
-          <Label>Difficulty</Label>
-          <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Difficulty">
+          <Label>Difficulty · all exercises</Label>
+          <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Difficulty, for all exercises">
             {DIFFICULTIES.map((d) => (
               <Chip
                 key={d}
@@ -238,8 +238,8 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
             ))}
           </View>
           <View style={{ gap: 2 }}>
-            <Strong size={15}>{levelCopy.short}</Strong>
-            <Body tone="muted" size={14}>
+            <Strong size={type.detail}>{levelCopy.short}</Strong>
+            <Body tone="muted" size={type.note}>
               {levelCopy.detail}
             </Body>
           </View>
@@ -253,16 +253,16 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
                   <Chip
                     key={t}
                     label={t === 0 ? 'Open' : formatDuration(t * 1000)}
-                    selected={settings.targetHoldSec === t}
-                    onPress={() => update({ targetHoldSec: t })}
+                    selected={targetFor(settings, exercise) === t}
+                    onPress={() => update({ targets: { ...settings.targets, [exercise]: t } })}
                   />
                 ))
               : TARGETS.map((t) => (
                   <Chip
                     key={t}
                     label={t === 0 ? 'Open' : String(t)}
-                    selected={settings.targetReps === t}
-                    onPress={() => update({ targetReps: t })}
+                    selected={targetFor(settings, exercise) === t}
+                    onPress={() => update({ targets: { ...settings.targets, [exercise]: t } })}
                   />
                 ))}
           </View>
@@ -283,15 +283,6 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
       <View style={[styles.footer, { paddingBottom: insets.bottom + space.md }]}>
         <Button label={`Start ${info.label.toLowerCase()}`} size="lg" onPress={start()} />
       </View>
-    </View>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ flex: 1, gap: 2 }}>
-      <Label>{label}</Label>
-      <Display size={type.title * 1.4}>{value}</Display>
     </View>
   );
 }
@@ -325,7 +316,7 @@ function FocusChooser() {
           <Chip label="Everything" selected={st.meta.focusBlockAll} onPress={() => setFocusBlockAll(true)} />
         </View>
       )}
-      <Body tone="muted" size={13}>
+      <Body tone="muted" size={type.caption}>
         {choice === null
           ? 'Block your Screen Time apps while you train.'
           : choice === 'set'
@@ -348,7 +339,14 @@ const styles = StyleSheet.create({
     borderTopColor: color.lineSoft,
   },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+  },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space.lg },
   statsRow: { flexDirection: 'row', gap: space.md },
   card: {
@@ -360,7 +358,14 @@ const styles = StyleSheet.create({
     borderColor: color.lineSoft,
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+  },
   warn: {
     gap: space.sm,
     padding: space.lg,

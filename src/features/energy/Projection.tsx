@@ -4,7 +4,7 @@ import { kcal, weight } from '@/fitness/format';
 import { forecastBest, projectWeightChange, projectWorkouts } from '@/fitness/projection';
 import type { Units } from '@/storage/profile';
 import { Body, Display, Label, Mono } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 import { CaloriesHow } from './Calories';
 
 const range = (k: Kcal) => `${kcal(k.low)}–${kcal(k.high)}`;
@@ -45,14 +45,14 @@ export function ProjectionCard({
       <View style={styles.cols}>
         {days.map((d, i) => (
           <View key={d} style={{ flex: 1, gap: 2 }}>
-            <Mono size={12} tone="muted">{`${d} days`}</Mono>
-            <Display size={34}>{`${kcal(work[i].total.kcal)} kcal`}</Display>
-            <Mono size={12} tone="muted">
+            <Mono size={type.small} tone="muted">{`${d} days`}</Mono>
+            <Display size={type.displayM}>{`${kcal(work[i].total.kcal)} kcal`}</Display>
+            <Mono size={type.small} tone="muted">
               {`${range(work[i].total)} from ${work[i].sessions} workouts`}
             </Mono>
-            <Body size={14}>{`≈ the energy in ${kcal(work[i].fatG.kcal)} g of body fat`}</Body>
+            <Body size={type.note}>{`≈ the energy in ${kcal(work[i].fatG.kcal)} g of body fat`}</Body>
             {diet && (
-              <Body size={14} tone="vial">
+              <Body size={type.note} tone="vial">
                 {targetChangeKg !== null && diet[i].kg >= targetChangeKg
                   ? `With your eating target: your goal (−${weight(targetChangeKg, units)}) is likely reached by then`
                   : `With your eating target: −${weight(diet[i].kg, units)} (${weight(diet[i].low, units, false)}–${weight(
@@ -62,7 +62,7 @@ export function ProjectionCard({
               </Body>
             )}
             {forecast && (
-              <Body size={14} tone="good">
+              <Body size={type.note} tone="good">
                 {(() => {
                   const f = forecastBest(forecast.best, d);
                   return `${forecast.label}: likely ${f.low}–${f.high} in a set`;
@@ -72,7 +72,7 @@ export function ProjectionCard({
           </View>
         ))}
       </View>
-      <Body tone="muted" size={13}>
+      <Body tone="muted" size={type.caption}>
         {`Your scale may not move while fat goes down: strength work swaps a little fat for muscle (about half a kilo of fat in 8 weeks in trials). People also eat back about a fifth of workout calories, which is already taken off here.${
           forecast ? '' : ' Reps usually climb fastest in the first weeks; after two weeks of sets Trueline forecasts yours.'
         }`}

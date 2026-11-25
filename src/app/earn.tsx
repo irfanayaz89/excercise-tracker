@@ -8,8 +8,8 @@ import { MILESTONES_PE } from '@/screentime/rules';
 import { formatMin, rateText, tierText } from '@/screentime/summary';
 import { useSettings } from '@/storage/settings';
 import { ExerciseGlyph } from '@/ui/Diagrams';
-import { Body, Button, Display, Label, Mono, Strong } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { Body, Button, Display, Label, Mono, Stat, Strong } from '@/ui/primitives';
+import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
 const ORDER: Exercise[] = EXERCISE_IDS;
@@ -38,7 +38,7 @@ export default function EarnScreen() {
       </View>
 
       <View style={{ gap: space.sm }}>
-        <Display size={44}>{off ? 'Earning is off' : capLeft > 0 ? 'Move to unlock' : 'Done for today'}</Display>
+        <Display size={type.pageHero}>{off ? 'Earning is off' : capLeft > 0 ? 'Move to unlock' : 'Done for today'}</Display>
         <Body tone="muted">
           {off
             ? 'Turn on earning in Screen time to get minutes for your sets.'
@@ -68,12 +68,12 @@ export default function EarnScreen() {
           >
             <ExerciseGlyph exercise={x} active size={44} />
             <View style={{ flex: 1, gap: 2 }}>
-              <Strong size={17}>{EXERCISES[x].label}</Strong>
-              <Mono size={12} tone="muted">
+              <Strong size={type.callout}>{EXERCISES[x].label}</Strong>
+              <Mono size={type.small} tone="muted">
                 {rateText(e.rates[x])}
               </Mono>
               {e.milestoneMin > 0 && (
-                <Mono size={12} tone="vial">
+                <Mono size={type.small} tone="vial">
                   {tierText(e.rates[x], e.milestoneMin, EXERCISES[x].unit, MILESTONES_PE)}
                 </Mono>
               )}
@@ -83,7 +83,7 @@ export default function EarnScreen() {
         ))}
       </View>
 
-      <Body tone="muted" size={13}>
+      <Body tone="muted" size={type.caption}>
         Only counted reps and time in good form earn minutes. Flagged reps earn half. Demo sets earn nothing.
       </Body>
       {off && <Button variant="ghost" label="Screen time settings" onPress={() => router.replace('/screen-time')} />}
@@ -91,20 +91,16 @@ export default function EarnScreen() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ flex: 1, gap: 2 }}>
-      <Mono size={11} tone="muted">
-        {label}
-      </Mono>
-      <Strong size={18}>{value}</Strong>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   page: { paddingHorizontal: space.xl, gap: space.xl, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+  },
   stats: { flexDirection: 'row', gap: space.lg },
   card: {
     flexDirection: 'row',

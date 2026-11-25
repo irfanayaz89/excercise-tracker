@@ -87,8 +87,6 @@ export function defaultProfile(now = Date.now()): Profile {
 export function normalizeProfile(raw: unknown): Profile | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
-  const d = defaultProfile(typeof o.startedAt === 'number' ? o.startedAt : Date.now());
-  const weightKg = num(o.weightKg, d.weightKg, LIMITS.weightKg);
   const rg = o.repGoal as Record<string, unknown> | null | undefined;
   const log = Array.isArray(o.log)
     ? o.log
@@ -97,6 +95,10 @@ export function normalizeProfile(raw: unknown): Profile | null {
         .sort((a, b) => a.at - b.at)
         .slice(-400)
     : [];
+  // A damaged start date falls back to the first weigh-in, not "now": "now" would restart the goal on every load.
+  const startedAt = typeof o.startedAt === 'number' && Number.isFinite(o.startedAt) ? o.startedAt : (log[0]?.at ?? Date.now());
+  const d = defaultProfile(startedAt);
+  const weightKg = num(o.weightKg, d.weightKg, LIMITS.weightKg);
   return {
     aim: AIMS.includes(o.aim as Aim) ? (o.aim as Aim) : d.aim,
     sex: o.sex === 'female' || o.sex === 'male' ? o.sex : 'unspecified',

@@ -150,6 +150,35 @@ export function countSessions(): number {
   }
 }
 
+/**
+ * One time per day that has any set, oldest first, for streaks over the whole history without
+ * loading every row. Days are the phone's local days.
+ */
+export function activeDays(): number[] {
+  const d = getDb();
+  if (!d) return [];
+  try {
+    return d
+      .getAllSync<{ t: number }>(
+        "SELECT MIN(started_at) AS t FROM sessions GROUP BY date(started_at / 1000, 'unixepoch', 'localtime') ORDER BY t",
+      )
+      .map((r) => r.t);
+  } catch {
+    return [];
+  }
+}
+
+/** When the first set of an exercise was done (null if never). */
+export function firstSessionAt(exercise: Exercise): number | null {
+  const d = getDb();
+  if (!d) return null;
+  try {
+    return d.getFirstSync<{ t: number | null }>('SELECT MIN(started_at) AS t FROM sessions WHERE exercise = ?', exercise)?.t ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Recent sets of one exercise, newest first. */
 export function listSessionsFor(exercise: Exercise, limit = 30): SessionRow[] {
   return listSessions(limit, 0, exercise);

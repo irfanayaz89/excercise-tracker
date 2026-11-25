@@ -32,6 +32,11 @@ export interface Settings {
   targetReps: number;
   /** Plank target in seconds of good form; 0 = open. */
   targetHoldSec: number;
+  /**
+   * Target per exercise (reps, or seconds for planks), so 50 crunches doesn't also set 50 pull-ups.
+   * An exercise not in here uses targetReps / targetHoldSec (what older builds saved).
+   */
+  targets: Partial<Record<Exercise, number>>;
   /** Plank test: the hold ends at the first real form break instead of pausing the clock. */
   plankTestMode: boolean;
   /** Pause when the camera seems to be watching a video on a screen instead of a person. */
@@ -64,6 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
   exercise: 'pushup',
   targetReps: 0,
   targetHoldSec: 0,
+  targets: {},
   plankTestMode: false,
   realPersonCheck: true,
   camera: 'front',
@@ -115,6 +121,7 @@ export function normalizeSettings(raw: unknown): Settings {
     exercise: oneOf(o.exercise, EXERCISE_IDS, d.exercise),
     targetReps: oneOf(o.targetReps, TARGETS, d.targetReps),
     targetHoldSec: oneOf(o.targetHoldSec, HOLD_TARGETS, d.targetHoldSec),
+    targets: normalizeTargets(o.targets),
     plankTestMode: bool(o.plankTestMode, d.plankTestMode),
     realPersonCheck: bool(o.realPersonCheck, d.realPersonCheck),
     camera: oneOf(o.camera, ['front', 'back'] as const, d.camera),
@@ -133,6 +140,21 @@ export function normalizeSettings(raw: unknown): Settings {
     dailyGoal: oneOf(o.dailyGoal, ['none', 'light', 'regular', 'serious'] as const, d.dailyGoal),
     safety: Array.isArray(o.safety) ? [...new Set(o.safety.filter((f): f is SafetyFlag => SAFETY_FLAGS.includes(f as SafetyFlag)))] : [],
   };
+}
+
+function normalizeTargets(v: unknown): Partial<Record<Exercise, number>> {
+  const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+  const out: Partial<Record<Exercise, number>> = {};
+  for (const e of EXERCISE_IDS) {
+    const options = EXERCISES[e].kind === 'hold' ? HOLD_TARGETS : TARGETS;
+    if (options.includes(o[e] as number)) out[e] = o[e] as number;
+  }
+  return out;
+}
+
+/** This exercise's target: reps, or seconds of good form for planks. 0 = open. */
+export function targetFor(s: Pick<Settings, 'targets' | 'targetReps' | 'targetHoldSec'>, e: Exercise): number {
+  return s.targets[e] ?? (EXERCISES[e].kind === 'hold' ? s.targetHoldSec : s.targetReps);
 }
 
 function normalizeViews(v: unknown): Record<Exercise, CameraView> {

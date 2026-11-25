@@ -1,8 +1,8 @@
 import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Label } from './primitives';
-import { color, font, radius, space } from './theme';
+import { Body, Label } from './primitives';
+import { color, font, radius, space, type as typeScale } from './theme';
 
 /**
  * A number you can type or nudge with − and +. The typed text is kept while
@@ -48,6 +48,9 @@ export function NumberField({
     const v = Number(t.replace(',', '.'));
     if (t.trim() !== '' && Number.isFinite(v) && v >= min && v <= max) onChange(clamp(v));
   };
+  // Typed but outside the range: say so now, before Save (which keeps the last good number).
+  const typed = draft === null ? NaN : Number(draft.replace(',', '.'));
+  const outOfRange = draft !== null && draft.trim() !== '' && Number.isFinite(typed) && (typed < min || typed > max);
   const nudge = (d: number) => {
     const next = clamp(value + d);
     if (next !== value) void Haptics.selectionAsync();
@@ -77,6 +80,11 @@ export function NumberField({
         </View>
         <Step label="+" a11y={`More ${label.toLowerCase()}`} onPress={() => nudge(step)} disabled={value >= max} />
       </View>
+      {outOfRange && (
+        <View accessibilityLiveRegion="polite">
+          <Body tone="cue" size={typeScale.caption}>{`Enter a number from ${show(min)} to ${show(max)}${unit ? ` ${unit}` : ''}.`}</Body>
+        </View>
+      )}
     </View>
   );
 }
@@ -101,7 +109,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    height: 60,
+    minHeight: 60,
     borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: color.lineSoft,

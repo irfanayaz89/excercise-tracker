@@ -12,7 +12,7 @@ import { useSettings, type Experience, type Settings } from '@/storage/settings'
 import { Body, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
 import { ChoiceRow, LinkRow, Section, ToggleRow } from '@/ui/rows';
 import { useScreenTime } from '@/screentime/store';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -34,7 +34,7 @@ export default function SettingsScreen() {
       contentContainerStyle={[styles.page, { paddingTop: insets.top + space.lg, paddingBottom: insets.bottom + space.huge }]}
     >
       <View style={styles.header}>
-        <Display size={36}>Settings</Display>
+        <Display size={type.stat}>Settings</Display>
         <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
           <Label tone="chalk">Done</Label>
         </Pressable>
@@ -47,7 +47,7 @@ export default function SettingsScreen() {
           style={{ paddingVertical: space.sm }}
         >
           <Strong>Your goal and plan ›</Strong>
-          <Body tone="muted" size={14}>
+          <Body tone="muted" size={type.note}>
             Change your aim, body details or goal and see the plan again. Your weigh-ins are kept.
           </Body>
         </Pressable>
@@ -193,7 +193,7 @@ export default function SettingsScreen() {
               <View key={f.uri}>
                 {i > 0 && <Rule />}
                 <View style={styles.recRow}>
-                  <Mono size={12} style={{ flex: 1 }} numberOfLines={1}>
+                  <Mono size={type.small} style={{ flex: 1 }} numberOfLines={1}>
                     {f.name.replace('set-', '').replace('.json', '')}
                   </Mono>
                   <Pressable
@@ -228,7 +228,7 @@ export default function SettingsScreen() {
       </Section>
 
       <Section title="Your data">
-        <Body tone="muted" size={14}>
+        <Body tone="muted" size={type.note}>
           Sets, your goal, weigh-ins and health answers are stored only on this phone. Screen time rules are kept separately, under Screen
           time.
         </Body>
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
         </Pressable>
       </Section>
 
-      <Body tone="muted" size={13}>
+      <Body tone="muted" size={type.caption}>
         Video is processed on this phone and never stored or uploaded.
       </Body>
     </ScrollView>
@@ -268,7 +268,14 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+  },
   recs: { margin: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: color.line },
   recRow: { flexDirection: 'row', alignItems: 'center', gap: space.lg, paddingHorizontal: space.md, paddingVertical: space.sm },
 });

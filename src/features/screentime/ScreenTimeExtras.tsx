@@ -11,7 +11,7 @@ import { deviceZone } from '@/screentime/time';
 import type { RulesCore } from '@/screentime/types';
 import { Body, Button, Chip, Label, Mono, Strong } from '@/ui/primitives';
 import { LinkRow, Section, ToggleRow } from '@/ui/rows';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 
 type Change = (p: Partial<RulesCore>) => void;
 type Guard = (fn: () => void) => () => void;
@@ -22,7 +22,7 @@ export function AppLimitsSection({ st, guard }: { st: ScreenTimeState; guard: Gu
   return (
     <Section title="App limits">
       <View style={styles.pad}>
-        <Body tone="muted" size={13}>
+        <Body tone="muted" size={type.caption}>
           {Platform.OS === 'ios'
             ? 'A daily limit for one app or a group, on top of the daily limit above. Earned time doesn’t open them.'
             : 'A daily limit for one app or a group: minutes, number of opens, or both. Earned time doesn’t open them.'}
@@ -47,7 +47,10 @@ export function AppLimitsSection({ st, guard }: { st: ScreenTimeState; guard: Gu
         );
       })}
       {rules.appLimits.length < MAX_APP_LIMITS && (
-        <LinkRow label="Add an app limit" onPress={guard(() => router.push({ pathname: '/screen-time/limit/[id]', params: { id: 'new' } }))} />
+        <LinkRow
+          label="Add an app limit"
+          onPress={guard(() => router.push({ pathname: '/screen-time/limit/[id]', params: { id: 'new' } }))}
+        />
       )}
     </Section>
   );
@@ -70,14 +73,14 @@ export function PauseSection({ st, change }: { st: ScreenTimeState; change: Chan
       />
       {p.enabled && (
         <View style={styles.pad}>
-          <Body size={13}>First wait of the day</Body>
+          <Body size={type.caption}>First wait of the day</Body>
           <View style={styles.chips}>
             {PAUSE_CHOICES.map((s) => (
               <Chip key={s} label={`${s} s`} selected={p.seconds === s} onPress={() => change({ pause: { ...p, seconds: s } })} />
             ))}
           </View>
           {(st.today.pauses ?? 0) > 0 && (
-            <Mono size={12} tone="muted">
+            <Mono size={type.small} tone="muted">
               {`${st.today.pauses} pass${st.today.pauses === 1 ? '' : 'es'} today`}
             </Mono>
           )}
@@ -113,7 +116,7 @@ export function NotificationsSection({ st, change }: { st: ScreenTimeState; chan
       />
       {on && !access && (
         <Pressable accessibilityRole="button" onPress={() => ScreenTime?.openSettings?.('notifications')} style={styles.warn}>
-          <Body tone="cue" size={13}>
+          <Body tone="cue" size={type.caption}>
             Needs Notification access: tap, then turn it on for Trueline.
           </Body>
         </Pressable>
@@ -131,13 +134,19 @@ export function KeyLockSection({ st, guard, onMessage }: { st: ScreenTimeState; 
   return (
     <Section title="Key lock">
       <View style={styles.pad}>
-        <Body tone="muted" size={13}>
+        <Body tone="muted" size={type.caption}>
           Print your key or save it on another device, and leave it somewhere out of reach. A key lock blocks your apps until you scan it
           (or the time you set runs out). Backing out or pressing End won’t lift it.
         </Body>
-        {!key && <Button label="Make my key" variant="quiet" onPress={guard(() => {
+        {!key && (
+          <Button
+            label="Make my key"
+            variant="quiet"
+            onPress={guard(() => {
               if (newKey()) router.push('/screen-time/key');
-            })} />}
+            })}
+          />
+        )}
         {key && running && (
           <>
             <Strong>{`Key lock until you scan your key (at most ${formatClock(deviceZone, st.focus!.until, st.now)})`}</Strong>
@@ -146,7 +155,7 @@ export function KeyLockSection({ st, guard, onMessage }: { st: ScreenTimeState; 
         )}
         {key && !running && (
           <>
-            <Body size={13}>Lock for at most</Body>
+            <Body size={type.caption}>Lock for at most</Body>
             <View style={styles.chips}>
               {KEY_LOCK_HOURS.map((h) => (
                 <Chip key={h} label={`${h} h`} selected={hours === h} onPress={() => setHours(h)} />
@@ -165,7 +174,9 @@ export function KeyLockSection({ st, guard, onMessage }: { st: ScreenTimeState; 
           </>
         )}
       </View>
-      {key && <LinkRow label="My key" hint="Show, save or print it, or make a new one." onPress={guard(() => router.push('/screen-time/key'))} />}
+      {key && (
+        <LinkRow label="My key" hint="Show, save or print it, or make a new one." onPress={guard(() => router.push('/screen-time/key'))} />
+      )}
     </Section>
   );
 }
@@ -176,7 +187,10 @@ export function UsageSection({ st }: { st: ScreenTimeState }) {
   useFocusEffect(
     useCallback(() => {
       let live = true;
-      ScreenTime?.usageSummary?.().then((s) => live && setSummary(s), () => {});
+      ScreenTime?.usageSummary?.().then(
+        (s) => live && setSummary(s),
+        () => {},
+      );
       return () => {
         live = false;
       };
@@ -193,7 +207,7 @@ export function UsageSection({ st }: { st: ScreenTimeState }) {
   return (
     <Section title="Your use">
       <View style={styles.pad}>
-        <Body tone="muted" size={13}>
+        <Body tone="muted" size={type.caption}>
           {summary
             ? 'Time on your phone each day (all apps), from Android’s own records. It stays on your phone.'
             : 'Time in your blocked apps each day. iPhone reports it in 15-minute steps.'}
@@ -208,18 +222,18 @@ export function UsageSection({ st }: { st: ScreenTimeState }) {
             </View>
           ))}
         </View>
-        <Mono size={12} tone="muted">
+        <Mono size={type.small} tone="muted">
           {`Today ${formatMin(days[days.length - 1]?.minutes ?? 0)} · 7-day average ${formatMin(Math.round(total / Math.max(1, days.length)))}`}
         </Mono>
         {summary && summary.top.length > 0 && (
           <View style={{ gap: space.xs }}>
-            <Strong size={14}>Most used today</Strong>
+            <Strong size={type.note}>Most used today</Strong>
             {summary.top.map((a) => (
               <View key={a.packageName} style={styles.topRow}>
-                <Body size={13} style={{ flex: 1 }} numberOfLines={1}>
+                <Body size={type.caption} style={{ flex: 1 }} numberOfLines={1}>
                   {a.label}
                 </Body>
-                <Mono size={12}>{formatMin(a.minutes)}</Mono>
+                <Mono size={type.small}>{formatMin(a.minutes)}</Mono>
               </View>
             ))}
           </View>
@@ -234,12 +248,11 @@ export function FriendPasscodeNote() {
   if (Platform.OS !== 'ios') return null;
   return (
     <View style={styles.note}>
-      <Strong size={14}>Make it harder to switch off</Strong>
-      <Body tone="muted" size={13}>
-        Ask a friend to set a Screen Time passcode on your iPhone (Settings › Screen Time › Lock Screen Time Settings) and to use their
-        own Apple Account for passcode recovery, or you could reset it yourself. Also, under Screen Time › Content &amp; Privacy
-        Restrictions, set Deleting Apps to Don’t Allow. From iOS 26.4, switching off Trueline’s access then
-        needs their code.
+      <Strong size={type.note}>Make it harder to switch off</Strong>
+      <Body tone="muted" size={type.caption}>
+        Ask a friend to set a Screen Time passcode on your iPhone (Settings › Screen Time › Lock Screen Time Settings) and to use their own
+        Apple Account for passcode recovery, or you could reset it yourself. Also, under Screen Time › Content &amp; Privacy Restrictions,
+        set Deleting Apps to Don’t Allow. From iOS 26.4, switching off Trueline’s access then needs their code.
       </Body>
     </View>
   );

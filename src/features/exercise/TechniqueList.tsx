@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 import type { Exercise } from '@/engine/types';
 import { Body, Display, Label, Strong } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 import { TECHNIQUE } from './technique';
 
 /** The numbered how-to steps for an exercise. `compact` hides each step's detail. */
@@ -10,13 +10,13 @@ export function TechniqueSteps({ exercise, compact = false }: { exercise: Exerci
     <View style={{ gap: compact ? space.sm : space.lg }} accessibilityRole="list">
       {TECHNIQUE[exercise].steps.map((s, i) => (
         <View key={s.title} style={styles.row}>
-          <Display size={compact ? 22 : 28} tone="vial" style={{ width: compact ? 18 : 22 }}>
+          <Display size={compact ? 22 : type.displayS} tone="vial" style={{ width: compact ? 18 : 22 }}>
             {i + 1}
           </Display>
           <View style={{ flex: 1, gap: 2 }}>
             <Strong size={compact ? 15 : 16}>{s.title}</Strong>
             {!compact && (
-              <Body tone="muted" size={14}>
+              <Body tone="muted" size={type.note}>
                 {s.body}
               </Body>
             )}
@@ -38,7 +38,7 @@ export function TechniqueAvoid({ exercise }: { exercise: Exercise }) {
             <Strong tone="cue" style={{ width: 18 }}>
               ✕
             </Strong>
-            <Body style={{ flex: 1 }} size={15}>
+            <Body style={{ flex: 1 }} size={type.detail}>
               {a}
             </Body>
           </View>
@@ -46,15 +46,15 @@ export function TechniqueAvoid({ exercise }: { exercise: Exercise }) {
       </View>
       <View style={{ gap: space.xs }}>
         <Label tone="vial">Breathing</Label>
-        <Body size={15}>{t.breathe}</Body>
+        <Body size={type.detail}>{t.breathe}</Body>
       </View>
       <View style={{ gap: space.xs }}>
         <Label tone="vial">To start</Label>
-        <Body size={15}>{t.dose}</Body>
+        <Body size={type.detail}>{t.dose}</Body>
       </View>
       <View style={styles.safety}>
         <Label tone="cue">Take care</Label>
-        <Body size={14}>{t.safety}</Body>
+        <Body size={type.note}>{t.safety}</Body>
       </View>
     </View>
   );

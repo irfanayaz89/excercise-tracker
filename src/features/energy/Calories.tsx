@@ -5,6 +5,7 @@ import { setKcal, type ExerciseBody } from '@/fitness/energy';
 import { kcalText } from '@/fitness/format';
 import { useProfile } from '@/storage/profile';
 import { Body, Label, Strong } from '@/ui/primitives';
+import { type } from '@/ui/theme';
 
 /** Weight and age for the calorie maths, once the user has given them. */
 export function useEnergyBody(): ExerciseBody | null {
@@ -56,11 +57,11 @@ export function SetCalories({
   return (
     <>
       <Body
-        size={15}
+        size={type.detail}
         tone="muted"
         accessibilityLabel={`About ${Math.max(1, Math.round(k.kcal))} calories burned above resting, likely between ${Math.round(k.low)} and ${Math.round(k.high)}`}
       >
-        <Strong size={15}>{kcalText(k)}</Strong> burned above resting.
+        <Strong size={type.detail}>{kcalText(k)}</Strong> burned above resting.
       </Body>
       <CaloriesHow />
     </>

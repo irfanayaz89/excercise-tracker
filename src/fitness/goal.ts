@@ -79,7 +79,7 @@ export function setsKcal(rows: SessionRow[], body: ExerciseBody): Kcal {
  * the week reaches its target. A broken streak demotivates most when people
  * blame themselves, so Home also shows the best streak and totals kept.
  */
-export function weekStreak(rows: SessionRow[], target: number, now = Date.now()): { current: number; best: number; thisWeekMet: boolean } {
+export function weekStreak(rows: Pick<SessionRow, 'startedAt'>[], target: number, now = Date.now()): { current: number; best: number; thisWeekMet: boolean } {
   const WEEK = 7 * 86_400_000;
   const start = weekStart(now);
   const days = new Map<number, Set<string>>();

@@ -4,7 +4,7 @@
  * database (Node's built-in one stands in for expo-sqlite).
  */
 import type { SessionSummary } from '@/engine/session';
-import { bestBefore, correctReps, countSessions, deleteAllSessions, getSession, saveSession } from '../history';
+import { activeDays, bestBefore, correctReps, countSessions, deleteAllSessions, firstSessionAt, getSession, saveSession } from '../history';
 
 // Hoisted above the imports by Jest.
 jest.mock(
@@ -82,5 +82,18 @@ describe('personal bests and deleting', () => {
     expect(countSessions()).toBeGreaterThan(0);
     expect(deleteAllSessions()).toBe(true);
     expect(countSessions()).toBe(0);
+  });
+});
+
+describe('streak days and first sets', () => {
+  test('one entry per active day, oldest first, and the first set of an exercise', () => {
+    deleteAllSessions();
+    const day = (d: number, h: number) => new Date(2026, 9, d, h).getTime();
+    saveSession(set(5), day(3, 9));
+    saveSession(set(6), day(3, 18));
+    saveSession(set(7), day(5, 7));
+    expect(activeDays()).toEqual([day(3, 9), day(5, 7)]);
+    expect(firstSessionAt('pushup')).toBe(day(3, 9));
+    expect(firstSessionAt('pullup')).toBeNull();
   });
 });

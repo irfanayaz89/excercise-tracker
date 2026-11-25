@@ -12,10 +12,10 @@ import { getLastSummary } from '@/session/lastSummary';
 import { bestBefore, correctReps, deleteSession, getSession } from '@/storage/history';
 import { SetCalories } from '@/features/energy/Calories';
 import { useSettings } from '@/storage/settings';
-import { Body, Button, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
+import { Body, Button, Display, Label, Mono, Rule, Stat, Strong } from '@/ui/primitives';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Tally } from '@/ui/Tally';
-import { color, radius, space, type } from '@/ui/theme';
+import { color, radius, space, type, font } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 import { EXERCISES, isTimed } from '@/engine/exercises';
 
@@ -85,7 +85,16 @@ export default function SummaryScreen() {
     }
     const stored = id ? getSession(id) : null;
     return stored
-      ? { summary: stored.summary, wallStart: stored.row.startedAt, saved: true, demo: false, earned: null, focus: null, savedId: id, fresh: false }
+      ? {
+          summary: stored.summary,
+          wallStart: stored.row.startedAt,
+          saved: true,
+          demo: false,
+          earned: null,
+          focus: null,
+          savedId: id,
+          fresh: false,
+        }
       : null;
   }, [id, freshParam]);
   // A count fixed by hand on this screen (history and calories follow it).
@@ -109,7 +118,10 @@ export default function SummaryScreen() {
     router.replace(demo ? { pathname: '/session', params: { demo: '1', ex: exercise } } : '/session');
   };
   const counted = fixed !== null || data.summary.counted !== undefined;
-  const s = fixed === null ? data.summary : { ...data.summary, totalReps: fixed, cleanReps: Math.min(data.summary.counted?.clean ?? data.summary.cleanReps, fixed) };
+  const s =
+    fixed === null
+      ? data.summary
+      : { ...data.summary, totalReps: fixed, cleanReps: Math.min(data.summary.counted?.clean ?? data.summary.cleanReps, fixed) };
   const faults = (Object.entries(s.faultCounts) as [RepFault, number][]).sort((a, b) => b[1] - a[1]);
   const misses = (Object.entries(s.missCounts) as [MissReason, number][]).sort((a, b) => b[1] - a[1]);
   const missTotal = misses.reduce((n, [, c]) => n + c, 0);
@@ -145,11 +157,7 @@ export default function SummaryScreen() {
         {saved && savedId && !demo && <PersonalBest exercise={s.exercise ?? 'plank'} id={savedId} value={s.hold?.goodMs ?? 0} />}
         <View style={{ gap: space.md }}>
           {fresh && <RestTimer />}
-          <Button
-            label={`Another ${EXERCISES[s.exercise ?? 'plank'].label.toLowerCase()}`}
-            size="lg"
-            onPress={guard(another)}
-          />
+          <Button label={`Another ${EXERCISES[s.exercise ?? 'plank'].label.toLowerCase()}`} size="lg" onPress={guard(another)} />
           <Button label="Done" variant="ghost" onPress={() => router.dismissTo('/')} />
           {saved && savedId && !demo && <DeleteSet id={savedId} />}
         </View>
@@ -184,7 +192,7 @@ export default function SummaryScreen() {
       ) : (
         <View style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.md }}>
-            <Display size={type.hero * 1.8} style={{ fontFamily: 'BigShouldersDisplay_900Black' }}>
+            <Display size={type.hero * 1.8} style={{ fontFamily: font.displayBlack }}>
               {s.totalReps}
             </Display>
             <Body tone="muted" style={{ marginBottom: 18 }}>
@@ -197,7 +205,8 @@ export default function SummaryScreen() {
               {`Count fixed by hand${data.summary.counted ? ` (the camera counted ${data.summary.counted.total})` : ''}.`}
             </Mono>
           )}
-          <SetCalories exercise={ex} activeMs={s.activeMs} holdMs={0} reps={s.totalReps} avgRepMs={s.avgRepMs} />
+          {/* Same inputs as the history list (active time over reps), so a set shows one calorie figure everywhere. */}
+          <SetCalories exercise={ex} activeMs={s.activeMs} holdMs={0} reps={s.totalReps} />
         </View>
       )}
       {saved && savedId && !demo && s.totalReps > 0 && <PersonalBest exercise={ex} id={savedId} value={s.totalReps} />}
@@ -220,10 +229,10 @@ export default function SummaryScreen() {
       )}
 
       <View style={styles.stats}>
-        <Stat label="Clean" value={String(s.cleanReps)} tone="good" />
-        <Stat label="Flagged" value={String(flagged)} tone={flagged ? 'cue' : 'chalk'} />
-        {!counted && <Stat label="Best streak" value={String(s.bestCleanStreak)} />}
-        <Stat label="Avg rep" value={s.avgRepMs ? `${(s.avgRepMs / 1000).toFixed(1)}s` : '—'} />
+        <Stat size="lg" style={styles.stat} label="Clean" value={String(s.cleanReps)} tone="good" />
+        <Stat size="lg" style={styles.stat} label="Flagged" value={String(flagged)} tone={flagged ? 'cue' : 'chalk'} />
+        {!counted && <Stat size="lg" style={styles.stat} label="Best streak" value={String(s.bestCleanStreak)} />}
+        <Stat size="lg" style={styles.stat} label="Avg rep" value={s.avgRepMs ? `${(s.avgRepMs / 1000).toFixed(1)}s` : '—'} />
       </View>
 
       {!counted && s.reps.length > 1 && <TempoChart reps={s.reps} />}
@@ -248,13 +257,13 @@ export default function SummaryScreen() {
               <View key={f}>
                 {i > 0 && <Rule />}
                 <View style={styles.item}>
-                  <Display size={32} tone={HINT_FAULTS.includes(f) ? 'muted' : 'cue'} style={{ minWidth: 40 }}>
+                  <Display size={type.displayM} tone={HINT_FAULTS.includes(f) ? 'muted' : 'cue'} style={{ minWidth: 40 }}>
                     {n}
                   </Display>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Strong>{faultCopy(f, ex)?.short ?? f}</Strong>
                     {guided && (
-                      <Body tone="muted" size={14}>
+                      <Body tone="muted" size={type.note}>
                         {faultCopy(f, ex)?.detail}
                       </Body>
                     )}
@@ -274,13 +283,13 @@ export default function SummaryScreen() {
               <View key={m}>
                 {i > 0 && <Rule />}
                 <View style={styles.item}>
-                  <Display size={32} tone="muted" style={{ minWidth: 40 }}>
+                  <Display size={type.displayM} tone="muted" style={{ minWidth: 40 }}>
                     {n}
                   </Display>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Strong>{missCopy(m, ex)?.short ?? m}</Strong>
                     {guided && (
-                      <Body tone="muted" size={14}>
+                      <Body tone="muted" size={type.note}>
                         {missCopy(m, ex)?.detail}
                       </Body>
                     )}
@@ -348,7 +357,7 @@ function PlankResult({
     <>
       <View style={{ gap: space.sm }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.md }}>
-          <Display size={type.hero * 1.5} style={{ fontFamily: 'BigShouldersDisplay_900Black' }}>
+          <Display size={type.hero * 1.5} style={{ fontFamily: font.displayBlack }}>
             {formatDuration(hold.goodMs)}
           </Display>
           <Body tone="muted" style={{ marginBottom: 16 }}>
@@ -371,10 +380,10 @@ function PlankResult({
       )}
 
       <View style={styles.stats}>
-        <Stat label="Good form" value={`${pct}%`} tone={pct >= 90 ? 'good' : pct >= 70 ? 'chalk' : 'cue'} />
-        <Stat label="Longest hold" value={formatDuration(hold.longestMs)} />
-        <Stat label="Breaks" value={String(hold.breaks)} tone={hold.breaks ? 'cue' : 'chalk'} />
-        <Stat label="Plank" value={hold.variant === 'forearm' ? 'Forearm' : 'High'} />
+        <Stat size="lg" style={styles.stat} label="Good form" value={`${pct}%`} tone={pct >= 90 ? 'good' : pct >= 70 ? 'chalk' : 'cue'} />
+        <Stat size="lg" style={styles.stat} label="Longest hold" value={formatDuration(hold.longestMs)} />
+        <Stat size="lg" style={styles.stat} label="Breaks" value={String(hold.breaks)} tone={hold.breaks ? 'cue' : 'chalk'} />
+        <Stat size="lg" style={styles.stat} label="Plank" value={hold.variant === 'forearm' ? 'Forearm' : 'High'} />
       </View>
 
       {guided && (
@@ -392,13 +401,13 @@ function PlankResult({
               <View key={f}>
                 {i > 0 && <Rule />}
                 <View style={styles.item}>
-                  <Display size={32} tone="cue" style={{ minWidth: 64 }}>
+                  <Display size={type.displayM} tone="cue" style={{ minWidth: 64 }}>
                     {formatDuration(ms)}
                   </Display>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Strong>{HOLD_COPY[f].short}</Strong>
                     {guided && (
-                      <Body tone="muted" size={14}>
+                      <Body tone="muted" size={type.note}>
                         {HOLD_COPY[f].detail}
                       </Body>
                     )}
@@ -410,13 +419,13 @@ function PlankResult({
               <View>
                 {faults.length > 0 && <Rule />}
                 <View style={styles.item}>
-                  <Display size={32} tone="muted" style={{ minWidth: 64 }}>
+                  <Display size={type.displayM} tone="muted" style={{ minWidth: 64 }}>
                     {formatDuration(hold.headDownMs)}
                   </Display>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Strong>{FAULT_COPY['head-dropping'].short}</Strong>
                     {guided && (
-                      <Body tone="muted" size={14}>
+                      <Body tone="muted" size={type.note}>
                         {FAULT_COPY['head-dropping'].detail} This is a tip; it does not stop the clock.
                       </Body>
                     )}
@@ -476,7 +485,7 @@ function PersonalBest({ exercise, id, value }: { exercise: Exercise; id: string;
   return (
     <View style={styles.best} accessible accessibilityLabel={`${prev === null ? 'First set' : 'New personal best'}. ${text}`}>
       <Label tone="good">{prev === null ? 'First set' : 'New personal best'}</Label>
-      <Body size={15}>{text}</Body>
+      <Body size={type.detail}>{text}</Body>
     </View>
   );
 }
@@ -500,12 +509,12 @@ function FixCount({ total, onFix }: { total: number; onFix: (n: number) => void 
       <Label>Reps you did</Label>
       <View style={styles.fixRow}>
         <Button label="−" variant="quiet" size="sm" onPress={() => setN((v) => Math.max(0, v - 1))} accessibilityLabel="One fewer rep" />
-        <Display size={44} accessibilityLiveRegion="polite">
+        <Display size={type.pageHero} accessibilityLiveRegion="polite">
           {n}
         </Display>
         <Button label="+" variant="quiet" size="sm" onPress={() => setN((v) => Math.min(500, v + 1))} accessibilityLabel="One more rep" />
       </View>
-      <Body tone="muted" size={13}>
+      <Body tone="muted" size={type.caption}>
         Fixing the count updates your history, best set and calories. Screen time already earned stays the same.
       </Body>
       <View style={{ flexDirection: 'row', gap: space.sm }}>
@@ -556,32 +565,25 @@ function DeleteSet({ id }: { id: string }) {
       hitSlop={12}
       style={{ alignSelf: 'center', minHeight: 44, justifyContent: 'center' }}
       onPress={() =>
-        Alert.alert('Delete this set?', 'It comes off your history, totals and best sets. Screen time it earned stays. This can’t be undone.', [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: () => {
-              deleteSession(id);
-              router.dismissTo('/');
+        Alert.alert(
+          'Delete this set?',
+          'It comes off your history, totals and best sets. Screen time it earned stays. This can’t be undone.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: () => {
+                deleteSession(id);
+                router.dismissTo('/');
+              },
             },
-          },
-        ])
+          ],
+        )
       }
     >
       <Label tone="fault">Delete this set</Label>
     </Pressable>
-  );
-}
-
-function Stat({ label, value, tone = 'chalk' }: { label: string; value: string; tone?: 'chalk' | 'good' | 'cue' }) {
-  return (
-    <View style={styles.stat}>
-      <Label>{label}</Label>
-      <Display size={36} tone={tone}>
-        {value}
-      </Display>
-    </View>
   );
 }
 
@@ -608,25 +610,45 @@ function TempoChart({ reps }: { reps: RepRecord[] }) {
         ))}
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Mono size={11} tone="muted">
+        <Mono size={type.micro} tone="muted">
           rep 1
         </Mono>
-        <Mono size={11} tone="muted">{`${(max / 1000).toFixed(1)}s max`}</Mono>
-        <Mono size={11} tone="muted">{`rep ${reps.length}`}</Mono>
+        <Mono size={type.micro} tone="muted">{`${(max / 1000).toFixed(1)}s max`}</Mono>
+        <Mono size={type.micro} tone="muted">{`rep ${reps.length}`}</Mono>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  best: { gap: space.xs, padding: space.lg, borderRadius: radius.md, backgroundColor: color.goodSoft, borderWidth: 1, borderColor: color.good },
-  fix: { gap: space.sm, padding: space.lg, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1, borderColor: color.lineSoft },
+  best: {
+    gap: space.xs,
+    padding: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: color.goodSoft,
+    borderWidth: 1,
+    borderColor: color.good,
+  },
+  fix: {
+    gap: space.sm,
+    padding: space.lg,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.lineSoft,
+  },
   fixRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  earned: { alignSelf: 'flex-start', paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.md, backgroundColor: color.goodSoft },
+  earned: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    borderRadius: radius.md,
+    backgroundColor: color.goodSoft,
+  },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
   empty: { flex: 1, backgroundColor: color.ground, padding: space.xl, gap: space.lg },
   stats: { flexDirection: 'row', flexWrap: 'wrap', rowGap: space.lg },
-  stat: { width: '50%', gap: 4 },
+  stat: { flex: 0, width: '50%' },
   list: { borderRadius: radius.lg, borderWidth: 1, borderColor: color.lineSoft, overflow: 'hidden' },
   item: { flexDirection: 'row', gap: space.lg, padding: space.lg, alignItems: 'flex-start' },
   tip: {
@@ -666,8 +688,8 @@ function SideBalance({ sides }: { sides: NonNullable<SessionSummary['holdSides']
         {(['left', 'right'] as const).map((s) => (
           <View key={s} style={{ flex: 1, gap: 4 }}>
             <Label>{s === 'left' ? 'Left side' : 'Right side'}</Label>
-            <Display size={40}>{sides[s] ? formatDuration(sides[s]!.goodMs) : '–'}</Display>
-            {sides[s] && <Mono size={12} tone="muted">{`${Math.round(sides[s]!.formPct * 100)}% good form`}</Mono>}
+            <Display size={type.headline}>{sides[s] ? formatDuration(sides[s]!.goodMs) : '–'}</Display>
+            {sides[s] && <Mono size={type.small} tone="muted">{`${Math.round(sides[s]!.formPct * 100)}% good form`}</Mono>}
           </View>
         ))}
       </View>

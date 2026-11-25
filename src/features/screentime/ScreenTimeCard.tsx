@@ -3,8 +3,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useScreenTimeTick } from '@/screentime/store';
 import { formatClock, formatMin, nextLock } from '@/screentime/summary';
 import { deviceZone } from '@/screentime/time';
-import { Body, Label, Mono, Strong } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { Body, Label, Mono, Stat, Strong } from '@/ui/primitives';
+import { color, radius, space, type } from '@/ui/theme';
 
 /**
  * Home's screen time card: used vs. limit, earned minutes left, the next lock
@@ -23,8 +23,8 @@ export function ScreenTimeCard({ guard }: { guard: (fn: () => void) => () => voi
         style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
       >
         <Label tone="vial">Screen time</Label>
-        <Strong size={18}>Earn your scroll</Strong>
-        <Body tone="muted" size={14}>
+        <Strong size={type.emphasis}>Earn your scroll</Strong>
+        <Body tone="muted" size={type.note}>
           Block the apps that eat your day, and open them again with push-ups, crunches or a plank. Set it up ›
         </Body>
       </Pressable>
@@ -61,24 +61,27 @@ export function ScreenTimeCard({ guard }: { guard: (fn: () => void) => () => voi
       <View style={styles.head}>
         <Label tone={lost ? 'fault' : 'vial'}>Screen time</Label>
         {status && (
-          <Mono size={12} tone={d.blocked ? 'fault' : 'good'}>
+          <Mono size={type.small} tone={d.blocked ? 'fault' : 'good'}>
             {d.blocked ? 'Blocked' : 'Open'}
           </Mono>
         )}
       </View>
       {lost ? (
-        <Body tone="fault" size={14}>
+        <Body tone="fault" size={type.note}>
           Screen Time access is off, so your apps aren&apos;t blocked. Tap to turn it back on.
         </Body>
       ) : (
         <>
-          {status && <Strong size={16}>{status}</Strong>}
+          {status && <Strong size={type.body}>{status}</Strong>}
           <View style={styles.stats}>
-            <Stat label="Used today" value={limit === null ? formatMin(st.today.usedMin) : `${formatMin(Math.min(st.today.usedMin, limit))} / ${formatMin(limit)}`} />
+            <Stat
+              label="Used today"
+              value={limit === null ? formatMin(st.today.usedMin) : `${formatMin(Math.min(st.today.usedMin, limit))} / ${formatMin(limit)}`}
+            />
             <Stat label="Earned left" value={formatMin(d.earnedLeftMin)} />
           </View>
           {next && (
-            <Mono size={12} tone="muted">
+            <Mono size={type.small} tone="muted">
               {next.running
                 ? `${next.name} until ${formatClock(deviceZone, next.end, now)}`
                 : `${next.name} at ${formatClock(deviceZone, next.start, now)}`}
@@ -90,20 +93,23 @@ export function ScreenTimeCard({ guard }: { guard: (fn: () => void) => () => voi
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ flex: 1, gap: 2 }}>
-      <Mono size={11} tone="muted">
-        {label}
-      </Mono>
-      <Strong size={17}>{value}</Strong>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  card: { gap: space.sm, padding: space.lg, borderRadius: radius.lg, backgroundColor: color.surface, borderWidth: 1.5, borderColor: color.lineSoft },
+  card: {
+    gap: space.sm,
+    padding: space.lg,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1.5,
+    borderColor: color.lineSoft,
+  },
   cardLost: { borderColor: color.fault, backgroundColor: color.faultSoft },
-  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  head: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+  },
   stats: { flexDirection: 'row', gap: space.lg, marginTop: space.xs },
 });

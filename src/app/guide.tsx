@@ -7,12 +7,12 @@ import type { Exercise } from '@/engine/types';
 import { TECHNIQUE } from '@/features/exercise/technique';
 import { TechniqueSteps } from '@/features/exercise/TechniqueList';
 import { PLACEMENT, rotationCopy } from '@/session/copy';
-import { useSettings, type Settings } from '@/storage/settings';
+import { targetFor, useSettings, type Settings } from '@/storage/settings';
 import { HoldDiagram, RepDiagram } from '@/ui/Diagrams';
 import { ExerciseAnimation } from '@/ui/ExerciseAnimation';
 import { OrientationPicker } from '@/ui/OrientationPicker';
 import { Body, Button, Display, Label, Strong } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
 /**
@@ -55,7 +55,7 @@ export default function Guide() {
             <Label tone="chalk">Close</Label>
           </Pressable>
         </View>
-        <View style={styles.progress} accessibilityLabel={`Step ${page + 1} of ${pages.length}`}>
+        <View style={styles.progress} accessible accessibilityLabel={`Step ${page + 1} of ${pages.length}`}>
           {pages.map((_, i) => (
             <View key={i} style={[styles.dot, i <= page && { backgroundColor: color.vial }]} />
           ))}
@@ -64,7 +64,7 @@ export default function Guide() {
       </View>
 
       <ScrollView ref={scroll} contentContainerStyle={[styles.page, { paddingBottom: space.xl }]}>
-        <Display size={40}>{p.title}</Display>
+        <Display size={type.headline}>{p.title}</Display>
         <View style={{ gap: space.lg }}>{p.body}</View>
       </ScrollView>
 
@@ -83,7 +83,7 @@ export default function Guide() {
               router.replace('/session');
             })}
           >
-            <Label tone="muted">I know this · skip the guide from now on</Label>
+            <Label tone="muted">I know this · switch to Quick mode (shorter guides and cues)</Label>
           </Pressable>
         )}
       </View>
@@ -127,7 +127,7 @@ function guidePages(exercise: Exercise, s: Settings, art: number, update: (p: Pa
               <Strong tone="cue" style={{ width: 18 }}>
                 ✕
               </Strong>
-              <Body style={{ flex: 1 }} size={14}>
+              <Body style={{ flex: 1 }} size={type.note}>
                 {a}
               </Body>
             </View>
@@ -135,7 +135,7 @@ function guidePages(exercise: Exercise, s: Settings, art: number, update: (p: Pa
         </View>
         <View style={styles.note}>
           <Strong>{timed ? 'How the clock works' : 'What counts'}</Strong>
-          <Body tone="muted" size={15}>
+          <Body tone="muted" size={type.detail}>
             {countsText(exercise, s)}
           </Body>
         </View>
@@ -168,7 +168,7 @@ function RotationNote() {
   return (
     <View style={styles.warn}>
       <Strong tone="cue">{`First, ${c.title.charAt(0).toLowerCase()}${c.title.slice(1)}`}</Strong>
-      <Body size={15}>{c.body}</Body>
+      <Body size={type.detail}>{c.body}</Body>
     </View>
   );
 }
@@ -189,7 +189,8 @@ function countsText(exercise: Exercise, s: Settings): string {
       return (
         (easy
           ? 'Hang still to start. Chin over the bar counts. Easy mode just counts.'
-          : 'Hang still to start. Chin over the bar, then back to straight arms. Kips and half reps don’t count; swinging or dropping is flagged.') + rest
+          : 'Hang still to start. Chin over the bar, then back to straight arms. Kips and half reps don’t count; swinging or dropping is flagged.') +
+        rest
       );
     case 'crunch':
       return (
@@ -202,7 +203,7 @@ function countsText(exercise: Exercise, s: Settings): string {
     case 'sidePlank':
       return (
         `Lift your hips facing the phone and the clock starts. Each side is timed on its own${
-          s.targetHoldSec > 0 ? `; at ${s.targetHoldSec} s you’ll hear “switch sides”` : ''
+          targetFor(s, 'sidePlank') > 0 ? `; at ${targetFor(s, 'sidePlank')} s you’ll hear “switch sides”` : ''
         }.` + test
       );
   }
@@ -220,7 +221,14 @@ const styles = StyleSheet.create({
     backgroundColor: color.ground,
     zIndex: 2,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+  },
   progress: { flexDirection: 'row', gap: space.xs, marginTop: space.sm },
   dot: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line },
   page: { paddingHorizontal: space.xl, paddingTop: space.lg, gap: space.xl, width: '100%', maxWidth: 560, alignSelf: 'center' },
