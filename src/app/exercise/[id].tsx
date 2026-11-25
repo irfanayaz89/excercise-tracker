@@ -120,7 +120,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
       <View style={{ gap: space.sm }}>
         <View style={styles.statsRow}>
           <Stat label="Today" value={show(today)} />
-          <Stat label="This week" value={show(weekTotal)} />
+          <Stat label="Last 7 days" value={show(weekTotal)} />
           <Stat label={timed ? 'Best hold' : 'Best set'} value={best === null ? '—' : show(best)} />
         </View>
         <WeekBars days={week.map((d) => d.day)} values={values} label={`${show(weekTotal)} ${info.unit} in the last 7 days`} height={56} />

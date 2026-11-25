@@ -4,6 +4,7 @@ import {
   bmr,
   eventualChangeKg,
   fatGrams,
+  cmToFtIn,
   ftInToCm,
   lowestHealthyKg,
   relativeFatMass,
@@ -62,6 +63,18 @@ describe('energy', () => {
     expect(p.weeks).toBe(9);
     expect(p.eatKcal).toBe(weightPlan(body, 75, 0.5, 0).eatKcal);
     expect(weightPlan(body, 75, 0.5, 0).weeks).toBe(10);
+  });
+
+  test('heights in feet and inches never read 12 inches', () => {
+    for (const cm of [152, 182, 213]) expect(cmToFtIn(cm).inch).toBeLessThan(12);
+    expect(cmToFtIn(182)).toEqual({ ft: 6, inch: 0 });
+  });
+
+  test('a weight-loss plan never asks someone to eat more than they use', () => {
+    const tiny: Body = { sex: 'female', age: 60, heightCm: 150, weightKg: 50, activity: 'low' };
+    const p = weightPlan(tiny, 47, 0.5, 0);
+    expect(p.eatKcal).toBeLessThanOrEqual(Math.round(maintenance(tiny)));
+    expect(p.weeks).toBe(Infinity);
   });
 
   test('eating never drops below resting energy or 1,200 kcal', () => {

@@ -34,10 +34,12 @@ export function NumberField({
 
   const clamp = (v: number) => Math.min(max, Math.max(min, Math.round(v * 10 ** decimals) / 10 ** decimals));
   const commit = () => {
+    const unchanged = text === show(value);
     const v = Number(text.replace(',', '.'));
     const next = Number.isFinite(v) && text.trim() !== '' ? clamp(v) : value;
     setDraft(null);
-    onChange(next);
+    // Just tapping in and out changes nothing (no rounding drift, e.g. kg shown as whole lb).
+    if (!unchanged) onChange(next);
   };
   // Pass on in-range values while typing, so a button tapped before the field
   // is left (e.g. Save) already has the new number.

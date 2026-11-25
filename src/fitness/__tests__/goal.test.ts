@@ -38,6 +38,14 @@ describe('goal progress', () => {
     expect(goalProgress({ ...p, weightKg: 92 }, [], NOW).fraction).toBe(0);
   });
 
+  test('lose fat never reads as met above the target, even if the goal was re-set after gaining', () => {
+    // Started at 80, weighs 84 now, target moved to 82: not met, and not the weekly-days goal either.
+    const p = base({ aim: 'lose-fat', startKg: 80, weightKg: 84, targetKg: 82 });
+    const rows = [row({}), row({ startedAt: NOW - DAY })];
+    expect(goalProgress(p, rows, NOW)).toMatchObject({ met: false, fraction: 0, unit: 'kg lost' });
+    expect(goalProgress({ ...p, weightKg: 81.9 }, rows, NOW).met).toBe(true);
+  });
+
   test('get stronger: the best set since the start, of the target', () => {
     const p = base({ aim: 'get-stronger', repGoal: { exercise: 'pullup', reps: 8 } });
     const rows = [
@@ -87,9 +95,12 @@ describe('weekly streaks', () => {
     expect(weekStreak(rows, 2, NOW)).toEqual({ current: 1, best: 3, thisWeekMet: false });
   });
 
-  test('days since the last set', () => {
+  test('days since the last set, in calendar days', () => {
     expect(daysSinceLastSet([], NOW)).toBeNull();
     expect(daysSinceLastSet([row({ startedAt: NOW - 9 * DAY })], NOW)).toBe(9);
+    // 23:00 seven days ago, read at noon: 7 calendar days, though under 7 × 24 hours.
+    const late = new Date(2025, 10, 5, 23).getTime();
+    expect(daysSinceLastSet([row({ startedAt: late })], NOW)).toBe(7);
   });
 });
 
@@ -124,6 +135,9 @@ describe('profile storage', () => {
     const later = startProfile({ ...saved, targetKg: 74, weightKg: 80 }, saved, NOW + 7 * DAY);
     expect(later).toMatchObject({ startedAt: NOW, startKg: 82, targetKg: 74, weightKg: 80, goalMetAt: null });
     expect(later.log.map((w) => w.kg)).toEqual([82, 80]);
+    // Re-set a weight goal at or above its old start (after gaining): start again from today's weight.
+    const regained = startProfile({ ...saved, targetKg: 83, weightKg: 85 }, { ...saved, weightKg: 85 }, NOW + 7 * DAY);
+    expect(regained).toMatchObject({ startedAt: NOW + 7 * DAY, startKg: 85 });
     // A different aim starts from that day.
     const other = startProfile({ ...saved, aim: 'get-stronger' }, saved, NOW + 7 * DAY);
     expect(other).toMatchObject({ startedAt: NOW + 7 * DAY, startKg: 82 });

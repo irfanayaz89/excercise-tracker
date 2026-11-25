@@ -59,7 +59,8 @@ export default function Welcome() {
   const [settings, updateSettings] = useSettings();
   const [saved, setProfile] = useProfile();
   const screenTime = useScreenTime();
-  const [p, setP] = useState<Profile>(() => (redo && saved ? { ...saved } : defaultProfile()));
+  // A saved profile is the starting point whenever there is one (redo, or settings lost while the profile survived).
+  const [p, setP] = useState<Profile>(() => (saved ? { ...saved } : defaultProfile()));
   const [safety, setSafety] = useState<SafetyFlag[]>(settings.safety);
   const set = (patch: Partial<Profile>) => setP((d) => ({ ...d, ...patch }));
 
@@ -76,15 +77,24 @@ export default function Welcome() {
     if (index === steps.length - 1) finish();
     else setAt(steps[index + 1]);
   };
-  const back = () => (index > 0 ? setAt(steps[index - 1]) : redo && router.canGoBack() ? router.back() : undefined);
+  /** Skip the questions: no goal, just count reps. */
+  const [skipped, setSkipped] = useState(false);
+  const back = () => {
+    // Skipped straight to the camera: Back returns to the intro, and the questions count again.
+    if (skipped && at === 'access') {
+      setSkipped(false);
+      setAt(steps[0]);
+      return;
+    }
+    if (index > 0) setAt(steps[index - 1]);
+    else if (redo && router.canGoBack()) router.back();
+  };
 
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   useEffect(() => scroll.current?.scrollTo({ y: 0, animated: false }), [at]);
 
-  /** Skip the questions: no goal, just count reps. */
-  const [skipped, setSkipped] = useState(false);
   const finish = () => {
-    if (!skipped) setProfile(startProfile(p, redo ? saved : null));
+    if (!skipped) setProfile(startProfile(p, saved));
     // A heart condition or recent injury starts gently.
     const gentle = safety.includes('heart') || safety.includes('injury');
     const first = skipped ? settings.exercise : FOCUS[p.aim][0];
@@ -599,7 +609,7 @@ function PlanStep({ p, next, safety }: StepProps) {
 
   let head: ReactNode;
   let facts: ReactNode;
-  if (p.aim === 'lose-fat' && p.targetKg !== null && !noDiet) {
+  if (p.aim === 'lose-fat' && p.targetKg !== null && !noDiet && Number.isFinite(weightPlan(b, p.targetKg, p.pace).weeks)) {
     const plan = weightPlan(b, p.targetKg, p.pace, undefined, planWorkoutKcalPerDay(p));
     const lasting = eventualChangeKg(week / 7);
     head = (
@@ -636,7 +646,7 @@ function PlanStep({ p, next, safety }: StepProps) {
       <>
         <Label>Protein a day</Label>
         <Big value={`${fuel.proteinG} g`} label={`${fuel.proteinG} grams of protein a day`} />
-        <Strong size={17}>grams of protein, about {kcal(fuel.eatKcal)} kcal a day in all</Strong>
+        <Strong size={17}>{noDiet ? 'grams of protein a day, spread across meals' : `grams of protein, about ${kcal(fuel.eatKcal)} kcal a day in all`}</Strong>
       </>
     );
     facts = (
@@ -647,7 +657,9 @@ function PlanStep({ p, next, safety }: StepProps) {
           text={`Train it on ${p.daysPerWeek} days a week with a rest day after hard ones. Add a rep when every rep of the last set was clean.`}
         />
         <Body tone="muted" size={14}>
-          {`Muscle needs a little more food than you use (about ${kcal(fuel.eatKcal - maint)} kcal over) and protein spread across meals. 1.6 g per kg a day is where studies stop finding extra gains.`}
+          {noDiet
+            ? '1.6 g per kg a day is where studies stop finding extra gains.'
+            : `Muscle needs a little more food than you use (about ${kcal(fuel.eatKcal - maint)} kcal over) and protein spread across meals. 1.6 g per kg a day is where studies stop finding extra gains (Morton 2018).`}
         </Body>
         {workouts}
       </>

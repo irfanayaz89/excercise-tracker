@@ -235,7 +235,8 @@ export function weightPlan(b: Body, targetKg: number, pace: Pace, now = Date.now
   const maint = maintenance(b);
   const floor = Math.max(1200, bmr(b));
   const want = maint - (changeKg > 0 ? (pace * 7700) / 7 : 0);
-  const eat = Math.max(floor, want);
+  // Never above maintenance: a weight-loss plan must not ask anyone to eat more than they use.
+  const eat = Math.min(maint, Math.max(floor, want));
   // With the floor in place the real gap is smaller, so the plan takes longer.
   const dailyDeficit = Math.max(0, maint - eat);
   const dailyGap = dailyDeficit + 0.8 * Math.max(0, workoutKcalPerDay);
@@ -272,8 +273,8 @@ export function strengthFuel(b: Body): { eatKcal: number; proteinG: number } {
 export const kgToLb = (kg: number) => kg * 2.2046226;
 export const lbToKg = (lb: number) => lb / 2.2046226;
 export const cmToFtIn = (cm: number) => {
-  const inches = cm / 2.54;
-  const ft = Math.floor(inches / 12);
-  return { ft, inch: Math.round(inches - ft * 12) };
+  // Round the total first, so 182 cm reads 6 ft 0 in, never 5 ft 12 in.
+  const total = Math.round(cm / 2.54);
+  return { ft: Math.floor(total / 12), inch: total % 12 };
 };
 export const ftInToCm = (ft: number, inch: number) => (ft * 12 + inch) * 2.54;

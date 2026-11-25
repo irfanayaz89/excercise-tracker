@@ -50,7 +50,7 @@ export default function SettingsScreen() {
         </Pressable>
         <ChoiceRow
           label="Daily goal"
-          hint="Reps count push-ups and crunches; plank time counts both planks. Home shows how far you are."
+          hint="Reps count push-ups, pull-ups and crunches; plank time counts both planks. Home shows how far you are."
           value={s.dailyGoal}
           options={[
             ['none', 'None'],

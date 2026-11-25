@@ -37,11 +37,13 @@ const fmt = (n: number, d = 1) => (Math.round(n * 10 ** d) / 10 ** d).toString()
  * - Stay active: workout days this week, of the days planned.
  */
 export function goalProgress(p: Profile, rows: SessionRow[], now = Date.now()): GoalProgress {
-  if (p.aim === 'lose-fat' && p.targetKg !== null && p.startKg > p.targetKg) {
-    const total = p.startKg - p.targetKg;
+  if (p.aim === 'lose-fat' && p.targetKg !== null) {
+    // Never falls through to the weekly-days goal: a weight goal is met only at the target weight.
+    const total = Math.max(p.startKg, p.weightKg) - p.targetKg;
     const lost = Math.max(0, p.startKg - p.weightKg);
-    const fraction = Math.min(1, lost / total);
-    return { fraction, met: p.weightKg <= p.targetKg, value: fmt(lost), unit: 'kg lost', of: `of ${fmt(total)} kg` };
+    const met = p.weightKg <= p.targetKg;
+    const fraction = met ? 1 : total > 0 ? Math.min(1, lost / total) : 0;
+    return { fraction, met, value: fmt(lost), unit: 'kg lost', of: `of ${fmt(Math.max(0, total))} kg` };
   }
   if (p.aim === 'get-stronger' && p.repGoal) {
     const g = p.repGoal;
@@ -102,10 +104,15 @@ export function weekStreak(rows: SessionRow[], target: number, now = Date.now())
 }
 
 /** Days since the last saved set (null with no sets). */
+/** Calendar days since the last saved set (null with no sets): a set late yesterday evening is 1 day ago. */
 export function daysSinceLastSet(rows: SessionRow[], now = Date.now()): number | null {
   if (rows.length === 0) return null;
+  const day = (t: number) => {
+    const d = new Date(t);
+    return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  };
   const last = Math.max(...rows.map((r) => r.startedAt));
-  return Math.floor((now - last) / 86_400_000);
+  return Math.round((day(now) - day(last)) / 86_400_000);
 }
 
 /** The plan's workouts averaged over a day (net kcal), for the target date. */

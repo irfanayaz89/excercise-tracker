@@ -13,7 +13,7 @@ import { ProjectionCard } from '@/features/energy/Projection';
 import { dayMonth, kcal, kcalText, weight, WHY_LABELS } from '@/fitness/format';
 import { daysSinceLastSet, goalProgress, planWorkoutKcalPerDay, setsKcal, weekStreak } from '@/fitness/goal';
 import { formatDuration } from '@/session/copy';
-import { dailyTotals, listSessions, listSessionsSince, type SessionRow } from '@/storage/history';
+import { countSessions, dailyTotals, listSessions, listSessionsSince, type SessionRow } from '@/storage/history';
 import { bodyOf, LIMITS, useProfile, withWeighIn, type Profile } from '@/storage/profile';
 import { GOAL_TARGETS, useSettings } from '@/storage/settings';
 import { ExerciseGlyph } from '@/ui/Diagrams';
@@ -24,11 +24,14 @@ import { useTapGuard } from '@/ui/useTapGuard';
 
 const show = (e: Exercise, v: number) => (isTimed(e) ? formatDuration(v) : String(v));
 
-const startOfToday = () => {
+/** Local midnight `daysAgo` calendar days back (safe across clock changes). */
+const startOfDay = (daysAgo = 0) => {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - daysAgo);
   return d.getTime();
 };
+const startOfToday = () => startOfDay(0);
 
 /**
  * Home: the goal as a big filling number, today's work and what it burned,
@@ -45,12 +48,14 @@ export default function Home() {
   // Half a year of sets for the weekly streak.
   const [streakRows, setStreakRows] = useState<SessionRow[]>([]);
   const [filter, setFilter] = useState<Exercise | 'all'>('all');
+  const [totalSets, setTotalSets] = useState(0);
 
   const reload = useCallback(() => {
     setRows(listSessions());
+    setTotalSets(countSessions());
     // Totals need every set of the last 7 days, not just the latest 60.
-    setWeekRows(listSessionsSince(startOfToday() - 6 * 86_400_000));
-    setStreakRows(listSessions(5000, startOfToday() - 26 * 7 * 86_400_000));
+    setWeekRows(listSessionsSince(startOfDay(6)));
+    setStreakRows(listSessions(5000, startOfDay(26 * 7)));
     const g = profile?.repGoal;
     setGoalRows(profile && profile.aim === 'get-stronger' && g ? listSessions(2000, profile.startedAt, g.exercise) : []);
   }, [profile]);
@@ -82,7 +87,8 @@ export default function Home() {
   );
   // The first time a lasting goal is met: remember the day and celebrate once.
   useEffect(() => {
-    if (profile && progress?.met && profile.aim !== 'stay-active' && profile.goalMetAt === null) {
+    // Only lasting goals are celebrated once; weekly ones (stay active, less phone time) just say the week is done.
+    if (profile && progress?.met && (profile.aim === 'lose-fat' || profile.aim === 'get-stronger') && profile.goalMetAt === null) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setProfile({ ...profile, goalMetAt: Date.now() });
     }
@@ -90,8 +96,7 @@ export default function Home() {
 
   const body = profile ? { weightKg: profile.weightKg, heightCm: profile.heightCm, sex: profile.sex } : null;
   // 30/60-day outlook: from the user's own last two weeks when there are some, else the plan's 10-minute workout.
-  const DAY = 86_400_000;
-  const since14 = startOfToday() - 13 * DAY;
+  const since14 = startOfDay(13);
   const recent = streakRows.filter((r) => r.startedAt >= since14);
   const recentDays = new Set(recent.map((r) => new Date(r.startedAt).toDateString())).size;
   const perSession = body ? (recentDays >= 2 ? scaleKcal(setsKcal(recent, body), 1 / recentDays) : workoutKcal(body)) : null;
@@ -138,7 +143,7 @@ export default function Home() {
         <View style={styles.back}>
           <Label tone="vial">Welcome back</Label>
           <Body size={15}>
-            {`It's been ${away} days. Everything you did is still here: ${rows.length} sets saved. Start with an easy set; any set counts.`}
+            {`It's been ${away} days. Everything you did is still here: ${totalSets} sets saved. Start with an easy set; any set counts.`}
           </Body>
         </View>
       )}
@@ -206,7 +211,7 @@ export default function Home() {
         {profile && weekBurned.kcal >= 1 && (
           <View style={{ gap: space.xs }}>
             <Body size={15} tone="muted">
-              <Strong size={15} tone="chalk">{`${kcalText(weekBurned)} this week`}</Strong>
+              <Strong size={15} tone="chalk">{`${kcalText(weekBurned)} in the last 7 days`}</Strong>
               {`, about the energy in ${Math.max(1, Math.round(fatGrams(weekBurned.kcal)))} g of body fat.`}
             </Body>
             <CaloriesHow />
@@ -240,7 +245,7 @@ export default function Home() {
               <Pressable
                 key={e}
                 accessibilityRole="button"
-                accessibilityLabel={`${EXERCISES[e].label}. ${EXERCISES[e].tagline}. ${show(e, weekTotal(e))} this week.`}
+                accessibilityLabel={`${EXERCISES[e].label}. ${EXERCISES[e].tagline}. ${show(e, weekTotal(e))} in the last 7 days.`}
                 onPress={guard(() => router.push({ pathname: '/exercise/[id]', params: { id: e } }))}
                 style={({ pressed }) => [styles.card, last && styles.cardLast, pressed && { opacity: 0.85 }]}
               >
@@ -253,7 +258,7 @@ export default function Home() {
                 </View>
                 <View style={styles.cardFoot}>
                   <Mono size={12} tone="muted">
-                    This week
+                    Last 7 days
                   </Mono>
                   <Strong size={15}>{show(e, weekTotal(e))}</Strong>
                 </View>
@@ -325,7 +330,7 @@ function GoalBlock({
   const value = lose && imperial ? String(Math.round(kgToLb(Number(progress.value)))) : progress.value;
   const unit = lose && imperial ? progress.unit.replace('kg', 'lb') : progress.unit;
   const of = lose && imperial ? `of ${Math.round(kgToLb(p.startKg - p.targetKg!))} lb` : progress.of;
-  const reached = progress.met && p.aim !== 'stay-active';
+  const reached = progress.met && (p.aim === 'lose-fat' || p.aim === 'get-stronger');
 
   return (
     <View style={{ gap: space.md }}>
@@ -364,12 +369,13 @@ function GoalBlock({
           </Body>
           <Button label="Set a new goal" onPress={onEdit} style={{ marginTop: space.xs }} />
         </View>
-      ) : p.aim === 'stay-active' && progress.met ? (
+      ) : (p.aim === 'stay-active' || p.aim === 'less-screen') && progress.met ? (
         <Body tone="good">This week is done. Anything more is a bonus.</Body>
       ) : lose && startPlan && plan ? (
         <Body tone="muted">
-          {Number.isFinite(startPlan.by) ? `Planned for ${dayMonth(startPlan.by)}. ` : ''}
-          {`Eat about ${kcal(plan.eatKcal)} kcal a day.`}
+          {Number.isFinite(plan.weeks)
+            ? `${Number.isFinite(startPlan.by) ? `Planned for ${dayMonth(startPlan.by)}. ` : ''}Eat about ${kcal(plan.eatKcal)} kcal a day.`
+            : 'Eating less isn’t safe for your body right now: workouts and strength are the plan.'}
         </Body>
       ) : null}
 

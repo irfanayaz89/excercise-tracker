@@ -139,6 +139,17 @@ export function listSessions(limit = 60, since = 0, exercise?: Exercise): Sessio
   }
 }
 
+/** How many sets are saved in all. */
+export function countSessions(): number {
+  const d = getDb();
+  if (!d) return 0;
+  try {
+    return d.getFirstSync<{ n: number }>('SELECT COUNT(*) AS n FROM sessions')?.n ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Recent sets of one exercise, newest first. */
 export function listSessionsFor(exercise: Exercise, limit = 30): SessionRow[] {
   return listSessions(limit, 0, exercise);
