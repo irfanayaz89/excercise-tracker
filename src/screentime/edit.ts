@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Platform } from 'react-native';
 import { ScreenTime } from '../../modules/screen-time/src';
-import { MAX_APPS, requestChange, type ChangeResult, type RefusalReason } from './rules';
+import { coreOf, MAX_APPS, requestChange, type ChangeResult, type RefusalReason } from './rules';
 import { getScreenTime, saveRules } from './store';
 import { formatClock } from './summary';
 import { deviceZone } from './time';
@@ -13,9 +13,19 @@ import type { RulesCore, Selection } from './types';
  * to the phone's blocking when it applies or is scheduled.
  */
 export function changeRules(next: RulesCore, now = Date.now()): ChangeResult {
-  const res = requestChange(deviceZone, getScreenTime().rules, next, now);
+  const s = getScreenTime();
+  const res = requestChange(deviceZone, s.rules, next, now, s.focus);
   if (res.result !== 'refused') saveRules(res.rules);
   return res;
+}
+
+/**
+ * The rules a screen should edit from: a change already waiting to start is
+ * built on, not dropped (a second easing change used to replace the first).
+ */
+export function editBase(): RulesCore {
+  const r = getScreenTime().rules;
+  return r.pending ? r.pending.next : coreOf(r);
 }
 
 /** One line telling the user what happened to their change. */
@@ -34,6 +44,7 @@ const REFUSALS: Record<RefusalReason, string> = {
   'strict-running-lock': "Strict mode: a lock time that's running can't be shortened, skipped or switched off.",
   'strict-remove-apps': "Strict mode: apps can't be taken off the blocked list until the lock period ends.",
   'strict-off-early': 'Strict mode is on. End it early from the Strictness section.',
+  'focus-locked': 'A workout lock is on. Rules can only get stricter until it ends.',
   invalid: "That lock time can't be saved: check its days and times (at least 15 minutes).",
 };
 

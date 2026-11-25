@@ -1,7 +1,7 @@
 import { EXERCISE_IDS } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { activeOccurrence, addDays, lockLengthMin, nextMidnight, occurrences, parseHHMM, type Zone } from './time';
-import type { AppLimit, EarningRules, LockTime, PauseRules, Rate, RulesCore, ScreenTimeRules, Selection, Strictness } from './types';
+import type { AppLimit, EarningRules, Focus, LockTime, PauseRules, Rate, RulesCore, ScreenTimeRules, Selection, Strictness } from './types';
 
 /**
  * Apple monitors at most 20 schedules per app. Lock times use 2 each (start and end);
@@ -171,11 +171,15 @@ function earning(v: unknown): EarningRules {
         ? { per10s: num(x.per10s, 0, 10) ?? d.per10s }
         : { perCleanRep: num(x.perCleanRep, 0, 10) ?? d.perCleanRep, perFlaggedRep: num(x.perFlaggedRep, 0, 10) ?? d.perFlaggedRep };
   }
+  const capRaw = typeof o.dailyCapMin === 'number' && Number.isFinite(o.dailyCapMin) ? o.dailyCapMin : null;
+  // Older builds allowed up to 240: those are clamped to today's most; anything beyond that is junk.
+  const cap = capRaw === null || capRaw < 0 || capRaw > 240 ? DEFAULT_RULES.earning.dailyCapMin : Math.min(MAX_DAILY_CAP_MIN, Math.round(capRaw));
   return {
     enabled: o.enabled !== false,
     rates,
-    dailyCapMin: num(o.dailyCapMin, 0, MAX_DAILY_CAP_MIN) ?? DEFAULT_RULES.earning.dailyCapMin,
-    fullRateMin: num(o.fullRateMin, 0, MAX_DAILY_CAP_MIN) ?? DEFAULT_RULES.earning.fullRateMin,
+    // An older build allowed more: clamp to today's most rather than resetting to the default.
+    dailyCapMin: cap,
+    fullRateMin: Math.min(cap, num(o.fullRateMin, 0, MAX_DAILY_CAP_MIN) ?? Math.min(cap, DEFAULT_RULES.earning.fullRateMin)),
     milestoneMin: num(o.milestoneMin, 0, 10) ?? DEFAULT_RULES.earning.milestoneMin,
     setCapPe: num(o.setCapPe, 10, 100) ?? DEFAULT_RULES.earning.setCapPe,
     firstSetMin: num(o.firstSetMin, 0, 10) ?? DEFAULT_RULES.earning.firstSetMin,
@@ -377,7 +381,7 @@ export type ChangeResult =
   | { result: 'scheduled'; rules: ScreenTimeRules; effectiveAt: number }
   | { result: 'refused'; rules: ScreenTimeRules; reason: RefusalReason };
 
-export type RefusalReason = 'strict-running-lock' | 'strict-remove-apps' | 'strict-off-early' | 'invalid';
+export type RefusalReason = 'strict-running-lock' | 'strict-remove-apps' | 'strict-off-early' | 'focus-locked' | 'invalid';
 
 /** The core fields of full rules. */
 export function coreOf(r: ScreenTimeRules): RulesCore {
@@ -420,7 +424,7 @@ function touchesRunningLock(zone: Zone, prev: RulesCore, next: RulesCore, now: n
  *   time can't be shortened, skipped or switched off, Strict can't be turned
  *   off early (see `endStrictEarly`), and other loosening waits 24 hours.
  */
-export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore, now: number): ChangeResult {
+export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore, now: number, focus: Focus | null = null): ChangeResult {
   const next: RulesCore = core(nextIn as unknown as Record<string, unknown>);
   if (
     nextIn.lockTimes.some((l) => lockProblem(l) !== null) ||
@@ -438,6 +442,10 @@ export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore,
     const applied = expired ? { ...next, strictness: 'standard' as const } : next;
     const strictUntil = applied.strictness !== 'strict' ? null : strictActive(r, now) ? r.strictUntil : now + DEFAULT_STRICT_DAYS * DAY_MS;
     return { result: 'applied', rules: { ...r, ...applied, strictUntil, pending: null }, cancelledPending: r.pending !== null };
+  }
+  // A key lock or a Strict focus can't be loosened while it runs, in any mode: that's what makes it a lock.
+  if (focus && (focus.kind === 'key' || focus.strict) && focus.startedAt <= now && now < focus.until) {
+    return { result: 'refused', rules: r, reason: 'focus-locked' };
   }
   const mode = effectiveStrictness(r, now);
   if (mode === 'nudge') return { result: 'applied', rules: { ...r, ...next, strictUntil: null, pending: null }, cancelledPending: false };

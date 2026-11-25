@@ -165,12 +165,14 @@ export function getScreenTime(): ScreenTimeState {
   return (state ??= build(loadRules(), loadDays(), loadMeta(), [], loadFocus()));
 }
 
-function publish(next: ScreenTimeState) {
+function publish(next: ScreenTimeState, persist = true) {
   state = next;
-  write(RULES_KEY, next.rules);
-  write(DAYS_KEY, next.days);
-  write(META_KEY, next.meta);
-  write(FOCUS_KEY, next.focus);
+  if (persist) {
+    write(RULES_KEY, next.rules);
+    write(DAYS_KEY, next.days);
+    write(META_KEY, next.meta);
+    write(FOCUS_KEY, next.focus);
+  }
   listeners.forEach((l) => l(next));
 }
 
@@ -215,8 +217,14 @@ export function syncScreenTime(now = Date.now()): SyncResult {
     openScan = report?.openScan === true;
     if (report?.tokensExpired) meta.tokensExpired = true;
     if (meta.setUp) {
-      problems = ScreenTime.sync(JSON.stringify(toNativePlan(deviceZone, rules, today, now, focus)));
-      meta.lastSync = now;
+      // The phone's report was taken above: save it before sending the plan, so a failed send can't lose it.
+      publish(build(normalizeRules(rules), withToday(s.days, today), meta, s.problems, focus, now));
+      try {
+        problems = ScreenTime.sync(JSON.stringify(toNativePlan(deviceZone, rules, today, now, focus)));
+        meta.lastSync = now;
+      } catch (e) {
+        problems = [`Blocking couldn't be updated: ${e instanceof Error ? e.message : String(e)}`];
+      }
     }
   }
   rules = normalizeRules(rules);
@@ -332,7 +340,9 @@ export function creditSet(summary: SessionSummary, sessionId: string, demo: bool
   // Came back after a break: the last day with a set was two or more days ago.
   const today = rollDay(deviceZone, s.days[0] ?? null, now);
   const lastActive = s.days.find((d) => d.day !== today.day && d.grants.length > 0);
-  const cameBack = !!lastActive && (Date.parse(`${today.day}T12:00:00`) - Date.parse(`${lastActive.day}T12:00:00`)) / 86_400_000 >= 2;
+  // Calendar days between the two day keys (UTC dates, so clock changes can't shave an hour off).
+  const utcDay = (k: string) => Date.UTC(Number(k.slice(0, 4)), Number(k.slice(5, 7)) - 1, Number(k.slice(8, 10)));
+  const cameBack = !!lastActive && Math.round((utcDay(today.day) - utcDay(lastActive.day)) / 86_400_000) >= 2;
   const res = earnFromSet(deviceZone, s.rules, s.days[0] ?? today, { summary, sessionId, demo, cameBack }, now);
   if (res.reason === 'earned') {
     publish({ ...s, days: withToday(s.days, res.log) });
@@ -375,7 +385,8 @@ export function useScreenTimeTick(): ScreenTimeState {
   const s = useScreenTime();
   const refresh = useCallback(() => {
     const cur = getScreenTime();
-    publish(build(cur.rules, cur.days, cur.meta, cur.problems, cur.focus));
+    // Only the decision changes on a tick: nothing new to save to disk.
+    publish(build(cur.rules, cur.days, cur.meta, cur.problems, cur.focus), false);
   }, []);
   useEffect(() => {
     const wait = Math.max(1000, Math.min(60_000, s.decision.nextChange - Date.now() + 500));

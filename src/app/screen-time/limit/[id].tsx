@@ -2,8 +2,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { changeRules, countLabel, describeChange, pickApps, selectionProblem } from '@/screentime/edit';
-import { appLimitProblem, coreOf, EMPTY_SELECTION, MAX_APP_LIMITS } from '@/screentime/rules';
+import { changeRules, countLabel, describeChange, editBase, pickApps, selectionProblem } from '@/screentime/edit';
+import { appLimitProblem, EMPTY_SELECTION, MAX_APP_LIMITS } from '@/screentime/rules';
 import { getScreenTime } from '@/screentime/store';
 import type { AppLimit } from '@/screentime/types';
 import { Body, Button, Chip, Display, Label } from '@/ui/primitives';
@@ -51,7 +51,7 @@ export default function AppLimitEditor() {
   const problem = appLimitProblem(limit);
 
   const commit = (appLimits: AppLimit[]) => {
-    const res = changeRules({ ...coreOf(getScreenTime().rules), appLimits });
+    const res = changeRules({ ...editBase(), appLimits });
     if (res.result === 'applied') router.back();
     else setMessage(describeChange(res));
   };

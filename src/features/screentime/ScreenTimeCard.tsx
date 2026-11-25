@@ -33,7 +33,8 @@ export function ScreenTimeCard({ guard }: { guard: (fn: () => void) => () => voi
 
   const d = st.decision;
   const now = st.now;
-  const lost = st.meta.permissionLost || st.availability === 'needs-permission';
+  // A build that can't block (no Screen Time in it) is as good as access being off.
+  const lost = st.meta.permissionLost || st.availability === 'needs-permission' || (st.meta.setUp && st.availability === 'unsupported');
   const limit = st.rules.dailyLimitMin;
   const next = nextLock(deviceZone, st.rules, now);
   const status = lost

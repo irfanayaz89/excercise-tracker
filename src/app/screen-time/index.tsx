@@ -12,7 +12,7 @@ import {
   PauseSection,
   UsageSection,
 } from '@/features/screentime/ScreenTimeExtras';
-import { changeRules, countLabel, describeChange, pickApps, selectionProblem } from '@/screentime/edit';
+import { changeRules, countLabel, describeChange, editBase, pickApps, selectionProblem } from '@/screentime/edit';
 import {
   cancelPending,
   coreOf,
@@ -83,8 +83,9 @@ export default function ScreenTimeScreen() {
     setMessage(m);
     // A change that waits or is refused is shown where the user is, not only in the note at the top.
     if (m && res.result !== 'applied') Alert.alert(res.result === 'refused' ? 'Can’t change that now' : 'Starts later', m);
+    return res;
   }, []);
-  const change = useCallback((patch: Partial<RulesCore>) => apply(changeRules({ ...coreOf(getScreenTime().rules), ...patch })), [apply]);
+  const change = useCallback((patch: Partial<RulesCore>) => apply(changeRules({ ...editBase(), ...patch })), [apply]);
 
   // Clear the note when leaving, not when coming back: on Android the app picker is its own screen,
   // and the answer to a pick ("Strict mode: apps can't be taken off…") arrives as this one returns.
@@ -103,11 +104,20 @@ export default function ScreenTimeScreen() {
   const limit = rules.dailyLimitMin;
   const pendingAt = rules.pending?.effectiveAt ?? null;
   const lost = st.meta.permissionLost || st.availability === 'needs-permission';
+  const unsupported = st.meta.setUp && st.availability === 'unsupported';
 
   return (
     <Page insets={insets}>
       <Header />
 
+      {unsupported && (
+        <View style={styles.alert}>
+          <Strong tone="fault">This version of Trueline can&apos;t block apps</Strong>
+          <Body tone="fault" size={14}>
+            Your rules are saved, but nothing is blocked on this phone until a version with Screen Time is installed.
+          </Body>
+        </View>
+      )}
       {lost && (
         <Pressable accessibilityRole="button" onPress={guard(() => router.push('/screen-time/setup'))} style={styles.alert}>
           <Strong tone="fault">Screen Time access is off</Strong>
@@ -125,10 +135,8 @@ export default function ScreenTimeScreen() {
             label="Pick blocked apps"
             onPress={guard(async () => {
               const picked = await pickApps('Blocked apps', getScreenTime().rules.blocked);
-              if (picked) {
-                change({ blocked: picked });
-                clearTokensExpired();
-              }
+              // Only when the new lists are really in use: a refused or waiting change leaves the warning up.
+              if (picked && change({ blocked: picked }).result === 'applied') clearTokensExpired();
             })}
           />
         </View>
@@ -233,10 +241,7 @@ export default function ScreenTimeScreen() {
             if (!picked) return;
             const bad = selectionProblem(picked);
             if (bad) setMessage(bad);
-            else {
-              change({ blocked: picked });
-              clearTokensExpired();
-            }
+            else if (change({ blocked: picked }).result === 'applied') clearTokensExpired();
           })}
         />
         <LinkRow
@@ -306,9 +311,9 @@ export default function ScreenTimeScreen() {
             )}
             <Switch
               value={l.enabled}
-              onValueChange={(v) =>
-                change({ lockTimes: getScreenTime().rules.lockTimes.map((x) => (x.id === l.id ? { ...x, enabled: v } : x)) })
-              }
+              onValueChange={(v) => {
+                change({ lockTimes: editBase().lockTimes.map((x) => (x.id === l.id ? { ...x, enabled: v } : x)) });
+              }}
               trackColor={{ false: color.raised, true: color.vial }}
               thumbColor={l.enabled ? color.vialInk : color.chalk2}
               accessibilityLabel={`${l.name} on`}
@@ -401,7 +406,9 @@ function EarningSection({ st, change }: { st: ScreenTimeState; change: (p: Parti
         </View>
         <Switch
           value={e.enabled}
-          onValueChange={(v) => change({ earning: { ...e, enabled: v } })}
+          onValueChange={(v) => {
+            change({ earning: { ...editBase().earning, enabled: v } });
+          }}
           trackColor={{ false: color.raised, true: color.vial }}
           thumbColor={e.enabled ? color.vialInk : color.chalk2}
           accessibilityLabel="Earn time with exercise"
@@ -427,7 +434,7 @@ function EarningSection({ st, change }: { st: ScreenTimeState; change: (p: Parti
           <Strong size={14}>Most you can earn a day</Strong>
           <View style={styles.chips}>
             {CAPS.map((c) => (
-              <Chip key={c} label={formatMin(c)} selected={e.dailyCapMin === c} onPress={() => change({ earning: { ...e, dailyCapMin: c } })} />
+              <Chip key={c} label={formatMin(c)} selected={e.dailyCapMin === c} onPress={() => change({ earning: { ...editBase().earning, dailyCapMin: c, fullRateMin: Math.min(editBase().earning.fullRateMin, c) } })} />
             ))}
           </View>
         </View>
@@ -456,7 +463,9 @@ function StrictnessSection({
   const askedAt = r.pending?.next.strictness === 'standard' && strictOn ? r.pending.effectiveAt - STRICT_WAIT_MS : null;
   const pushups = useMemo(
     () => (askedAt === null ? 0 : listSessionsSince(askedAt).reduce((n, s) => n + (s.exercise === 'pushup' ? s.cleanReps : 0), 0)),
-    [askedAt],
+    // Recounted as time passes and on return to this screen (sets are done on another one).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [askedAt, now],
   );
   // Strict can't be undone with a tap, so starting it is always a deliberate choice.
   const confirmStrict = () => {

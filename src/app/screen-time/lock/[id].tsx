@@ -2,8 +2,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { changeRules, countLabel, describeChange, pickApps, selectionProblem } from '@/screentime/edit';
-import { coreOf, describeLock, EMPTY_SELECTION, LOCK_PRESETS, lockProblem, MAX_LOCK_TIMES } from '@/screentime/rules';
+import { changeRules, countLabel, describeChange, editBase, pickApps, selectionProblem } from '@/screentime/edit';
+import { describeLock, EMPTY_SELECTION, LOCK_PRESETS, lockProblem, MAX_LOCK_TIMES } from '@/screentime/rules';
 import { getScreenTime } from '@/screentime/store';
 import { lockLengthMin, parseHHMM } from '@/screentime/time';
 import { formatMin } from '@/screentime/summary';
@@ -46,14 +46,13 @@ export default function LockEditor() {
     const rules = getScreenTime().rules;
     if (isNew && rules.lockTimes.length >= MAX_LOCK_TIMES) return setMessage(`Up to ${MAX_LOCK_TIMES} lock times.`);
     const lockTimes = isNew ? [...rules.lockTimes, lock] : rules.lockTimes.map((l) => (l.id === lock.id ? lock : l));
-    const res = changeRules({ ...coreOf(rules), lockTimes });
+    const res = changeRules({ ...editBase(), lockTimes });
     if (res.result === 'applied') router.back();
     else setMessage(describeChange(res));
   };
 
   const remove = () => {
-    const rules = getScreenTime().rules;
-    const res = changeRules({ ...coreOf(rules), lockTimes: rules.lockTimes.filter((l) => l.id !== lock.id) });
+    const res = changeRules({ ...editBase(), lockTimes: editBase().lockTimes.filter((l) => l.id !== lock.id) });
     if (res.result === 'applied') router.back();
     else setMessage(describeChange(res));
   };

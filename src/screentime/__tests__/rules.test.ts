@@ -67,6 +67,14 @@ describe('loading rules', () => {
     expect(r.strictUntil).toBeNull();
   });
 
+  it('a daily earning most from an older build (up to 240) is clamped to 120, and half rate never starts above it', () => {
+    const r = normalizeRules({ earning: { dailyCapMin: 240, fullRateMin: 60 } });
+    expect(r.earning.dailyCapMin).toBe(120);
+    expect(r.earning.fullRateMin).toBe(60);
+    expect(normalizeRules({ earning: { dailyCapMin: 60, fullRateMin: 100 } }).earning.fullRateMin).toBe(60);
+    expect(normalizeRules({ earning: { dailyCapMin: 30 } }).earning.fullRateMin).toBe(30);
+  });
+
   it('caps lock times and apps at the platform limits', () => {
     const r = normalizeRules({
       blocked: { apps: Array.from({ length: 80 }, (_, i) => `app${i}`) },

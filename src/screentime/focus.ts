@@ -87,6 +87,8 @@ export function endFocus(f: Focus | null, reason: EndReason, now: number): EndRe
   // Scanning the key ends anything, even in Strict: that's what the key is for.
   if (reason === 'key') return record('ended');
   if (reason === 'completed') return f.kind === 'set' ? record('completed') : { ended: false, focus: f, why: 'timed' };
+  // Backing out of a set only ends a "for this set" focus; a timed or key one keeps going.
+  if (reason === 'abandoned' && f.kind !== 'set') return { ended: false, focus: f, why: 'timed' };
   if (f.strict) return { ended: false, focus: f, why: 'strict' };
   return record(reason === 'abandoned' ? 'abandoned' : 'ended');
 }

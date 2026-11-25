@@ -83,15 +83,19 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
     reason = 'focus';
     usingEarned = false;
   }
-  if (unlock) {
+  // A key lock or Strict focus can't be opened by an unlock: only the key (or its end) lifts it.
+  const lockedFocus = !!focus && (focus.kind === 'key' || focus.strict);
+  if (unlock && !lockedFocus) {
     reason = null;
     usingEarned = false;
   }
   const blocking = reason === 'lock' ? (hardLock.length ? hardLock : softLock) : [];
   const last = blocking.reduce<ActiveLock | null>((a, b) => (!a || b.end > a.end ? b : a), null);
 
-  const emergenciesUsed = log.unlocks.filter((u) => u.kind === 'emergency').length;
-  const oneMoresUsed = log.unlocks.filter((u) => u.kind === 'one-more').length;
+  // An unlock taken late yesterday that runs past midnight doesn't use up today's.
+  const takenToday = log.unlocks.filter((u) => dayKey(zone.local(u.from)) === log.day);
+  const emergenciesUsed = takenToday.filter((u) => u.kind === 'emergency').length;
+  const oneMoresUsed = takenToday.filter((u) => u.kind === 'one-more').length;
   const capLeft = Math.max(0, rules.earning.dailyCapMin - log.earnedMin);
   const canEarn = reason !== null && reason !== 'focus' && rules.earning.enabled && capLeft > 0 && (reason === 'limit' || blocking.every((a) => a.lock.earnable));
 
@@ -132,11 +136,11 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
     unlockedUntil: unlock ? unlock.until : null,
     canEarn,
     emergency: {
-      available: blockedAny && mode === 'standard' && emergenciesUsed < EMERGENCIES_PER_DAY,
+      available: blockedAny && !lockedFocus && mode === 'standard' && emergenciesUsed < EMERGENCIES_PER_DAY,
       minutes: EMERGENCY_MIN,
     },
     oneMore: {
-      available: blockedAny && mode === 'nudge' && oneMoresUsed < ONE_MORE_PER_DAY,
+      available: blockedAny && !lockedFocus && mode === 'nudge' && oneMoresUsed < ONE_MORE_PER_DAY,
       left: Math.max(0, ONE_MORE_PER_DAY - oneMoresUsed),
     },
     ownLocks,
