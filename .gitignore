@@ -49,3 +49,6 @@ modules/*/android/build/
 modules/*/android/.cxx/
 modules/*/android/.gradle/
 modules/*/ios/build/
+
+# Claude Code skills (local tools, not app code)
+.claude/skills/
