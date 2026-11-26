@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -155,8 +155,10 @@ export default function SummaryScreen() {
           guided={guided}
           easy={level === 'easy'}
           exercise={s.exercise ?? 'plank'}
+          best={
+            saved && savedId && !demo ? <PersonalBest exercise={s.exercise ?? 'plank'} id={savedId} value={s.hold?.goodMs ?? 0} /> : null
+          }
         />
-        {saved && savedId && !demo && <PersonalBest exercise={s.exercise ?? 'plank'} id={savedId} value={s.hold?.goodMs ?? 0} />}
         <View style={{ gap: space.md }}>
           {fresh && <RestTimer />}
           <Button label={`Another ${EXERCISES[s.exercise ?? 'plank'].label.toLowerCase()}`} size="lg" onPress={guard(another)} />
@@ -202,6 +204,7 @@ export default function SummaryScreen() {
             </Body>
           </View>
           {!counted && <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />}
+          <Mono tone="muted">{`${s.cleanReps} clean${flagged ? ` · ${flagged} flagged` : ''}`}</Mono>
           {counted && (
             <Mono tone="muted">{`Count fixed by hand${cameraCount !== null ? ` (the camera counted ${cameraCount})` : ''}.`}</Mono>
           )}
@@ -228,16 +231,6 @@ export default function SummaryScreen() {
         !saved && s.totalReps > 0 && <Mono tone="cue">This set could not be saved to history.</Mono>
       )}
 
-      <View style={styles.stats}>
-        <Stat size="lg" style={styles.stat} label="Clean" value={String(s.cleanReps)} tone="good" />
-        <Stat size="lg" style={styles.stat} label="Flagged" value={String(flagged)} tone={flagged ? 'cue' : 'chalk'} />
-        {!counted && <Stat size="lg" style={styles.stat} label="Best streak" value={String(s.bestCleanStreak)} />}
-        {/* The camera's rep times no longer describe a count fixed by hand (like the streak and tempo). */}
-        {!counted && <Stat size="lg" style={styles.stat} label="Avg rep" value={s.avgRepMs ? `${(s.avgRepMs / 1000).toFixed(1)}s` : '—'} />}
-      </View>
-
-      {!counted && s.reps.length > 1 && <TempoChart reps={s.reps} />}
-
       {guided && s.totalReps > 0 && level === 'easy' && (
         <View style={styles.tip}>
           <Label tone="vial">Next time</Label>
@@ -250,56 +243,75 @@ export default function SummaryScreen() {
         <NextTime faults={faults} misses={misses} cleanShare={s.cleanReps / s.totalReps} exercise={ex} />
       )}
 
-      {faults.length > 0 && (
-        <View style={{ gap: space.md }}>
-          <Label>Form to work on</Label>
-          <View style={styles.list}>
-            {faults.map(([f, n], i) => (
-              <View key={f}>
-                {i > 0 && <Rule />}
-                <View style={styles.item}>
-                  <Display size={type.displayM} tone={HINT_FAULTS.includes(f) ? 'muted' : 'cue'} style={{ minWidth: 40 }}>
-                    {n}
-                  </Display>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{faultCopy(f, ex)?.short ?? f}</Strong>
-                    {guided && (
-                      <Body tone="muted" size={type.note}>
-                        {faultCopy(f, ex)?.detail}
-                      </Body>
-                    )}
-                  </View>
-                </View>
-              </View>
-            ))}
+      {/* The camera's detail for anyone who wants it: one tap, not the first thing after a set. */}
+      {s.totalReps > 0 && (
+        <Details label="Rep details">
+          <View style={styles.stats}>
+            <Stat size="lg" style={styles.stat} label="Clean" value={String(s.cleanReps)} tone="good" />
+            <Stat size="lg" style={styles.stat} label="Flagged" value={String(flagged)} tone={flagged ? 'cue' : 'chalk'} />
+            {!counted && <Stat size="lg" style={styles.stat} label="Best streak" value={String(s.bestCleanStreak)} />}
+            {/* The camera's rep times no longer describe a count fixed by hand (like the streak and tempo). */}
+            {!counted && (
+              <Stat size="lg" style={styles.stat} label="Avg rep" value={s.avgRepMs ? `${(s.avgRepMs / 1000).toFixed(1)}s` : '—'} />
+            )}
           </View>
-        </View>
-      )}
+          {!counted && s.reps.length > 1 && <TempoChart reps={s.reps} />}
+          {faults.length > 0 && (
+            <View style={{ gap: space.md }}>
+              <Label>Form to work on</Label>
+              <View style={styles.list}>
+                {faults.map(([f, n], i) => (
+                  <View key={f}>
+                    {i > 0 && <Rule />}
+                    <View style={styles.item}>
+                      <Display size={type.displayM} tone={HINT_FAULTS.includes(f) ? 'muted' : 'cue'} style={{ minWidth: 40 }}>
+                        {n}
+                      </Display>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Strong>{faultCopy(f, ex)?.short ?? f}</Strong>
+                        {guided && (
+                          <Body tone="muted" size={type.note}>
+                            {faultCopy(f, ex)?.detail}
+                          </Body>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
-      {misses.length > 0 && (
-        <View style={{ gap: space.md }}>
-          <Label>{`Not counted · ${missTotal}`}</Label>
-          <View style={styles.list}>
-            {misses.map(([m, n], i) => (
-              <View key={m}>
-                {i > 0 && <Rule />}
-                <View style={styles.item}>
-                  <Display size={type.displayM} tone="muted" style={{ minWidth: 40 }}>
-                    {n}
-                  </Display>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{missCopy(m, ex)?.short ?? m}</Strong>
-                    {guided && (
-                      <Body tone="muted" size={type.note}>
-                        {missCopy(m, ex)?.detail}
-                      </Body>
-                    )}
+          {misses.length > 0 && (
+            <View style={{ gap: space.md }}>
+              <Label>{`Not counted · ${missTotal}`}</Label>
+              <View style={styles.list}>
+                {misses.map(([m, n], i) => (
+                  <View key={m}>
+                    {i > 0 && <Rule />}
+                    <View style={styles.item}>
+                      <Display size={type.displayM} tone="muted" style={{ minWidth: 40 }}>
+                        {n}
+                      </Display>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Strong>{missCopy(m, ex)?.short ?? m}</Strong>
+                        {guided && (
+                          <Body tone="muted" size={type.note}>
+                            {missCopy(m, ex)?.detail}
+                          </Body>
+                        )}
+                      </View>
+                    </View>
                   </View>
-                </View>
+                ))}
               </View>
-            ))}
-          </View>
-        </View>
+            </View>
+          )}
+        </Details>
+      )}
+      {/* No reps: why, on its own (there is nothing to detail). */}
+      {s.totalReps === 0 && misses.length > 0 && (
+        <Mono tone="muted">{`${missTotal} ${missTotal === 1 ? 'rep was' : 'reps were'} seen but not counted.`}</Mono>
       )}
 
       <View style={{ gap: space.md }}>
@@ -322,8 +334,11 @@ function PlankResult({
   guided,
   easy,
   exercise,
+  best,
 }: {
   exercise: Exercise;
+  /** The personal-best card, right under the result as on rep sets. */
+  best?: ReactNode;
   hold: HoldSummary | undefined;
   /** Side plank: each side's hold; null for a regular plank. */
   sides: SessionSummary['holdSides'] | null;
@@ -371,6 +386,7 @@ function PlankResult({
         <SetCalories exercise={exercise} activeMs={hold.totalMs} holdMs={hold.goodMs} reps={0} />
       </View>
 
+      {best}
       {sides && <SideBalance sides={sides} />}
 
       {note && <Mono tone="vial">{note}</Mono>}
@@ -380,13 +396,6 @@ function PlankResult({
         !saved && <Mono tone="cue">This plank could not be saved to history.</Mono>
       )}
 
-      <View style={styles.stats}>
-        <Stat size="lg" style={styles.stat} label="Good form" value={`${pct}%`} tone={pct >= 90 ? 'good' : pct >= 70 ? 'chalk' : 'cue'} />
-        <Stat size="lg" style={styles.stat} label="Longest hold" value={formatDuration(hold.longestMs)} />
-        <Stat size="lg" style={styles.stat} label="Breaks" value={String(hold.breaks)} tone={hold.breaks ? 'cue' : 'chalk'} />
-        <Stat size="lg" style={styles.stat} label="Plank" value={hold.variant === 'forearm' ? 'Forearm' : 'High'} />
-      </View>
-
       {guided && (
         <View style={styles.tip}>
           <Label tone="vial">Next time</Label>
@@ -394,50 +403,77 @@ function PlankResult({
         </View>
       )}
 
-      {(faults.length > 0 || hold.headDownMs >= 3000) && (
-        <View style={{ gap: space.md }}>
-          <Label>Time out of form</Label>
-          <View style={styles.list}>
-            {faults.map(([f, ms], i) => (
-              <View key={f}>
-                {i > 0 && <Rule />}
-                <View style={styles.item}>
-                  <Display size={type.displayM} tone="cue" style={{ minWidth: 64 }}>
-                    {formatDuration(ms)}
-                  </Display>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{HOLD_COPY[f].short}</Strong>
-                    {guided && (
-                      <Body tone="muted" size={type.note}>
-                        {HOLD_COPY[f].detail}
-                      </Body>
-                    )}
-                  </View>
-                </View>
-              </View>
-            ))}
-            {hold.headDownMs >= 3000 && (
-              <View>
-                {faults.length > 0 && <Rule />}
-                <View style={styles.item}>
-                  <Display size={type.displayM} tone="muted" style={{ minWidth: 64 }}>
-                    {formatDuration(hold.headDownMs)}
-                  </Display>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{FAULT_COPY['head-dropping'].short}</Strong>
-                    {guided && (
-                      <Body tone="muted" size={type.note}>
-                        {FAULT_COPY['head-dropping'].detail} This is a tip; it does not stop the clock.
-                      </Body>
-                    )}
-                  </View>
-                </View>
-              </View>
-            )}
-          </View>
+      <Details label="Hold details">
+        <View style={styles.stats}>
+          <Stat size="lg" style={styles.stat} label="Good form" value={`${pct}%`} tone={pct >= 90 ? 'good' : pct >= 70 ? 'chalk' : 'cue'} />
+          <Stat size="lg" style={styles.stat} label="Longest hold" value={formatDuration(hold.longestMs)} />
+          <Stat size="lg" style={styles.stat} label="Breaks" value={String(hold.breaks)} tone={hold.breaks ? 'cue' : 'chalk'} />
+          <Stat size="lg" style={styles.stat} label="Plank" value={hold.variant === 'forearm' ? 'Forearm' : 'High'} />
         </View>
-      )}
+        {(faults.length > 0 || hold.headDownMs >= 3000) && (
+          <View style={{ gap: space.md }}>
+            <Label>Time out of form</Label>
+            <View style={styles.list}>
+              {faults.map(([f, ms], i) => (
+                <View key={f}>
+                  {i > 0 && <Rule />}
+                  <View style={styles.item}>
+                    <Display size={type.displayM} tone="cue" style={{ minWidth: 64 }}>
+                      {formatDuration(ms)}
+                    </Display>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Strong>{HOLD_COPY[f].short}</Strong>
+                      {guided && (
+                        <Body tone="muted" size={type.note}>
+                          {HOLD_COPY[f].detail}
+                        </Body>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              ))}
+              {hold.headDownMs >= 3000 && (
+                <View>
+                  {faults.length > 0 && <Rule />}
+                  <View style={styles.item}>
+                    <Display size={type.displayM} tone="muted" style={{ minWidth: 64 }}>
+                      {formatDuration(hold.headDownMs)}
+                    </Display>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Strong>{FAULT_COPY['head-dropping'].short}</Strong>
+                      {guided && (
+                        <Body tone="muted" size={type.note}>
+                          {FAULT_COPY['head-dropping'].detail} This is a tip; it does not stop the clock.
+                        </Body>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+      </Details>
     </>
+  );
+}
+
+/** Closed by default: the numbers and charts behind the result, for anyone who wants them. */
+function Details({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ gap: space.lg }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((o) => !o)}
+        hitSlop={8}
+        style={{ alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
+      >
+        <Label tone="vial">{open ? `Hide ${label.toLowerCase()}` : `${label} ›`}</Label>
+      </Pressable>
+      {open && children}
+    </View>
   );
 }
 
