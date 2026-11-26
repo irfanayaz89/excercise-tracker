@@ -103,13 +103,17 @@ class BootReceiver : BroadcastReceiver() {
 
     /** Android didn't let blocking start from the background: opening Trueline starts it again. */
     fun alertStopped(ctx: Context) {
+      // Once per stop, not once per watchdog run: cleared when the service starts again.
+      val prefs = STCore.prefs(ctx)
+      if (prefs.getBoolean("alertedStop", false)) return
       val open = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName) ?: return
+      prefs.edit().putBoolean("alertedStop", true).apply()
       val pi = PendingIntent.getActivity(ctx, 9, open, PendingIntent.FLAG_IMMUTABLE)
       alert(ctx, "Blocking stopped", "Android stopped Trueline's blocking. Tap to resume it.", pi)
     }
 
     fun clearAlert(ctx: Context) {
-      STCore.prefs(ctx).edit().remove("alerted").apply()
+      STCore.prefs(ctx).edit().remove("alerted").remove("alertedStop").apply()
       runCatching { ctx.getSystemService(NotificationManager::class.java).cancel(ALERT_ID) }
     }
 

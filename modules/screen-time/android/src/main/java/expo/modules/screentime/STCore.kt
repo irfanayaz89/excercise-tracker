@@ -158,6 +158,8 @@ object STCore {
     val day: String,
     val dailyLimitMin: Int?,
     val limitReached: Boolean,
+    /** Minutes of the daily limit the app had counted on `day` (a floor for today's used time). */
+    val usedMin: Int = 0,
     val earningEnabled: Boolean,
     val earnedLeftMin: Int,
     val earnCapLeftMin: Int,
@@ -242,6 +244,7 @@ object STCore {
       day = o.optString("day"),
       dailyLimitMin = if (o.isNull("dailyLimitMin")) null else o.optInt("dailyLimitMin"),
       limitReached = o.optBoolean("limitReached"),
+      usedMin = o.optInt("usedMin"),
       earningEnabled = o.optBoolean("earningEnabled"),
       earnedLeftMin = o.optInt("earnedLeftMin"),
       earnCapLeftMin = o.optInt("earnCapLeftMin"),
@@ -361,12 +364,13 @@ object STCore {
       }
     }
     val today = dayKey(now)
-    if (today > s.day) {
-      // A new day: usage and earned time start over (unlocks and an "earn" tap wait for the app).
-      // Only a later day counts: if the clock is moved back, the day already used up stays used up.
-      return State(day = today, unlocks = s.unlocks, openEarn = s.openEarn, gaps = s.gaps, passes = s.passes)
-    }
-    return s
+    // Another day: usage and earned time start over (unlocks and an "earn" tap wait for the app).
+    // Either direction: "now" is trusted (a moved clock doesn't change it), so an earlier day means a
+    // time zone change (flying west across midnight), and a day key in the future must not stick.
+    val out = if (today != s.day) State(day = today, unlocks = s.unlocks, openEarn = s.openEarn, gaps = s.gaps, passes = s.passes) else s
+    // The app's own count for today is a floor, so the phone catches up with it.
+    plan(ctx)?.takeIf { it.day == today }?.let { out.usedSec = maxOf(out.usedSec, it.usedMin * 60L) }
+    return out
   }
 
   /** Call while holding the lock (inside `edit` or `locked`). */
@@ -463,6 +467,8 @@ object STCore {
     val oneMore: Boolean = false,
     /** Own-app lock times blocking now (their own lists). */
     val ownBlocked: List<Lock> = emptyList(),
+    /** Earnable lock times that earned time is opening now: using their apps spends it. */
+    val earnedOpen: List<Lock> = emptyList(),
     /** An emergency unlock or "1 more minute" is running until then. */
     val unlockedUntil: Long? = null,
     /** The block covers every app except the always-allowed ones. */
@@ -522,10 +528,12 @@ object STCore {
     val blocking = if (reason == "lock") (if (hard.isNotEmpty()) hard else soft) else emptyList()
     val last = blocking.maxByOrNull { it.second.second }
     val ownBlocked = running.filter { it.first.apps != null && !unlocked && !(it.first.earnable && earnedLeftSec > 0) }.map { it.first }
+    val earnedOpen = (if (usingEarned) soft.map { it.first } else emptyList()) +
+      running.filter { it.first.apps != null && it.first.earnable && earnedLeftSec > 0 && !unlocked }.map { it.first }
     val blocked = reason != null
-    // The plan's "left" counts are for the day it was made. On a later day the app hasn't seen yet,
+    // The plan's "left" counts are for the day it was made. On another day the app hasn't seen yet,
     // the allowance starts again, and only unlocks taken today count against it.
-    val newDay = today > p.day
+    val newDay = !planToday
     val earnCapLeft = if (newDay) p.earnCapMin else p.earnCapLeftMin
     val canEarn = blocked && reason != "focus" && p.earningEnabled && earnCapLeft > 0 && (reason == "limit" || blocking.all { it.first.earnable })
     val blockAll = if (reason == "focus") p.focusAll else reason == "lock" && blocking.any { it.first.allApps }
@@ -555,6 +563,7 @@ object STCore {
       emergency = any && !lockedFocus && mode == "standard" && emergenciesLeft - usedEmergencies > 0,
       oneMore = any && !lockedFocus && mode == "nudge" && oneMoresLeft - usedOneMores > 0,
       ownBlocked = ownBlocked,
+      earnedOpen = earnedOpen,
       unlockedUntil = unlockedUntil,
       blockAll = blockAll,
       limitBlocked = limitBlocked,
@@ -570,7 +579,7 @@ object STCore {
    * launcher, and not one the phone needs (home screen, phone, messages, settings, keyboard).
    */
   fun blocks(p: Plan, s: Status, pkg: String, category: String, self: String, everyday: (String) -> Boolean): Boolean {
-    if (pkg == self || pkg in p.allowed.apps) return false
+    if (pkg == self || p.allowed.contains(pkg, category)) return false
     if (s.blocked && (p.blocked.contains(pkg, category) || (s.blockAll && everyday(pkg)))) return true
     if (s.limitBlocked.any { it.first.apps.contains(pkg, category) }) return true
     return s.ownBlocked.any { it.apps?.contains(pkg, category) == true }
@@ -583,7 +592,7 @@ object STCore {
   /** Should this app show the pause screen first? (Outside blocks, for the main list, without a pass.) */
   fun pauses(p: Plan, s: Status, st: State, pkg: String, category: String, self: String, now: Long): Boolean {
     // An emergency unlock or "1 more minute" opens the apps straight away: no pause either.
-    if (!p.pause.enabled || s.blocked || s.unlockedUntil != null || pkg == self || pkg in p.allowed.apps) return false
+    if (!p.pause.enabled || s.blocked || s.unlockedUntil != null || pkg == self || p.allowed.contains(pkg, category)) return false
     if (!p.blocked.contains(pkg, category)) return false
     return (st.passes[pkg] ?: 0L) <= now
   }
@@ -593,7 +602,18 @@ object STCore {
 
   /** Counts against the daily limit (the main blocked list, minus allowed apps). */
   fun counts(p: Plan, pkg: String, category: String, self: String) =
-    pkg != self && pkg !in p.allowed.apps && p.blocked.contains(pkg, category)
+    pkg != self && !p.allowed.contains(pkg, category) && p.blocked.contains(pkg, category)
+
+  /**
+   * Is this app open only because earned time opens a lock time (or the used-up limit), so its time
+   * spends earned time? The main list while `usingEarned`; an earnable own-list lock's apps; and for
+   * an "Everything" lock, every app it would block (`everyday`, minus what the service never covers).
+   */
+  fun spendsEarned(p: Plan, s: Status, pkg: String, category: String, self: String, everyday: (String) -> Boolean): Boolean {
+    if (pkg == self || p.allowed.contains(pkg, category)) return false
+    if (s.usingEarned && p.blocked.contains(pkg, category)) return true
+    return s.earnedOpen.any { l -> l.apps?.contains(pkg, category) ?: (l.allApps && everyday(pkg)) }
+  }
 
   // ── Was blocking stopped? (research guide, Appendix A F5) ─────────────────
 

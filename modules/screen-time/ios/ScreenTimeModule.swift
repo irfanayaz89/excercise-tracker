@@ -88,7 +88,8 @@ public class ScreenTimeModule: Module {
       Self.noteNotifications()
       // All of it under the cross-process lock, so a monitor callback in between sees either the
       // old plan and schedules or the new ones, never half of each.
-      return STShared.locked {
+      // Another process stuck holding the lock: the plan isn't saved; the next sync sends it again.
+      return STShared.locked(busy: [STShared.busyError]) {
         // The app's trusted time, held against time since boot: the extensions decide by it.
         STShared.anchorClock(madeAt: plan.madeAt)
         STShared.save("st.plan", plan)
@@ -112,15 +113,12 @@ public class ScreenTimeModule: Module {
     /// What the extensions recorded since the last read (usage, earned minutes spent,
     /// blocked-screen unlocks and "earn time" taps). Clears the one-off parts.
     Function("takeState") { () -> String in
-      STShared.locked { Self.takeState() }
+      // Lock busy: an empty report (the app ignores it) and nothing taken off.
+      STShared.locked(busy: "{}") { Self.takeState() }
     }
 
     Function("takeUnlock") { (kind: String, minutes: Int) in
       STShared.takeUnlock(kind: kind, minutes: minutes)
-    }
-
-    Function("reloadWidget") {
-      STShared.writeWidget(STShared.plan == nil ? nil : STShared.status())
     }
 
     Function("stopAll") {

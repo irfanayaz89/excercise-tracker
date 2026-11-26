@@ -55,6 +55,16 @@ class BlockService : Service() {
   private var deniedVisit = false
   /** This visit has taken its open (only an allowed visit does: not one blocked anyway, or ended at the pause). */
   private var visitCounted = false
+  /** The visit before this one, and when it ended: coming back to it within 10 s (a custom tab, the
+   *  share sheet, the photo picker, a permission dialog) carries on that visit instead of a new open. */
+  private var leftApp: String? = null
+  private var leftAt = 0L
+  private var leftDenied = false
+  private var leftCounted = false
+  /** A call is on since then (time since boot), and the apps left uncovered until it ends. */
+  private var callOn = false
+  private var callAt = 0L
+  private val callApps = mutableSetOf<String>()
   /** When the user came into Trueline itself (not its blocked or pause screen), or 0. */
   private var inTruelineSince = 0L
   /** Activities that resumed and haven't paused since ("package/class" to when), and the newest event read. */
@@ -163,17 +173,29 @@ class BlockService : Service() {
     val interactive = getSystemService(PowerManager::class.java).isInteractive
     val elapsed = if (lastTick == 0L) 0L else (up - lastTick).coerceIn(0L, 5_000L)
     lastTick = up
-    if (lastBeat == 0L || up - lastBeat >= 5_000) {
+    val call = inCall()
+    if (call != CALL) {
+      callOn = false
+      callApps.clear()
+    } else if (!callOn) {
+      callOn = true
+      callAt = up
+    }
+    // Screen off: a heartbeat every 30 s is enough (the widget calls it paused after 60 s), and the
+    // checks below wait for the screen to come on.
+    if (lastBeat == 0L || up - lastBeat >= (if (interactive) 5_000 else 30_000)) {
       lastBeat = up
       STCore.heartbeat(this, now)
       // Usage access or "display over other apps" switched off: nothing can be blocked, so say so
       // where the user will see it (a heads-up once, then the ongoing notification), not only inside Trueline.
-      usageOk = ScreenTimeModule.usageAccess(this)
-      val overlay = Settings.canDrawOverlays(this)
-      val miss = BootReceiver.missing(usageOk, overlay)
-      if (miss != missing) {
-        missing = miss
-        runCatching { if (miss != null) BootReceiver.alertAccess(this, miss) else BootReceiver.clearAlert(this) }
+      if (interactive) {
+        usageOk = ScreenTimeModule.usageAccess(this)
+        val overlay = Settings.canDrawOverlays(this)
+        val miss = BootReceiver.missing(usageOk, overlay)
+        if (miss != missing) {
+          missing = miss
+          runCatching { if (miss != null) BootReceiver.alertAccess(this, miss) else BootReceiver.clearAlert(this) }
+        }
       }
     }
     if (!interactive) {
@@ -201,27 +223,38 @@ class BlockService : Service() {
     // A few seconds in Trueline itself ends the visit to the app before (going back is a new open).
     if (pkg == packageName && !onOwnScreen) {
       if (inTruelineSince == 0L) inTruelineSince = up
-      if (up - inTruelineSince >= 3_000) lastApp = packageName
+      if (up - inTruelineSince >= 3_000) {
+        lastApp = packageName
+        leftApp = null
+      }
     } else {
       inTruelineSince = 0L
     }
+    // A call (phone, WhatsApp, Meet…) leaves the app it was made or taken in uncovered until it ends,
+    // and nothing else: other blocked apps opened meanwhile are blocked. That's the app in front when
+    // it starts, or in its first 5 s (a call taken from a notification shows its screen a moment
+    // later), or the first app seen if it started on the lock screen. While a call rings, nothing
+    // new is covered, so an incoming call screen never is.
+    if (callOn && pkg != null && (callApps.isEmpty() || up - callAt <= 5_000)) callApps.add(pkg)
+    val ringing = call == RINGING
     val (s, st, show) = STCore.locked { tally(p, pkg, now, up, dt) }
-    // Never cover a call (incoming, ongoing or a video call) or the apps the phone needs: the dialer,
-    // Settings (Trueline's own permission screens open there) and emergency.
-    val calling = inCall()
-    if (pkg != null && show != null && pkg !in essential && !calling) {
+    // Never cover the apps the phone needs: the dialer, Settings (Trueline's own permission screens
+    // open there) and emergency.
+    val spared = { app: String -> app in essential || app in callApps }
+    if (pkg != null && show != null && !spared(pkg) && !ringing) {
       openBlocked(pkg, show)
-    } else if (front != null && show == null && !calling && up - lastShown > 1500) {
+    } else if (front != null && show == null && !ringing && up - lastShown > 1500) {
       // Split screen and free-form windows keep more than one app resumed: a blocked app there
       // is blocked too, even when the other pane was touched last.
       val other = resumed.entries.sortedByDescending { it.value }.map { it.key.substringBefore('/') }
-        .firstOrNull { it != pkg && it != packageName && it !in essential && STCore.blocks(p, s, it, category(it), packageName, ::everyday) }
+        .firstOrNull { it != pkg && it != packageName && !spared(it) && STCore.blocks(p, s, it, category(it), packageName, ::everyday) }
       if (other != null) {
         lastShown = up
         openBlocked(other, "block")
       }
     }
-    if (front != null && !calling) pausePip(p, s, pkg, wall)
+    // A video call often goes to picture-in-picture: its app is spared there too.
+    if (front != null && !ringing) pausePip(p, s, pkg, wall)
     val clock = { at: Long -> DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at)) }
     val text = when {
       missing != null -> BootReceiver.accessText(missing!!)
@@ -276,9 +309,15 @@ class BlockService : Service() {
     // A new visit to an app (coming from another app or from Trueline itself, not from the blocked
     // or pause screen).
     if (pkg != packageName && pkg != lastApp) {
+      val back = pkg == leftApp && up - leftAt <= 10_000
+      val (denied, counted) = deniedVisit to visitCounted
+      deniedVisit = back && leftDenied
+      visitCounted = back && leftCounted
+      leftApp = lastApp?.takeIf { it != packageName }
+      leftAt = up
+      leftDenied = denied
+      leftCounted = counted
       lastApp = pkg
-      deniedVisit = false
-      visitCounted = false
     }
     // Opens: a visit takes one only once it's actually let in (not while a lock time, a focus or a
     // time limit blocks it, or the pause screen is up). If the opens are used up by then, the visit
@@ -311,8 +350,11 @@ class BlockService : Service() {
       }
       if (limits.any { l -> l.dailyMin != null && STCore.limitUsedSec(p, st, l, today).let { it >= l.dailyMin * 60L && it - dt < l.dailyMin * 60L } }) save()
     }
-    if (dt > 0 && STCore.counts(p, pkg, cat, packageName)) {
-      if (s.usingEarned) {
+    // Earned time opening a lock time is spent by the apps that lock would block (its own list, or
+    // everything for an "Everything" one), not only by the main list.
+    val earned = STCore.spendsEarned(p, s, pkg, cat, packageName) { it !in essential && everyday(it) }
+    if (dt > 0 && (earned || STCore.counts(p, pkg, cat, packageName))) {
+      if (earned) {
         st.earnedSpentSec += dt
         pendingEarned += dt
       } else {
@@ -322,9 +364,9 @@ class BlockService : Service() {
       // Reaching the limit is worked out from the time used and the limit now (not remembered), so
       // a raised limit opens the apps again.
       val limit = p.dailyLimitMin
-      val crossed = limit != null && !s.usingEarned && st.usedSec >= limit * 60L && st.usedSec - dt < limit * 60L
+      val crossed = limit != null && !earned && st.usedSec >= limit * 60L && st.usedSec - dt < limit * 60L
       // Saved every 10 s (and at once when something changes what's blocked).
-      if (++unsaved >= 10 || crossed || (s.usingEarned && st.earnedSpentSec >= p.earnedLeftMin * 60L)) save()
+      if (++unsaved >= 10 || crossed || (earned && st.earnedSpentSec >= p.earnedLeftMin * 60L)) save()
     } else if (pendingUsed + pendingEarned + pendingApp.values.sum() > 0 && limits.isEmpty()) {
       // Left the app: write the last few seconds down now.
       save()
@@ -354,7 +396,7 @@ class BlockService : Service() {
    * resumed and haven't paused since, and answers with the most recent of those ("package/class"),
    * or null when there's none (the lock screen, or the screen just turned on). Entries also go when
    * the activity is destroyed (one that crashed never pauses) and when the screen turns off or the
-   * lock screen shows.
+   * lock screen shows (a paused one stays, see pausePip).
    */
   private fun foreground(now: Long, up: Long): String? {
     val usm = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -393,10 +435,9 @@ class BlockService : Service() {
           resumed.remove(key)
           pausedVisible.remove(key)
         }
-        UsageEvents.Event.SCREEN_NON_INTERACTIVE, UsageEvents.Event.KEYGUARD_SHOWN -> {
-          resumed.clear()
-          pausedVisible.clear()
-        }
+        // Paused-and-visible entries stay: a picture-in-picture window outlives the lock screen, and
+        // its activity's own stop or resume clears it.
+        UsageEvents.Event.SCREEN_NON_INTERACTIVE, UsageEvents.Event.KEYGUARD_SHOWN -> resumed.clear()
       }
       if (e.timeStamp > lastEventAt) lastEventAt = e.timeStamp
     }
@@ -418,7 +459,7 @@ class BlockService : Service() {
    */
   private fun pausePip(p: STCore.Plan, s: STCore.Status, pkg: String?, wall: Long) {
     val apps = pausedVisible.filter { wall - it.value > 2_000 }.keys.map { it.substringBefore('/') }.toSet()
-      .filter { it != pkg && it != packageName && it !in essential && STCore.blocks(p, s, it, category(it), packageName, ::everyday) }
+      .filter { it != pkg && it != packageName && it !in essential && it !in callApps && STCore.blocks(p, s, it, category(it), packageName, ::everyday) }
     pipShown.retainAll(apps.toSet())
     for (app in apps) {
       STNotifyListener.pauseMedia(this, app)
@@ -436,13 +477,13 @@ class BlockService : Service() {
     )
   }
 
-  /** On a call (phone, WhatsApp, Meet…): the phone is in call or communication audio mode. */
-  private fun inCall(): Boolean {
-    val mode = getSystemService(AudioManager::class.java)?.mode ?: return false
-    // Phone calls only. MODE_IN_COMMUNICATION is any VoIP app (Discord, WhatsApp, Instagram calls),
-    // and treating that as a call would switch blocking off for as long as one runs.
-    return mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_RINGTONE
-  }
+  /** CALL on a call (phone, or a VoIP app in communication mode), RINGING while one rings, else 0. */
+  private fun inCall(): Int =
+    when (getSystemService(AudioManager::class.java)?.mode) {
+      AudioManager.MODE_IN_CALL, AudioManager.MODE_IN_COMMUNICATION -> CALL
+      AudioManager.MODE_RINGTONE -> RINGING
+      else -> 0
+    }
 
   /** Apps never covered by the blocked screen, whatever the user picked. */
   private val essential: Set<String> by lazy {
@@ -500,6 +541,8 @@ class BlockService : Service() {
     const val ID = 4271
     /** UsageEvents.Event.ACTIVITY_DESTROYED (hidden in the SDK, but delivered with usage access). */
     private const val ACTIVITY_DESTROYED = 24
+    private const val CALL = 1
+    private const val RINGING = 2
 
     /** The service is running in this process (the watchdog then has nothing to do). */
     @Volatile var alive = false
