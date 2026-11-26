@@ -9,7 +9,7 @@ import type { PhoneOrientation } from '@/engine/types';
 import { deleteAllSessions } from '@/storage/history';
 import { useProfile } from '@/storage/profile';
 import { useSettings, type Experience, type Settings } from '@/storage/settings';
-import { Body, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
+import { Body, Display, Label, LinkText, Mono, Rule, Strong } from '@/ui/primitives';
 import { ChoiceRow, LinkRow, Section, ToggleRow } from '@/ui/rows';
 import { useScreenTime } from '@/screentime/store';
 import { color, radius, space, type } from '@/ui/theme';
@@ -21,6 +21,7 @@ export default function SettingsScreen() {
   const screenTime = useScreenTime();
   const [recs, setRecs] = useState<File[]>([]);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [devOpen, setDevOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -52,7 +53,7 @@ export default function SettingsScreen() {
           </Body>
         </Pressable>
         <ChoiceRow
-          label="Daily goal"
+          label="Daily target"
           hint="Reps count push-ups, pull-ups and crunches; plank time counts both planks. Home shows how far you are."
           value={s.dailyGoal}
           options={[
@@ -130,17 +131,6 @@ export default function SettingsScreen() {
           value={s.realPersonCheck}
           onChange={(v) => update({ realPersonCheck: v })}
         />
-        <ChoiceRow
-          label="Tracking model"
-          hint="Auto uses the accurate model and switches to the light one if your phone is too slow."
-          value={s.model}
-          options={[
-            ['auto', 'Auto'],
-            ['full', 'Accurate'],
-            ['lite', 'Light'],
-          ]}
-          onChange={(v) => update({ model: v as Settings['model'] })}
-        />
       </Section>
 
       <Section title="Coaching">
@@ -174,90 +164,113 @@ export default function SettingsScreen() {
         />
       </Section>
 
-      <Section title="Tuning">
-        <ToggleRow
-          label="Show tracking details"
-          hint="Frame rate, model speed and live joint angles on the set screen."
-          value={s.showTracking}
-          onChange={(v) => update({ showTracking: v })}
-        />
-        <ToggleRow
-          label="Record sets for tuning"
-          hint="Saves body points (never video) from each set so miscounts can be replayed and fixed."
-          value={s.recordForTuning}
-          onChange={(v) => update({ recordForTuning: v })}
-        />
-        {recs.length > 0 && (
-          <View style={styles.recs}>
-            {recs.slice(0, 20).map((f, i) => (
-              <View key={f.uri}>
-                {i > 0 && <Rule />}
-                <View style={styles.recRow}>
-                  <Mono size={type.small} style={{ flex: 1 }} numberOfLines={1}>
-                    {f.name.replace('set-', '').replace('.json', '')}
-                  </Mono>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Share recording ${f.name}`}
-                    hitSlop={8}
-                    onPress={() => void shareRecording(f)}
-                  >
-                    <Label tone="vial">Share</Label>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={pendingDelete === f.uri ? `Confirm delete recording ${f.name}` : `Delete recording ${f.name}`}
-                    hitSlop={8}
-                    onPress={() => {
-                      if (pendingDelete !== f.uri) {
-                        setPendingDelete(f.uri);
-                        return;
-                      }
-                      deleteRecording(f);
-                      setPendingDelete(null);
-                      setRecs(listRecordings());
-                    }}
-                  >
-                    <Label tone={pendingDelete === f.uri ? 'fault' : 'muted'}>{pendingDelete === f.uri ? 'Tap to delete' : 'Delete'}</Label>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
+      <Section title="Your data">
+        <View style={styles.dataPad}>
+          <Body tone="muted" size={type.note}>
+            Sets, your goal, weigh-ins and health answers are stored only on this phone. Screen time rules are kept separately, under Screen
+            time.
+          </Body>
+          <Pressable
+            accessibilityRole="button"
+            style={{ minHeight: 44, justifyContent: 'center' }}
+            onPress={() =>
+              Alert.alert(
+                'Delete your workout data?',
+                'This deletes every saved set, your goal, your weigh-ins and your health answers from this phone. It can’t be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () => {
+                      deleteAllSessions();
+                      setProfile(null);
+                      update({ safety: [], focus: [] });
+                      router.dismissTo('/');
+                    },
+                  },
+                ],
+              )
+            }
+          >
+            <Strong tone="fault">Delete my workout data</Strong>
+          </Pressable>
+        </View>
       </Section>
 
-      <Section title="Your data">
-        <Body tone="muted" size={type.note}>
-          Sets, your goal, weigh-ins and health answers are stored only on this phone. Screen time rules are kept separately, under Screen
-          time.
-        </Body>
-        <Pressable
-          accessibilityRole="button"
-          style={{ minHeight: 44, justifyContent: 'center' }}
-          onPress={() =>
-            Alert.alert(
-              'Delete your workout data?',
-              'This deletes every saved set, your goal, your weigh-ins and your health answers from this phone. It can’t be undone.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  style: 'destructive',
-                  onPress: () => {
-                    deleteAllSessions();
-                    setProfile(null);
-                    update({ safety: [], focus: [] });
-                    router.dismissTo('/');
-                  },
-                },
-              ],
-            )
-          }
-        >
-          <Strong tone="fault">Delete my workout data</Strong>
+      {/* Tracking model and tuning tools are for testing the counting, not for everyday use: one row, closed. */}
+      {devOpen || s.showTracking || s.recordForTuning || s.model !== 'auto' ? (
+        <Section title="Developer">
+          <ChoiceRow
+            label="Tracking model"
+            hint="Auto uses the accurate model and switches to the light one if your phone is too slow."
+            value={s.model}
+            options={[
+              ['auto', 'Auto'],
+              ['full', 'Accurate'],
+              ['lite', 'Light'],
+            ]}
+            onChange={(v) => update({ model: v as Settings['model'] })}
+          />
+
+          <ToggleRow
+            label="Show tracking details"
+            hint="Frame rate, model speed and live joint angles on the set screen."
+            value={s.showTracking}
+            onChange={(v) => update({ showTracking: v })}
+          />
+          <ToggleRow
+            label="Record sets for tuning"
+            hint="Saves body points (never video) from each set so miscounts can be replayed and fixed."
+            value={s.recordForTuning}
+            onChange={(v) => update({ recordForTuning: v })}
+          />
+          {recs.length > 0 && (
+            <View style={styles.recs}>
+              {recs.slice(0, 20).map((f, i) => (
+                <View key={f.uri}>
+                  {i > 0 && <Rule />}
+                  <View style={styles.recRow}>
+                    <Mono size={type.small} style={{ flex: 1 }} numberOfLines={1}>
+                      {f.name.replace('set-', '').replace('.json', '')}
+                    </Mono>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Share recording ${f.name}`}
+                      hitSlop={8}
+                      onPress={() => void shareRecording(f)}
+                    >
+                      <LinkText>Share</LinkText>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={pendingDelete === f.uri ? `Confirm delete recording ${f.name}` : `Delete recording ${f.name}`}
+                      hitSlop={8}
+                      onPress={() => {
+                        if (pendingDelete !== f.uri) {
+                          setPendingDelete(f.uri);
+                          return;
+                        }
+                        deleteRecording(f);
+                        setPendingDelete(null);
+                        setRecs(listRecordings());
+                      }}
+                    >
+                      <Label tone={pendingDelete === f.uri ? 'fault' : 'muted'}>
+                        {pendingDelete === f.uri ? 'Tap to delete' : 'Delete'}
+                      </Label>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </Section>
+      ) : (
+        <Pressable accessibilityRole="button" hitSlop={8} onPress={() => setDevOpen(true)} style={styles.devRow}>
+          <LinkText tone="muted">Developer options ›</LinkText>
         </Pressable>
-      </Section>
+      )}
 
       <Body tone="muted" size={type.caption}>
         Video is processed on this phone and never stored or uploaded.
@@ -267,6 +280,9 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Like the other rows: text never touches the card's edge.
+  dataPad: { padding: space.lg, gap: space.md },
+  devRow: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
   header: {
     flexDirection: 'row',

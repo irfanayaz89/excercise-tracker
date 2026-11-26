@@ -7,7 +7,7 @@ import { EXERCISE_IDS, EXERCISES } from '@/engine/exercises';
 /** guided = step-by-step help for newcomers; quick = minimal screens for experienced users. */
 export type Experience = 'guided' | 'quick';
 
-/** Daily goal picked during onboarding; 'none' = no goal shown. */
+/** Daily target ("Daily target" in the app, apart from the main goal); 'none' = not shown. */
 export type DailyGoal = 'none' | 'light' | 'regular' | 'serious';
 
 /** Health notes from the onboarding safety check (stored on the phone only). */
@@ -23,7 +23,13 @@ export const GOAL_TARGETS: Record<Exclude<DailyGoal, 'none'>, { reps: number; ho
 };
 
 /** Default camera view per exercise: side-on. Push-ups and the plank can be switched to front (see EXERCISES.frontView). */
-export const DEFAULT_VIEWS: Record<Exercise, CameraView> = { pullup: 'front', pushup: 'side', crunch: 'side', plank: 'side', sidePlank: 'side' };
+export const DEFAULT_VIEWS: Record<Exercise, CameraView> = {
+  pullup: 'front',
+  pushup: 'side',
+  crunch: 'side',
+  plank: 'side',
+  sidePlank: 'side',
+};
 
 export interface Settings {
   /** Push-ups (counted) or plank (timed). */

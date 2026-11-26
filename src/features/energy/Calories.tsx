@@ -4,7 +4,7 @@ import type { Exercise } from '@/engine/types';
 import { setKcal, type ExerciseBody } from '@/fitness/energy';
 import { kcalText } from '@/fitness/format';
 import { useProfile } from '@/storage/profile';
-import { Body, Label, Strong } from '@/ui/primitives';
+import { Body, LinkText, Strong } from '@/ui/primitives';
 import { type } from '@/ui/theme';
 
 /** Weight and age for the calorie maths, once the user has given them. */
@@ -17,7 +17,7 @@ export function useEnergyBody(): ExerciseBody | null {
 export function CaloriesHow({ label = 'How calories are worked out ›' }: { label?: string }) {
   return (
     <Pressable accessibilityRole="link" hitSlop={8} onPress={() => router.push('/calories')} style={{ alignSelf: 'flex-start' }}>
-      <Label tone="vial">{label}</Label>
+      <LinkText>{label}</LinkText>
     </Pressable>
   );
 }
@@ -31,7 +31,7 @@ export function AddWeightForCalories() {
       onPress={() => router.push({ pathname: '/welcome', params: { redo: '1' } })}
       style={{ alignSelf: 'flex-start' }}
     >
-      <Label tone="vial">Add your weight to see calories ›</Label>
+      <LinkText>Add your weight to see calories ›</LinkText>
     </Pressable>
   );
 }

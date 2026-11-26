@@ -8,7 +8,7 @@ import { MILESTONES_PE } from '@/screentime/rules';
 import { formatMin, rateText, tierText } from '@/screentime/summary';
 import { useSettings } from '@/storage/settings';
 import { ExerciseGlyph } from '@/ui/Diagrams';
-import { Body, Button, Display, Label, Mono, Stat, Strong } from '@/ui/primitives';
+import { Body, Button, Display, Label, LinkText, Mono, Stat, Strong } from '@/ui/primitives';
 import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
@@ -78,7 +78,7 @@ export default function EarnScreen() {
                 </Mono>
               )}
             </View>
-            <Label tone="vial">Start ›</Label>
+            <LinkText>Start ›</LinkText>
           </Pressable>
         ))}
       </View>

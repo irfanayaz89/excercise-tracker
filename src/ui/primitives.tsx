@@ -94,6 +94,21 @@ export function Label({ tone = 'muted', size = type.micro, style, ...rest }: TPr
   );
 }
 
+/**
+ * A tappable text link: sentence case in the brand yellow, so it reads as an action and not as
+ * one of the uppercase section labels. Goes inside a Pressable that carries the role.
+ */
+export function LinkText({ tone = 'vial', size = type.detail, style, ...rest }: TProps) {
+  return (
+    <Text
+      accessibilityLabel={spoken(rest)}
+      maxFontSizeMultiplier={BODY_SCALE}
+      style={[{ fontFamily: font.bodySemi, fontSize: size, lineHeight: size * 1.35, color: toneColor[tone] }, style]}
+      {...rest}
+    />
+  );
+}
+
 export function Mono({ tone = 'chalk', size = type.caption, style, ...rest }: TProps) {
   return (
     <Text

@@ -31,7 +31,7 @@ import { useScreenTime } from '@/screentime/store';
 import { bodyOf, defaultProfile, LIMITS, startProfile, useProfile, WHYS, type Aim, type Profile } from '@/storage/profile';
 import { SAFETY_FLAGS, useSettings, type SafetyFlag } from '@/storage/settings';
 import { NumberField } from '@/ui/NumberField';
-import { Body, Button, Chip, Display, Label, Strong } from '@/ui/primitives';
+import { Body, Button, Chip, Display, Label, LinkText, Strong } from '@/ui/primitives';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { color, font, radius, space, type } from '@/ui/theme';
 
@@ -419,7 +419,7 @@ function WaistField({ p, set }: Pick<StepProps, 'p' | 'set'>) {
         onPress={() => set({ waistCm: p.sex === 'female' ? 80 : 90 })}
         style={{ alignSelf: 'flex-start' }}
       >
-        <Label tone="vial">Add your waist for a body-fat estimate (optional) ›</Label>
+        <LinkText>Add your waist for a body-fat estimate (optional) ›</LinkText>
       </Pressable>
     );
   }
@@ -440,7 +440,7 @@ function WaistField({ p, set }: Pick<StepProps, 'p' | 'set'>) {
         </Body>
       )}
       <Pressable accessibilityRole="button" hitSlop={8} onPress={() => set({ waistCm: null })} style={{ alignSelf: 'flex-start' }}>
-        <Label tone="muted">Remove waist</Label>
+        <LinkText tone="muted">Remove waist</LinkText>
       </Pressable>
     </View>
   );
@@ -894,7 +894,7 @@ function More({ label, open: startOpen, children }: { label: string; open: boole
       onPress={() => setOpen(true)}
       style={{ alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
     >
-      <Label tone="vial">{label}</Label>
+      <LinkText>{label}</LinkText>
     </Pressable>
   );
 }

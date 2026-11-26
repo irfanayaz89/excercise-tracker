@@ -21,7 +21,7 @@ import { HOLD_TARGETS, TARGETS, targetFor, useSettings } from '@/storage/setting
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { ExerciseAnimation } from '@/ui/ExerciseAnimation';
 import { OrientationPicker } from '@/ui/OrientationPicker';
-import { Body, Button, Chip, Display, Label, Mono, Stat, Strong } from '@/ui/primitives';
+import { Body, Button, Chip, Display, Label, LinkText, Mono, Stat, Strong } from '@/ui/primitives';
 import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 import { WeekBars } from '@/ui/WeekBars';
@@ -153,7 +153,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
               hitSlop={10}
               onPress={guard(() => router.push({ pathname: '/guide', params: { ex: exercise, view: '1' } }))}
             >
-              <Label tone="chalk">Step-by-step guide ›</Label>
+              <LinkText>Step-by-step guide ›</LinkText>
             </Pressable>
           </View>
           <ExerciseAnimation exercise={exercise} orientation={settings.orientation} width={art} view={view} />
@@ -199,7 +199,7 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
 
         {__DEV__ && (
           <Pressable accessibilityRole="button" onPress={start(true)} hitSlop={8} style={{ alignSelf: 'center' }}>
-            <Label tone="muted">Preview a demo set</Label>
+            <LinkText tone="muted">Preview a demo set</LinkText>
           </Pressable>
         )}
 
@@ -252,7 +252,7 @@ function SetOptions({ exercise, view }: { exercise: Exercise; view: ReturnType<t
           <Label>Set options</Label>
           <Strong size={type.detail}>{summary}</Strong>
         </View>
-        <Label tone="vial">{open ? 'Done' : 'Change'}</Label>
+        <LinkText>{open ? 'Done' : 'Change'}</LinkText>
       </Pressable>
       {open && (
         <>

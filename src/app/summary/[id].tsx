@@ -12,7 +12,7 @@ import { getLastSummary } from '@/session/lastSummary';
 import { bestBefore, correctReps, deleteSession, getSession } from '@/storage/history';
 import { SetCalories } from '@/features/energy/Calories';
 import { useSettings } from '@/storage/settings';
-import { Body, Button, Display, Label, Mono, Rule, Stat, Strong } from '@/ui/primitives';
+import { Body, Button, Display, Label, LinkText, Mono, Rule, Stat, Strong } from '@/ui/primitives';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Tally } from '@/ui/Tally';
 import { color, radius, space, type, font } from '@/ui/theme';
@@ -470,7 +470,7 @@ function Details({ label, children }: { label: string; children: ReactNode }) {
         hitSlop={8}
         style={{ alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
       >
-        <Label tone="vial">{open ? `Hide ${label.toLowerCase()}` : `${label} ›`}</Label>
+        <LinkText>{open ? `Hide ${label.toLowerCase()}` : `${label} ›`}</LinkText>
       </Pressable>
       {open && children}
     </View>
@@ -537,7 +537,7 @@ function FixCount({ total, onFix }: { total: number; onFix: (n: number) => void 
   if (!open) {
     return (
       <Pressable accessibilityRole="button" hitSlop={8} onPress={() => (setN(total), setOpen(true))} style={{ alignSelf: 'flex-start' }}>
-        <Label tone="vial">Count wrong? Fix it ›</Label>
+        <LinkText>Count wrong? Fix it ›</LinkText>
       </Pressable>
     );
   }

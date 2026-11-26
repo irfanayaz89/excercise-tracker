@@ -44,7 +44,7 @@ import { deviceZone } from '@/screentime/time';
 import type { ChangeResult } from '@/screentime/rules';
 import type { RulesCore, Strictness } from '@/screentime/types';
 import { listSessionsSince } from '@/storage/history';
-import { Body, Button, Chip, Display, Label, Mono, Rule, Stat, Strong } from '@/ui/primitives';
+import { Body, Button, Chip, Display, Label, LinkText, Mono, Rule, Stat, Strong } from '@/ui/primitives';
 import { LinkRow, Section } from '@/ui/rows';
 import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
@@ -262,7 +262,7 @@ export default function ScreenTimeScreen() {
         <View style={styles.note}>
           <Body size={type.note}>{`A change you made starts ${formatClock(deviceZone, pendingAt, now)}.`}</Body>
           <Pressable accessibilityRole="button" onPress={() => saveRules(cancelPending(getScreenTime().rules))} hitSlop={8}>
-            <Label tone="vial">Cancel the change</Label>
+            <LinkText>Cancel the change</LinkText>
           </Pressable>
         </View>
       )}
@@ -378,7 +378,7 @@ export default function ScreenTimeScreen() {
                     hitSlop={8}
                     onPress={() => apply(skipNext(deviceZone, getScreenTime().rules, l.id, screenTimeNow(), getScreenTime().focus))}
                   >
-                    <Label>Skip next</Label>
+                    <LinkText>Skip next</LinkText>
                   </Pressable>
                 )}
                 <Switch

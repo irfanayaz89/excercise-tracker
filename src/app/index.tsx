@@ -26,7 +26,7 @@ import { bodyOf, LIMITS, useProfile, withWeighIn, type Profile } from '@/storage
 import { GOAL_TARGETS, useSettings } from '@/storage/settings';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { NumberField } from '@/ui/NumberField';
-import { Body, Button, Chip, Display, Label, Mono, Strong } from '@/ui/primitives';
+import { Body, Button, Chip, Display, Label, LinkText, Mono, Strong } from '@/ui/primitives';
 import { color, font, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
@@ -271,8 +271,10 @@ export default function Home() {
         {daily && (
           <View
             style={styles.goal}
-            accessibilityLabel={`Daily goal: ${repsToday} of ${daily.reps} reps, ${formatDuration(holdToday)} of ${formatDuration(daily.holdMs)} plank`}
+            accessibilityLabel={`Daily target: ${repsToday} of ${daily.reps} reps, ${formatDuration(holdToday)} of ${formatDuration(daily.holdMs)} plank`}
           >
+            {/* "Daily target", so it isn't confused with the goal at the top of Home. */}
+            <Label>Daily target</Label>
             <GoalBar label="Reps" value={repsToday} target={daily.reps} text={`${repsToday} / ${daily.reps}`} />
             <GoalBar
               label="Plank"
@@ -428,7 +430,7 @@ function GoalBlock({
           )}
         </View>
         <Pressable accessibilityRole="button" accessibilityLabel="Change goal" onPress={onEdit} hitSlop={12}>
-          <Label tone="vial">Change</Label>
+          <LinkText>Change</LinkText>
         </Pressable>
       </View>
       <View style={styles.score} accessible accessibilityLabel={`${value} ${unit}, ${of}`}>
