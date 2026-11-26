@@ -1,4 +1,4 @@
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -71,7 +71,23 @@ const STRICTNESS: Record<Strictness, { label: string; hint: string }> = {
   },
 };
 
-/** Screen time: today, the app lists, the daily limit, lock times, earning, strictness and history (plan §6). */
+/**
+ * The screen's parts. "main" is today (what's blocked, earned time, Earn) and one row per group;
+ * each group opens as its own view of this screen, so the rule-change logic lives in one place.
+ */
+type Pane = 'main' | 'rules' | 'earning' | 'strictness' | 'history' | 'more';
+const PANES: Pane[] = ['main', 'rules', 'earning', 'strictness', 'history', 'more'];
+const TITLES: Record<Pane, string> = {
+  main: 'Screen time',
+  rules: 'Rules',
+  earning: 'Earning',
+  strictness: 'Strictness',
+  history: 'History',
+  more: 'More',
+};
+const open = (pane: Pane) => router.push({ pathname: '/screen-time', params: { show: pane } });
+
+/** Screen time: today and Earn first; rules, earning, strictness, history and more each one tap away (plan §6). */
 export default function ScreenTimeScreen() {
   const insets = useSafeAreaInsets();
   const guard = useTapGuard();
@@ -79,11 +95,14 @@ export default function ScreenTimeScreen() {
   const [message, setMessage] = useState<string | null>(null);
   const { rules, decision: d, today, now } = st;
   const mode = effectiveStrictness(rules, now);
+  const { show } = useLocalSearchParams<{ show?: string }>();
+  const pane: Pane = PANES.includes(show as Pane) ? (show as Pane) : 'main';
 
   const apply = useCallback((res: ChangeResult) => {
     const m = describeChange(res);
-    setMessage(m);
-    // A change that waits or is refused is shown where the user is, not only in the note at the top.
+    // A change that waits or is refused gets an alert (and a waiting one its own "Cancel the change" box),
+    // so the note is only for what applied ("…the easier change that was waiting has been cancelled").
+    setMessage(res.result === 'applied' ? m : null);
     if (m && res.result !== 'applied') Alert.alert(res.result === 'refused' ? 'Can’t change that now' : 'Starts later', m);
     return res;
   }, []);
@@ -110,9 +129,9 @@ export default function ScreenTimeScreen() {
 
   return (
     <Page insets={insets}>
-      <Header />
+      <Header pane={pane} />
 
-      {unsupported && (
+      {pane === 'main' && unsupported && (
         <View style={styles.alert}>
           <Strong tone="fault">This version of Trueline can&apos;t block apps</Strong>
           <Body tone="fault" size={type.note}>
@@ -120,7 +139,7 @@ export default function ScreenTimeScreen() {
           </Body>
         </View>
       )}
-      {lost && (
+      {pane === 'main' && lost && (
         <Pressable accessibilityRole="button" onPress={guard(() => router.push('/screen-time/setup'))} style={styles.alert}>
           <Strong tone="fault">Screen Time access is off</Strong>
           <Body tone="fault" size={type.note}>
@@ -128,7 +147,7 @@ export default function ScreenTimeScreen() {
           </Body>
         </Pressable>
       )}
-      {st.meta.tokensExpired && (
+      {(pane === 'main' || pane === 'rules') && st.meta.tokensExpired && (
         <View style={styles.alert}>
           <Strong tone="cue">Pick your apps again</Strong>
           <Body size={type.note}>iPhone reset the app lists Trueline uses. Until you pick them again, they may not be blocked.</Body>
@@ -143,7 +162,7 @@ export default function ScreenTimeScreen() {
           />
         </View>
       )}
-      {st.problems.length > 0 && (
+      {pane === 'main' && st.problems.length > 0 && (
         <View style={styles.alert}>
           {/* Native problems, a moved clock or a storage failure: one heading that fits them all. */}
           <Strong tone="cue">Check this</Strong>
@@ -158,82 +177,86 @@ export default function ScreenTimeScreen() {
         </View>
       )}
 
-      <View style={{ gap: space.md }}>
-        <Label>Today</Label>
-        <Display size={type.displayM}>
-          {d.blocked
-            ? d.reason === 'focus' && d.focus
-              ? `Workout focus until ${formatClock(deviceZone, d.focus.until, now)}`
-              : d.reason === 'lock' && d.lock
-                ? `${d.lock.name} until ${formatClock(deviceZone, d.lock.until, now)}`
-                : 'Time is up for today'
-            : d.usingEarned
-              ? `Earned time: ${formatMin(d.earnedLeftMin)} left`
-              : d.unlockedUntil
-                ? `Unlocked until ${formatClock(deviceZone, d.unlockedUntil, now)}`
-                : limit !== null && d.limitLeftMin !== null
-                  ? `${formatMin(d.limitLeftMin)} left`
-                  : 'Apps are open'}
-        </Display>
-        {d.focus && (
-          <View style={styles.note}>
-            <Body size={type.note}>
-              {d.focus.strict
-                ? 'Strict: the workout focus runs until its end.'
-                : d.focus.kind === 'timed'
-                  ? 'A timed workout focus keeps your apps closed until it ends.'
-                  : 'The workout focus ends when the set ends.'}
-            </Body>
-            {!d.focus.strict && (
-              <Button
-                size="sm"
-                variant="ghost"
-                label="End focus now"
-                onPress={() => {
-                  const res = endFocusNow('manual');
-                  if (!res.ended) setMessage("This focus can't be ended early.");
-                }}
-              />
-            )}
+      {pane === 'main' && (
+        <View style={{ gap: space.md }}>
+          <Label>Today</Label>
+          <Display size={type.displayM}>
+            {d.blocked
+              ? d.reason === 'focus' && d.focus
+                ? `Workout focus until ${formatClock(deviceZone, d.focus.until, now)}`
+                : d.reason === 'lock' && d.lock
+                  ? `${d.lock.name} until ${formatClock(deviceZone, d.lock.until, now)}`
+                  : 'Time is up for today'
+              : d.usingEarned
+                ? `Earned time: ${formatMin(d.earnedLeftMin)} left`
+                : d.unlockedUntil
+                  ? `Unlocked until ${formatClock(deviceZone, d.unlockedUntil, now)}`
+                  : limit !== null && d.limitLeftMin !== null
+                    ? `${formatMin(d.limitLeftMin)} left`
+                    : 'Apps are open'}
+          </Display>
+          {d.focus && (
+            <View style={styles.note}>
+              <Body size={type.note}>
+                {d.focus.strict
+                  ? 'Strict: the workout focus runs until its end.'
+                  : d.focus.kind === 'timed'
+                    ? 'A timed workout focus keeps your apps closed until it ends.'
+                    : 'The workout focus ends when the set ends.'}
+              </Body>
+              {!d.focus.strict && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  label="End focus now"
+                  onPress={() => {
+                    const res = endFocusNow('manual');
+                    if (!res.ended) setMessage("This focus can't be ended early.");
+                  }}
+                />
+              )}
+            </View>
+          )}
+          <DayTimeline rules={rules} now={now} />
+          <View style={styles.stats}>
+            <Stat
+              label="Used"
+              value={limit === null ? formatMin(today.usedMin) : `${formatMin(Math.min(today.usedMin, limit))} / ${formatMin(limit)}`}
+            />
+            <Stat label="Earned today" value={`${formatMin(today.earnedMin)} / ${formatMin(rules.earning.dailyCapMin)}`} />
+            <Stat label="Earned left" value={formatMin(d.earnedLeftMin)} />
           </View>
-        )}
-        <DayTimeline rules={rules} now={now} />
-        <View style={styles.stats}>
-          <Stat
-            label="Used"
-            value={limit === null ? formatMin(today.usedMin) : `${formatMin(Math.min(today.usedMin, limit))} / ${formatMin(limit)}`}
-          />
-          <Stat label="Earned today" value={`${formatMin(today.earnedMin)} / ${formatMin(rules.earning.dailyCapMin)}`} />
-          <Stat label="Earned left" value={formatMin(d.earnedLeftMin)} />
+          {rules.earning.enabled && (
+            <Button label="Earn time" onPress={guard(() => router.push('/earn'))} disabled={today.earnedMin >= rules.earning.dailyCapMin} />
+          )}
+          {(d.blocked || d.ownLocks.length > 0 || d.limitBlocks.length > 0) && (d.emergency.available || d.oneMore.available) && (
+            <Button
+              variant="ghost"
+              label={
+                d.emergency.available ? `Emergency unlock: ${d.emergency.minutes} min` : `1 more minute (${d.oneMore.left} left today)`
+              }
+              onPress={() => {
+                const take = () => {
+                  const res = unlockNow(d.emergency.available ? 'emergency' : 'one-more');
+                  if (!res.ok) setMessage('No unlocks left today.');
+                };
+                // The emergency unlock is the day's only one: ask before using it up.
+                if (!d.emergency.available) take();
+                else
+                  Alert.alert('Use today’s emergency unlock?', `Your apps open for ${d.emergency.minutes} minutes. There’s one a day.`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Unlock', onPress: take },
+                  ]);
+              }}
+            />
+          )}
+          <Body tone="muted" size={type.small}>
+            {Platform.OS === 'ios'
+              ? 'iPhone reports usage in 15-minute steps, so "used" can lag a little behind.'
+              : 'Usage is counted while the apps are on screen.'}
+          </Body>
         </View>
-        {rules.earning.enabled && (
-          <Button label="Earn time" onPress={guard(() => router.push('/earn'))} disabled={today.earnedMin >= rules.earning.dailyCapMin} />
-        )}
-        {(d.blocked || d.ownLocks.length > 0 || d.limitBlocks.length > 0) && (d.emergency.available || d.oneMore.available) && (
-          <Button
-            variant="ghost"
-            label={d.emergency.available ? `Emergency unlock: ${d.emergency.minutes} min` : `1 more minute (${d.oneMore.left} left today)`}
-            onPress={() => {
-              const take = () => {
-                const res = unlockNow(d.emergency.available ? 'emergency' : 'one-more');
-                if (!res.ok) setMessage('No unlocks left today.');
-              };
-              // The emergency unlock is the day's only one: ask before using it up.
-              if (!d.emergency.available) take();
-              else
-                Alert.alert('Use today’s emergency unlock?', `Your apps open for ${d.emergency.minutes} minutes. There’s one a day.`, [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Unlock', onPress: take },
-                ]);
-            }}
-          />
-        )}
-        <Body tone="muted" size={type.small}>
-          {Platform.OS === 'ios'
-            ? 'iPhone reports usage in 15-minute steps, so "used" can lag a little behind.'
-            : 'Usage is counted while the apps are on screen.'}
-        </Body>
-      </View>
+      )}
 
       {pendingAt !== null && (
         <View style={styles.note}>
@@ -244,146 +267,194 @@ export default function ScreenTimeScreen() {
         </View>
       )}
 
-      <Section title="Apps">
-        <LinkRow
-          label="Blocked apps"
-          hint="Blocked during lock times and once the daily limit is used up."
-          value={countLabel(rules.blocked)}
-          onPress={guard(async () => {
-            const picked = await pickApps('Blocked apps', getScreenTime().rules.blocked);
-            if (!picked) return;
-            const bad = selectionProblem(picked);
-            if (bad) setMessage(bad);
-            else if (change({ blocked: picked }).result === 'applied') clearTokensExpired();
-          })}
-        />
-        <LinkRow
-          label="Always allowed"
-          hint="Never blocked, even inside a blocked category (Phone, Maps, Messages…)."
-          value={countLabel(rules.allowed)}
-          onPress={guard(async () => {
-            const picked = await pickApps('Always allowed', getScreenTime().rules.allowed);
-            if (!picked) return;
-            const bad = selectionProblem(picked);
-            if (bad) setMessage(bad);
-            else change({ allowed: picked });
-          })}
-        />
-      </Section>
-
-      <Section title="Daily limit">
-        <View style={styles.pad}>
-          <Body tone="muted" size={type.caption}>
-            Total time a day in your blocked apps outside lock times. After it, they open only with earned time.
-          </Body>
-          <View style={styles.chips}>
-            {LIMITS.map(([v, l]) => (
-              <Chip key={l} label={l} selected={limit === v} onPress={() => change({ dailyLimitMin: v })} />
-            ))}
-          </View>
-        </View>
-      </Section>
-
-      <Section title="Lock times">
-        {rules.lockTimes.length === 0 && (
-          <View style={styles.pad}>
-            <Body tone="muted" size={type.caption}>
-              Times when your blocked apps can&apos;t be opened, like nights or work hours.
-            </Body>
-          </View>
-        )}
-        {rules.lockTimes.map((l) => (
-          <View key={l.id} style={styles.lockRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Edit ${l.name}`}
-              style={{ flex: 1, gap: 2 }}
-              onPress={guard(() => router.push({ pathname: '/screen-time/lock/[id]', params: { id: l.id } }))}
-            >
-              <Strong>{l.name}</Strong>
-              <Body tone="muted" size={type.caption}>
-                {describeLock(l)}
-                {l.earnable ? ' · earned time works' : ''}
-                {l.apps === 'all' ? ' · everything except always allowed' : l.apps !== 'main' ? ` · ${countLabel(l.apps)}` : ''}
-              </Body>
-              {l.skipDate && (
-                <Mono size={type.micro} tone="cue">
-                  Skipping {l.skipDate}
-                </Mono>
-              )}
-            </Pressable>
-            {l.enabled && !l.skipDate && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Skip the next ${l.name}`}
-                hitSlop={8}
-                onPress={() => apply(skipNext(deviceZone, getScreenTime().rules, l.id, screenTimeNow(), getScreenTime().focus))}
-              >
-                <Label>Skip next</Label>
-              </Pressable>
-            )}
-            <Switch
-              value={l.enabled}
-              onValueChange={(v) => {
-                change({ lockTimes: editBase().lockTimes.map((x) => (x.id === l.id ? { ...x, enabled: v } : x)) });
-              }}
-              trackColor={{ false: color.raised, true: color.vial }}
-              thumbColor={l.enabled ? color.vialInk : color.chalk2}
-              accessibilityLabel={`${l.name} on`}
-            />
-          </View>
-        ))}
-        <LinkRow
-          label="Add lock time"
-          disabled={rules.lockTimes.length >= MAX_LOCK_TIMES}
-          hint={rules.lockTimes.length >= MAX_LOCK_TIMES ? `Up to ${MAX_LOCK_TIMES} lock times.` : undefined}
-          onPress={guard(() => router.push({ pathname: '/screen-time/lock/[id]', params: { id: 'new' } }))}
-        />
-      </Section>
-
-      <AppLimitsSection st={st} guard={guard} />
-
-      <PauseSection st={st} change={change} />
-
-      <KeyLockSection st={st} guard={guard} onMessage={setMessage} />
-
-      <NotificationsSection st={st} change={change} />
-
-      <EarningSection st={st} change={change} />
-
-      <StrictnessSection st={st} now={now} mode={mode} apply={apply} change={change} />
-
-      <UsageSection st={st} />
-
-      <HistorySection st={st} />
-
-      <Section title="Turn off">
-        <View style={styles.pad}>
-          <Body tone="muted" size={type.caption}>
-            {mode === 'strict'
-              ? 'Strict mode is on: screen time can be turned off once its period ends.'
-              : mode === 'standard'
-                ? 'Takes effect at midnight, like any change that makes things easier.'
-                : 'Stops blocking straight away.'}
-          </Body>
-          <Button
-            variant="danger"
-            size="sm"
-            label="Turn off screen time"
-            disabled={mode === 'strict'}
-            onPress={() =>
-              Alert.alert(
-                'Turn off screen time?',
-                'This removes your blocked apps, lock times and limits. Earned time and history stay. Depending on your strictness it may only start at midnight.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Turn off', style: 'destructive', onPress: turnOffNow },
-                ],
-              )
-            }
+      {pane === 'main' && (
+        <Section title="Settings">
+          <LinkRow
+            label="Rules"
+            hint={[
+              countLabel(rules.blocked),
+              limit === null ? 'no daily limit' : `${formatMin(limit)} a day`,
+              rules.lockTimes.length === 1 ? '1 lock time' : `${rules.lockTimes.length} lock times`,
+            ].join(' · ')}
+            onPress={guard(() => open('rules'))}
           />
-        </View>
-      </Section>
+          <LinkRow
+            label="Earning"
+            hint={rules.earning.enabled ? `Up to ${formatMin(rules.earning.dailyCapMin)} a day from exercise` : 'Off'}
+            onPress={guard(() => open('earning'))}
+          />
+          <LinkRow
+            label="Strictness"
+            hint={
+              mode === 'strict' && rules.strictUntil
+                ? `Strict until ${formatClock(deviceZone, rules.strictUntil, now)}`
+                : `${STRICTNESS[mode].label} · key lock`
+            }
+            onPress={guard(() => open('strictness'))}
+          />
+          <LinkRow label="History" hint="Usage and the last two weeks" onPress={guard(() => open('history'))} />
+          <LinkRow
+            label="More"
+            hint={Platform.OS === 'android' ? 'Pause before opening, notifications, turn off' : 'Pause before opening, turn off'}
+            onPress={guard(() => open('more'))}
+          />
+        </Section>
+      )}
+
+      {pane === 'rules' && (
+        <>
+          <Section title="Apps">
+            <LinkRow
+              label="Blocked apps"
+              hint="Blocked during lock times and once the daily limit is used up."
+              value={countLabel(rules.blocked)}
+              onPress={guard(async () => {
+                const picked = await pickApps('Blocked apps', getScreenTime().rules.blocked);
+                if (!picked) return;
+                const bad = selectionProblem(picked);
+                if (bad) setMessage(bad);
+                else if (change({ blocked: picked }).result === 'applied') clearTokensExpired();
+              })}
+            />
+            <LinkRow
+              label="Always allowed"
+              hint="Never blocked, even inside a blocked category (Phone, Maps, Messages…)."
+              value={countLabel(rules.allowed)}
+              onPress={guard(async () => {
+                const picked = await pickApps('Always allowed', getScreenTime().rules.allowed);
+                if (!picked) return;
+                const bad = selectionProblem(picked);
+                if (bad) setMessage(bad);
+                else change({ allowed: picked });
+              })}
+            />
+          </Section>
+
+          <Section title="Daily limit">
+            <View style={styles.pad}>
+              <Body tone="muted" size={type.caption}>
+                Total time a day in your blocked apps outside lock times. After it, they open only with earned time.
+              </Body>
+              <View style={styles.chips}>
+                {LIMITS.map(([v, l]) => (
+                  <Chip key={l} label={l} selected={limit === v} onPress={() => change({ dailyLimitMin: v })} />
+                ))}
+              </View>
+            </View>
+          </Section>
+
+          <Section title="Lock times">
+            {rules.lockTimes.length === 0 && (
+              <View style={styles.pad}>
+                <Body tone="muted" size={type.caption}>
+                  Times when your blocked apps can&apos;t be opened, like nights or work hours.
+                </Body>
+              </View>
+            )}
+            {rules.lockTimes.map((l) => (
+              <View key={l.id} style={styles.lockRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${l.name}`}
+                  style={{ flex: 1, gap: 2 }}
+                  onPress={guard(() => router.push({ pathname: '/screen-time/lock/[id]', params: { id: l.id } }))}
+                >
+                  <Strong>{l.name}</Strong>
+                  <Body tone="muted" size={type.caption}>
+                    {describeLock(l)}
+                    {l.earnable ? ' · earned time works' : ''}
+                    {l.apps === 'all' ? ' · everything except always allowed' : l.apps !== 'main' ? ` · ${countLabel(l.apps)}` : ''}
+                  </Body>
+                  {l.skipDate && (
+                    <Mono size={type.micro} tone="cue">
+                      Skipping {l.skipDate}
+                    </Mono>
+                  )}
+                </Pressable>
+                {l.enabled && !l.skipDate && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Skip the next ${l.name}`}
+                    hitSlop={8}
+                    onPress={() => apply(skipNext(deviceZone, getScreenTime().rules, l.id, screenTimeNow(), getScreenTime().focus))}
+                  >
+                    <Label>Skip next</Label>
+                  </Pressable>
+                )}
+                <Switch
+                  value={l.enabled}
+                  onValueChange={(v) => {
+                    change({ lockTimes: editBase().lockTimes.map((x) => (x.id === l.id ? { ...x, enabled: v } : x)) });
+                  }}
+                  trackColor={{ false: color.raised, true: color.vial }}
+                  thumbColor={l.enabled ? color.vialInk : color.chalk2}
+                  accessibilityLabel={`${l.name} on`}
+                />
+              </View>
+            ))}
+            <LinkRow
+              label="Add lock time"
+              disabled={rules.lockTimes.length >= MAX_LOCK_TIMES}
+              hint={rules.lockTimes.length >= MAX_LOCK_TIMES ? `Up to ${MAX_LOCK_TIMES} lock times.` : undefined}
+              onPress={guard(() => router.push({ pathname: '/screen-time/lock/[id]', params: { id: 'new' } }))}
+            />
+          </Section>
+
+          <AppLimitsSection st={st} guard={guard} />
+        </>
+      )}
+
+      {pane === 'earning' && <EarningSection st={st} change={change} />}
+
+      {pane === 'strictness' && (
+        <>
+          <StrictnessSection st={st} now={now} mode={mode} apply={apply} change={change} />
+          <KeyLockSection st={st} guard={guard} onMessage={setMessage} />
+        </>
+      )}
+
+      {pane === 'history' && (
+        <>
+          <UsageSection st={st} />
+          <HistorySection st={st} />
+        </>
+      )}
+
+      {pane === 'more' && (
+        <>
+          <PauseSection st={st} change={change} />
+
+          <NotificationsSection st={st} change={change} />
+
+          <Section title="Turn off">
+            <View style={styles.pad}>
+              <Body tone="muted" size={type.caption}>
+                {mode === 'strict'
+                  ? 'Strict mode is on: screen time can be turned off once its period ends.'
+                  : mode === 'standard'
+                    ? 'Takes effect at midnight, like any change that makes things easier.'
+                    : 'Stops blocking straight away.'}
+              </Body>
+              <Button
+                variant="danger"
+                size="sm"
+                label="Turn off screen time"
+                disabled={mode === 'strict'}
+                onPress={() =>
+                  Alert.alert(
+                    'Turn off screen time?',
+                    'This removes your blocked apps, lock times and limits. Earned time and history stay. Depending on your strictness it may only start at midnight.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Turn off', style: 'destructive', onPress: turnOffNow },
+                    ],
+                  )
+                }
+              />
+            </View>
+          </Section>
+        </>
+      )}
     </Page>
   );
 
@@ -425,7 +496,8 @@ export default function ScreenTimeScreen() {
 function EarningSection({ st, change }: { st: ScreenTimeState; change: (p: Partial<RulesCore>) => void }) {
   const e = st.rules.earning;
   return (
-    <Section title="Earning">
+    // The page is titled "Earning": no second heading saying the same.
+    <Section>
       <View style={[styles.lockRow, { borderBottomWidth: StyleSheet.hairlineWidth }]}>
         <View style={{ flex: 1, gap: 2 }}>
           <Strong>Earn time with exercise</Strong>
@@ -520,7 +592,7 @@ function StrictnessSection({
     );
   };
   return (
-    <Section title="Strictness">
+    <Section>
       <View style={styles.pad}>
         <View style={styles.chips}>
           {(['nudge', 'standard', 'strict'] as const).map((s) => (
@@ -619,12 +691,14 @@ function HistorySection({ st }: { st: ScreenTimeState }) {
   );
 }
 
-function Header() {
+function Header({ pane = 'main' }: { pane?: Pane }) {
+  // Opened from a link there may be nothing to go back to.
+  const leave = () => (router.canGoBack() ? router.back() : router.replace(pane === 'main' ? '/' : '/screen-time'));
   return (
     <View style={styles.header}>
-      <Display size={type.stat}>Screen time</Display>
-      <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
-        <Label tone="chalk">Done</Label>
+      <Display size={type.stat}>{TITLES[pane]}</Display>
+      <Pressable accessibilityRole="button" onPress={leave} hitSlop={12}>
+        <Label tone="chalk">{pane === 'main' ? 'Done' : '‹ Screen time'}</Label>
       </Pressable>
     </View>
   );

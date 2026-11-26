@@ -4,10 +4,11 @@ import { Body, Chip, Label, Strong } from './primitives';
 import { color, radius, space, type } from './theme';
 
 /** Grouped rows used by Settings and the Screen Time screens. */
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+/** A titled card of rows. No title when the page itself already says what the card is. */
+export function Section({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <View style={{ gap: space.md }}>
-      <Label tone="vial">{title}</Label>
+      {title ? <Label tone="vial">{title}</Label> : null}
       <View style={styles.section}>{children}</View>
     </View>
   );
