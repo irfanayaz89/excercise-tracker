@@ -1,5 +1,5 @@
 import { Redirect, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DIFFICULTIES } from '@/engine/difficulty';
@@ -43,6 +43,13 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
   const [best, setBest] = useState<number | null>(null);
   const info = EXERCISES[exercise];
   const timed = isTimed(exercise);
+
+  // Opening an exercise makes it the chosen one: back on Home it stays highlighted, even without starting a set.
+  useEffect(() => {
+    if (settings.exercise !== exercise) update({ exercise });
+    // Only when a different exercise is opened, not on every settings change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercise]);
 
   useFocusEffect(
     useCallback(() => {
