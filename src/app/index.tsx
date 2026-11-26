@@ -8,7 +8,7 @@ import type { Exercise } from '@/engine/types';
 import { HistoryList } from '@/features/history/HistoryList';
 import { AddWeightForCalories, CaloriesHow } from '@/features/energy/Calories';
 import { ScreenTimeCard } from '@/features/screentime/ScreenTimeCard';
-import { fatGrams, kgToLb, lbToKg, scaleKcal, weightPlan, workoutKcal, ZERO_KCAL } from '@/fitness/energy';
+import { kgToLb, lbToKg, scaleKcal, weightPlan, workoutKcal, ZERO_KCAL } from '@/fitness/energy';
 import { ProjectionCard } from '@/features/energy/Projection';
 import { dayMonth, kcal, kcalText, weight, WHY_LABELS } from '@/fitness/format';
 import { daysSinceLastSet, goalProgress, planWorkoutKcalPerDay, setsKcal, weekStreak } from '@/fitness/goal';
@@ -211,17 +211,6 @@ export default function Home() {
         </View>
       )}
 
-      {profile && perSession && (
-        <ProjectionCard
-          perSession={perSession}
-          perWeek={profile.daysPerWeek}
-          units={profile.units}
-          dailyDeficit={deficit}
-          forecast={forecast}
-          targetChangeKg={deficit > 0 && profile.targetKg !== null ? profile.weightKg - profile.targetKg : null}
-        />
-      )}
-
       <View style={{ gap: space.md }}>
         <View style={styles.todayHead}>
           <Label>Today</Label>
@@ -270,8 +259,10 @@ export default function Home() {
         {profile && weekBurned.kcal >= 1 && (
           <View style={{ gap: space.xs }}>
             <Body size={type.detail} tone="muted">
-              <Strong size={type.detail} tone="chalk">{`${kcalText(weekBurned)} in the last 7 days`}</Strong>
-              {`, about the energy in ${Math.max(1, Math.round(fatGrams(weekBurned.kcal)))} g of body fat.`}
+              <Strong size={type.detail} tone="chalk">
+                {kcalText(weekBurned)}
+              </Strong>
+              {' in the last 7 days.'}
             </Body>
             <CaloriesHow />
           </View>
@@ -326,6 +317,18 @@ export default function Home() {
           })}
         </View>
       </View>
+
+      {/* The outlook comes after today's work and the exercises: doing a set is the main job here. */}
+      {profile && perSession && (
+        <ProjectionCard
+          perSession={perSession}
+          perWeek={profile.daysPerWeek}
+          units={profile.units}
+          dailyDeficit={deficit}
+          forecast={forecast}
+          targetChangeKg={deficit > 0 && profile.targetKg !== null ? profile.weightKg - profile.targetKg : null}
+        />
+      )}
 
       <View style={{ gap: space.md }}>
         <Label>Recent sets</Label>

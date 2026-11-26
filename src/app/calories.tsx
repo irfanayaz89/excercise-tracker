@@ -68,6 +68,13 @@ export default function CaloriesInfo() {
         calories people tend to eat back. It isn&apos;t fat actually burned, and weight doesn&apos;t fall in a straight line: the scale may
         not move while fat goes down, because strength work adds a little muscle.
       </Section>
+      <Section title="The 30 and 60 day outlook">
+        Each column shows the one number that matters for your goal, with its likely range: weight with an eating target, your best set once
+        you have two weeks of sets, otherwise workout calories. People tend to eat back about a fifth of workout calories, which is already
+        taken off. Weight lost in the first month holds more water, so the fast end of the range counts it at 4,858 kcal per kg; the middle
+        uses 7,700. Over months and years the body adapts: a lasting 100 kcal a day less moves weight about 4.5 kg in the end, half of it
+        within a year (Hall 2011).
+      </Section>
       <Section title="Your daily calories">
         Your goal&apos;s plan uses the Mifflin–St Jeor equation, or Ten Haaf&apos;s if you lift regularly or are very muscular, accurate to
         about 10% for most adults. A waist measurement gives a body-fat estimate (Relative Fat Mass, about ±5 points). Your weekly weigh-in

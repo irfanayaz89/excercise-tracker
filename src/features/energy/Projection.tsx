@@ -7,14 +7,12 @@ import { Body, Display, Label, Mono } from '@/ui/primitives';
 import { color, radius, space, type } from '@/ui/theme';
 import { CaloriesHow } from './Calories';
 
-const range = (k: Kcal) => `${kcal(k.low)}–${kcal(k.high)}`;
-
 /**
- * "Your next 30 and 60 days": what the plan can honestly do. Ranges, not
- * promises (FTC and ASA rules on weight-loss claims; App Store 1.4.1): workout
- * calories and their fat-energy after people eat some back, a weight band only
- * when there is an eating target, and a rep forecast only from the user's own
- * sets.
+ * "In 30 and 60 days": one number per column, the one that matters for the
+ * goal (weight with an eating target, best set with a rep forecast, otherwise
+ * workout calories), with its likely range underneath. Ranges, not promises
+ * (FTC and ASA rules on weight-loss claims; App Store 1.4.1). Fat equivalents,
+ * eating back, and why the scale lags are on the "How it's worked out" screen.
  */
 export function ProjectionCard({
   perSession,
@@ -23,7 +21,7 @@ export function ProjectionCard({
   dailyDeficit = 0,
   forecast = null,
   targetChangeKg = null,
-  title = 'Your next 30 and 60 days',
+  title = 'In 30 and 60 days',
 }: {
   perSession: Kcal;
   perWeek: number;
@@ -36,49 +34,49 @@ export function ProjectionCard({
   targetChangeKg?: number | null;
   title?: string;
 }) {
-  const days = [30, 60] as const;
-  const work = days.map((d) => projectWorkouts(perSession, perWeek, d));
-  const diet = dailyDeficit > 0 ? days.map((d, i) => projectWeightChange(dailyDeficit, d, work[i].total.kcal)) : null;
+  const cols = ([30, 60] as const).map((d) => {
+    const work = projectWorkouts(perSession, perWeek, d);
+    const note = `${work.sessions} workouts`;
+    if (dailyDeficit > 0) {
+      const w = projectWeightChange(dailyDeficit, d, work.total.kcal);
+      if (targetChangeKg !== null && w.kg >= targetChangeKg) return { d, big: 'Goal', sub: 'likely reached by then', note };
+      const high = targetChangeKg !== null ? Math.min(w.high, targetChangeKg) : w.high;
+      return { d, big: `−${weight(w.kg, units)}`, sub: `likely ${weight(w.low, units, false)}–${weight(high, units)}`, note };
+    }
+    if (forecast) {
+      const f = forecastBest(forecast.best, d);
+      return { d, big: `${f.low}–${f.high}`, sub: `${forecast.label.toLowerCase()} in one set`, note };
+    }
+    return { d, big: `${kcal(work.total.kcal)} kcal`, sub: `likely ${kcal(work.total.low)}–${kcal(work.total.high)}`, note };
+  });
   return (
-    // Not one accessible block: that would hide every figure (and the link) from a screen reader.
     <View style={styles.card}>
       <Label>{title}</Label>
       <View style={styles.cols}>
-        {days.map((d, i) => (
-          <View key={d} style={{ flex: 1, gap: 2 }}>
-            <Mono size={type.small} tone="muted">{`${d} days`}</Mono>
-            <Display size={type.displayM}>{`${kcal(work[i].total.kcal)} kcal`}</Display>
+        {cols.map((c) => (
+          <View
+            key={c.d}
+            style={styles.col}
+            accessible
+            accessibilityLabel={`In ${c.d} days: ${c.big.replace('−', 'minus ')}, ${c.sub}, from ${c.note}`}
+          >
+            <Mono size={type.small} tone="muted">{`${c.d} days`}</Mono>
+            <Display size={type.displayM}>{c.big}</Display>
+            <Body size={type.caption} tone="muted">
+              {c.sub}
+            </Body>
             <Mono size={type.small} tone="muted">
-              {`${range(work[i].total)} from ${work[i].sessions} workouts`}
+              {c.note}
             </Mono>
-            <Body size={type.note}>{`≈ the energy in ${kcal(work[i].fatG.kcal)} g of body fat`}</Body>
-            {diet && (
-              <Body size={type.note} tone="vial">
-                {targetChangeKg !== null && diet[i].kg >= targetChangeKg
-                  ? `With your eating target: your goal (−${weight(targetChangeKg, units)}) is likely reached by then`
-                  : `With your eating target: −${weight(diet[i].kg, units)} (${weight(diet[i].low, units, false)}–${weight(
-                      targetChangeKg !== null ? Math.min(diet[i].high, targetChangeKg) : diet[i].high,
-                      units,
-                    )})`}
-              </Body>
-            )}
-            {forecast && (
-              <Body size={type.note} tone="good">
-                {(() => {
-                  const f = forecastBest(forecast.best, d);
-                  return `${forecast.label}: likely ${f.low}–${f.high} in a set`;
-                })()}
-              </Body>
-            )}
           </View>
         ))}
       </View>
-      <Body tone="muted" size={type.caption}>
-        {`Your scale may not move while fat goes down: strength work swaps a little fat for muscle (about half a kilo of fat in 8 weeks in trials). People also eat back about a fifth of workout calories, which is already taken off here.${
-          forecast ? '' : ' Reps usually climb fastest in the first weeks; after two weeks of sets Trueline forecasts yours.'
-        }`}
-      </Body>
-      <CaloriesHow label="How this is worked out ›" />
+      <View style={styles.foot}>
+        <Body size={type.caption} tone="muted">
+          Estimates, not promises.
+        </Body>
+        <CaloriesHow label="How it's worked out ›" />
+      </View>
     </View>
   );
 }
@@ -93,4 +91,13 @@ const styles = StyleSheet.create({
     borderColor: color.lineSoft,
   },
   cols: { flexDirection: 'row', gap: space.lg },
+  col: { flex: 1, gap: 2 },
+  foot: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: space.md,
+    rowGap: space.xs,
+  },
 });

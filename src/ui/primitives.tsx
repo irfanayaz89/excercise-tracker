@@ -154,7 +154,6 @@ export function Button({ label, variant = 'vial', size = 'md', icon, style, disa
   );
 }
 
-/** Selectable chip used for targets and settings. */
 /**
  * A choice. One of a set ("radio button, selected") unless `multi`, where several can be on
  * ("checkbox, checked").
@@ -164,16 +163,20 @@ export function Chip({
   selected,
   onPress,
   multi = false,
+  accessibilityLabel,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   multi?: boolean;
+  /** When the chip's short text needs a fuller name for screen readers. */
+  accessibilityLabel?: string;
 }) {
   return (
     <Pressable
       accessibilityRole={multi ? 'checkbox' : 'radio'}
       accessibilityState={{ checked: selected }}
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       style={({ pressed }) => [styles.chip, selected && styles.chipOn, pressed && { opacity: 0.8 }]}
     >

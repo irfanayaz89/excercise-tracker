@@ -8,9 +8,7 @@ import { EXERCISE_IDS } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { SAFETY_LABELS } from '@/features/onboarding/safety';
 import {
-  bmi,
   cmToFtIn,
-  eventualChangeKg,
   ftInToCm,
   kgToLb,
   lbToKg,
@@ -26,7 +24,6 @@ import {
   type Sex,
 } from '@/fitness/energy';
 import { dayMonth, kcal, paceLabel, weight, WHY_LABELS } from '@/fitness/format';
-import { fatGrams } from '@/fitness/energy';
 import { ProjectionCard } from '@/features/energy/Projection';
 import { planWorkoutKcalPerDay } from '@/fitness/goal';
 import { rotationCopy } from '@/session/copy';
@@ -34,7 +31,7 @@ import { useScreenTime } from '@/screentime/store';
 import { bodyOf, defaultProfile, LIMITS, startProfile, useProfile, WHYS, type Aim, type Profile } from '@/storage/profile';
 import { SAFETY_FLAGS, useSettings, type SafetyFlag } from '@/storage/settings';
 import { NumberField } from '@/ui/NumberField';
-import { Body, Button, Chip, Display, Label, Mono, Strong } from '@/ui/primitives';
+import { Body, Button, Chip, Display, Label, Strong } from '@/ui/primitives';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { color, font, radius, space, type } from '@/ui/theme';
 
@@ -254,8 +251,8 @@ function AimStep({ p, set, next }: StepProps) {
           />
         ))}
       </View>
-      <View style={{ gap: space.sm }}>
-        <Label>What would make it worth it? Optional</Label>
+      <More label="+ Add what would make it worth it (optional)" open={p.why.length > 0}>
+        <Label>What would make it worth it?</Label>
         <View style={styles.chips}>
           {WHYS.map((w) => (
             <Chip
@@ -267,7 +264,7 @@ function AimStep({ p, set, next }: StepProps) {
             />
           ))}
         </View>
-      </View>
+      </More>
       <Button label="Continue" size="lg" onPress={next} />
     </>
   );
@@ -280,10 +277,20 @@ const SEXES: [Sex, string][] = [
 ];
 
 const ACTIVITY: { value: Activity; title: string; detail: string }[] = [
-  { value: 'low', title: 'Mostly sitting', detail: 'Desk work, little walking' },
-  { value: 'some', title: 'On my feet some of the day', detail: 'Walking, standing, light work' },
-  { value: 'high', title: 'Active most days', detail: 'Physical job or regular sport' },
+  { value: 'low', title: 'Mostly sitting', detail: 'Desk work, little walking.' },
+  { value: 'some', title: 'Some', detail: 'On your feet some of the day: walking, standing, light work.' },
+  { value: 'high', title: 'Very active', detail: 'A physical job or regular sport.' },
 ];
+
+/** Short chip labels for the health answers (the full wording is read out by screen readers). */
+const SAFETY_SHORT: Record<SafetyFlag, string> = {
+  heart: 'Heart or blood pressure',
+  back: 'Lower back',
+  neck: 'Neck or shoulder',
+  wrist: 'Wrists',
+  pregnancy: 'Pregnant or new baby',
+  injury: 'Recent injury',
+};
 
 function YouStep({ p, set, next, safety, setSafety }: StepProps) {
   const imperial = p.units === 'imperial';
@@ -357,36 +364,41 @@ function YouStep({ p, set, next, safety, setSafety }: StepProps) {
       )}
       {full && (
         <Segmented
-          label="Build"
-          value={p.muscular ? 'muscular' : 'average'}
-          options={[
-            ['average', 'Average'],
-            ['muscular', 'I lift / very muscular'],
-          ]}
-          onChange={(v) => set({ muscular: v === 'muscular' })}
+          label="Outside workouts, you are"
+          value={p.activity}
+          options={ACTIVITY.map((a) => [a.value, a.title])}
+          onChange={(activity) => set({ activity })}
+          hint={ACTIVITY.find((a) => a.value === p.activity)?.detail}
         />
       )}
-      {full && <WaistField p={p} set={set} />}
       {full && (
-        <View style={{ gap: space.sm }}>
-          <Label>Outside workouts, you are</Label>
-          {ACTIVITY.map((a) => (
-            <Lane
-              key={a.value}
-              title={a.title}
-              detail={a.detail}
-              compact
-              selected={p.activity === a.value}
-              onPress={() => set({ activity: a.value })}
-            />
-          ))}
-        </View>
+        <More label="+ Make the numbers more accurate (optional)" open={p.muscular || p.waistCm !== null}>
+          <Segmented
+            label="Build"
+            value={p.muscular ? 'muscular' : 'average'}
+            options={[
+              ['average', 'Average'],
+              ['muscular', 'I lift / very muscular'],
+            ]}
+            onChange={(v) => set({ muscular: v === 'muscular' })}
+          />
+          <WaistField p={p} set={set} />
+        </More>
       )}
       <View style={{ gap: space.sm }}>
         <Label>Anything to take care with? Optional</Label>
-        {SAFETY_FLAGS.map((f) => (
-          <Lane key={f} title={SAFETY_LABELS[f]} compact multi selected={safety.includes(f)} onPress={() => toggle(f)} />
-        ))}
+        <View style={styles.chips}>
+          {SAFETY_FLAGS.map((f) => (
+            <Chip
+              key={f}
+              label={SAFETY_SHORT[f]}
+              multi
+              selected={safety.includes(f)}
+              onPress={() => toggle(f)}
+              accessibilityLabel={SAFETY_LABELS[f]}
+            />
+          ))}
+        </View>
       </View>
       {(safety.includes('heart') || safety.includes('injury')) && (
         <Note tone="cue">Check with your doctor before you start. Trueline will start you on Easy, and you can stop any time.</Note>
@@ -518,25 +530,13 @@ function WeightGoal({ p, set, next }: StepProps) {
       <Body tone="muted" size={type.note}>
         The lowest target for your height is {weight(floor, p.units)}.
       </Body>
-      <View style={{ gap: space.sm }}>
-        <Label>How fast</Label>
-        {PACES.map((pace) => (
-          <Lane
-            key={pace}
-            compact
-            title={paceLabel(pace, p.units)}
-            detail={
-              pace === 0.25
-                ? 'Gentle, easy to keep up'
-                : pace === 0.5
-                  ? 'Steady, the usual advice'
-                  : 'Faster, needs a bigger change in eating'
-            }
-            selected={p.pace === pace}
-            onPress={() => set({ pace: pace as Pace })}
-          />
-        ))}
-      </View>
+      <Segmented
+        label="How fast"
+        value={String(p.pace)}
+        options={PACES.map((pace) => [String(pace), pace === 0.25 ? 'Gentle' : pace === 0.5 ? 'Steady' : 'Faster'])}
+        onChange={(v) => set({ pace: Number(v) as Pace })}
+        hint={`${paceLabel(p.pace, p.units)}: ${p.pace === 0.25 ? 'easy to keep up.' : p.pace === 0.5 ? 'the usual advice.' : 'needs a bigger change in eating.'}`}
+      />
       <Body size={type.detail}>
         {Number.isFinite(plan.weeks)
           ? `${plan.floored ? 'Without eating too little, that' : 'That'} gets you to ${weight(target, p.units)} by about ${dayMonth(plan.by)}, in ${plan.weeks} weeks, counting your ${p.daysPerWeek} workouts a week.`
@@ -613,108 +613,59 @@ function DaysPicker({ p, set, hideLabel }: Pick<StepProps, 'p' | 'set'> & { hide
 function PlanStep({ p, next, safety }: StepProps) {
   const b = bodyOf(p);
   const maint = maintenance(b);
-  const exerciseBody = { weightKg: p.weightKg, heightCm: p.heightCm, sex: p.sex };
-  const perWorkout = workoutKcal(exerciseBody);
+  const perWorkout = workoutKcal({ weightKg: p.weightKg, heightCm: p.heightCm, sex: p.sex });
   const week = perWorkout.kcal * p.daysPerWeek;
   const noDiet = safety.includes('pregnancy') || p.age < 18;
-  const workouts = (
-    <Fact
-      big={kcal(week)}
-      unit={`kcal a week from workouts (${kcal(perWorkout.low * p.daysPerWeek)}–${kcal(perWorkout.high * p.daysPerWeek)})`}
-      text={`${p.daysPerWeek} workouts of about 10 minutes (3 × 10 push-ups, 2 × 20 crunches, a 60 s plank), above what you burn anyway. That is the energy in about ${Math.round(fatGrams(week))} g of body fat.`}
-    />
-  );
+  const burn: [string, string] = ['Your workouts burn', `about ${kcal(week)} kcal a week`];
   const lose = p.aim === 'lose-fat' && p.targetKg !== null && !noDiet;
-  const projection = (
-    <ProjectionCard
-      perSession={perWorkout}
-      perWeek={p.daysPerWeek}
-      units={p.units}
-      dailyDeficit={lose ? weightPlan(b, p.targetKg!, p.pace).dailyDeficit : 0}
-      targetChangeKg={lose ? p.weightKg - p.targetKg! : null}
-    />
-  );
+  const plan = lose ? weightPlan(b, p.targetKg!, p.pace, undefined, planWorkoutKcalPerDay(p)) : null;
 
+  // One headline number and a few plain rows. The method, the ranges and the sources are one tap away.
   let head: ReactNode;
-  let facts: ReactNode;
-  if (p.aim === 'lose-fat' && p.targetKg !== null && !noDiet && Number.isFinite(weightPlan(b, p.targetKg, p.pace).weeks)) {
-    const plan = weightPlan(b, p.targetKg, p.pace, undefined, planWorkoutKcalPerDay(p));
-    const lasting = eventualChangeKg(week / 7);
+  let rows: [string, string][] = [burn];
+  let note: string | null = null;
+  if (plan && Number.isFinite(plan.weeks)) {
     head = (
       <>
         <Label>Eat about this much a day</Label>
         <Big value={kcal(plan.eatKcal)} label={`${kcal(plan.eatKcal)} kcal a day`} />
         <Strong size={type.callout}>
-          kcal a day, to reach {weight(p.targetKg, p.units)}
+          kcal a day, to reach {weight(p.targetKg!, p.units)}
           {Number.isFinite(plan.by) ? ` by ${dayMonth(plan.by)}` : ''}
         </Strong>
       </>
     );
-    facts = (
-      <>
-        <Fact
-          big={kcal(maint)}
-          unit="kcal a day keeps you as you are"
-          // What this gap really loses: with the safety floor in place it's less than the pace picked.
-          text={`Your body's daily use, from your size, age and activity. Eating ${kcal(plan.dailyDeficit)} less a day loses about ${
-            plan.floored ? weeklyLoss((plan.dailyDeficit * 7) / 7700, p.units) : paceLabel(p.pace, p.units)
-          } at first.`}
-        />
-        {workouts}
-        <Body tone="muted" size={type.note}>
-          {`Kept up for good, these workouts alone would take off about ${weight(lasting.eventual, p.units)} over the years, half of it in the first year. Most of the change comes from eating.`}
-        </Body>
-        {plan.floored && (
-          <Note tone="cue">
-            {`At ${paceLabel(p.pace, p.units)} you would eat less than your body needs at rest, so the plan stays at ${kcal(plan.eatKcal)} kcal and takes a little longer.`}
-          </Note>
-        )}
-      </>
-    );
+    rows = [
+      ['Your body uses', `about ${kcal(maint)} kcal a day`],
+      ['You lose about', plan.floored ? weeklyLoss((plan.dailyDeficit * 7) / 7700, p.units) : paceLabel(p.pace, p.units)],
+      burn,
+    ];
+    if (plan.floored) note = `A little slower than ${paceLabel(p.pace, p.units)}, so you never eat less than your body needs at rest.`;
   } else if (p.aim === 'get-stronger' && p.repGoal) {
     const fuel = strengthFuel(b);
     head = (
       <>
-        <Label>Protein a day</Label>
-        <Big value={`${fuel.proteinG} g`} label={`${fuel.proteinG} grams of protein a day`} />
-        <Strong size={type.callout}>
-          {noDiet ? 'grams of protein a day, spread across meals' : `grams of protein, about ${kcal(fuel.eatKcal)} kcal a day in all`}
-        </Strong>
+        <Label>Your goal</Label>
+        <Big value={String(p.repGoal.reps)} label={`${p.repGoal.reps} in one set`} />
+        <Strong size={type.callout}>{p.repGoal.exercise === 'pullup' ? 'pull-ups in one set' : 'push-ups in one set'}</Strong>
       </>
     );
-    facts = (
-      <>
-        <Fact
-          big={String(p.repGoal.reps)}
-          unit={p.repGoal.exercise === 'pullup' ? 'pull-ups in one set' : 'push-ups in one set'}
-          text={`Train it on ${p.daysPerWeek} days a week with a rest day after hard ones. Add a rep when every rep of the last set was clean.`}
-        />
-        <Body tone="muted" size={type.note}>
-          {noDiet
-            ? '1.6 g per kg a day is where studies stop finding extra gains.'
-            : `Muscle needs a little more food than you use (about ${kcal(fuel.eatKcal - maint)} kcal over) and protein spread across meals. 1.6 g per kg a day is where studies stop finding extra gains (Morton 2018).`}
-        </Body>
-        {workouts}
-      </>
-    );
+    rows = [
+      ['Train', `${p.daysPerWeek} days a week`],
+      ['Protein', `about ${fuel.proteinG} g a day`],
+      ...(noDiet ? [] : ([['Eat', `about ${kcal(fuel.eatKcal)} kcal a day`]] as [string, string][])),
+      burn,
+    ];
+    note = null;
   } else if (p.aim === 'less-screen') {
     head = (
       <>
         <Label>Earn your screen time</Label>
-        <Big value={String(p.daysPerWeek)} label={`${p.daysPerWeek} workout days a week`} />
-        <Strong size={type.callout}>workout days, about 10 minutes each</Strong>
+        <Big value="15 / 30" label="15 minutes for 10 push-ups, 30 for 20" />
+        <Strong size={type.callout}>minutes for 10 / 20 push-ups in a set</Strong>
       </>
     );
-    facts = (
-      <>
-        <Fact
-          big="15 / 30"
-          unit="min for 10 / 20 push-ups in a set"
-          text="1 min a clean push-up, plus 5 min when a set reaches 10 and 5 more at 20. Other exercises count as push-up equivalents: a pull-up is 2.5, a crunch 0.4, 6 s of plank 1. Set it up in Screen time, with a daily most."
-        />
-        {workouts}
-      </>
-    );
+    rows = [['Workouts', `${p.daysPerWeek} days a week, about 10 minutes`], ['Also count', 'Pull-ups, crunches and planks'], burn];
   } else {
     head = (
       <>
@@ -723,22 +674,24 @@ function PlanStep({ p, next, safety }: StepProps) {
         <Strong size={type.callout}>workout days, about 10 minutes each</Strong>
       </>
     );
-    facts = (
-      <>
-        {workouts}
-        <Body tone="muted" size={type.note}>
-          Health guidelines (WHO) ask for muscle work on at least 2 days a week, plus 150 minutes of walking or other movement.
-        </Body>
-      </>
-    );
   }
 
-  const bmiNow = bmi(p.heightCm, p.weightKg);
   return (
     <>
       <View style={{ gap: space.sm }}>{head}</View>
-      <View style={{ gap: space.lg }}>{facts}</View>
-      {projection}
+      <View style={styles.card}>
+        {rows.map(([k, v]) => (
+          <View key={k} style={styles.planRow} accessible accessibilityLabel={`${k}: ${v}`}>
+            <Body tone="muted" size={type.detail}>
+              {k}
+            </Body>
+            <Strong size={type.detail} style={{ flexShrink: 1, textAlign: 'right' }}>
+              {v}
+            </Strong>
+          </View>
+        ))}
+      </View>
+      {note && <Body size={type.note}>{note}</Body>}
       {noDiet && (
         <Note tone="cue">
           {p.age < 18
@@ -746,10 +699,15 @@ function PlanStep({ p, next, safety }: StepProps) {
             : 'While pregnant or soon after birth, don’t diet to lose weight. Ask your midwife or doctor what suits you.'}
         </Note>
       )}
+      <ProjectionCard
+        perSession={perWorkout}
+        perWeek={p.daysPerWeek}
+        units={p.units}
+        dailyDeficit={plan && Number.isFinite(plan.weeks) ? weightPlan(b, p.targetKg!, p.pace).dailyDeficit : 0}
+        targetChangeKg={plan && Number.isFinite(plan.weeks) ? p.weightKg - p.targetKg! : null}
+      />
       <Body tone="muted" size={type.caption}>
-        {p.aim === 'lose-fat' || p.aim === 'get-stronger'
-          ? `Daily needs from ${p.muscular ? 'Ten Haaf’s equation for muscular people' : 'Mifflin–St Jeor'}, accurate to about 10% for most adults; your weekly weight is the true check. Workout calories from your weight, height and rep speed, about ±30% a set. BMI now ${bmiNow.value.toFixed(1)}. Not medical advice.`
-          : 'Workout calories from your weight, height and rep speed, using lab measurements of push-ups and planks: about ±30% for any one set. Not medical advice.'}
+        {lose ? 'Not medical advice. Your weekly weigh-in is the real check.' : 'Not medical advice.'}
       </Body>
       <Button label="Looks good" size="lg" onPress={next} />
     </>
@@ -888,11 +846,14 @@ function Segmented<T extends string>({
   value,
   options,
   onChange,
+  hint,
 }: {
   label: string;
   value: T;
   options: [T, string][];
   onChange: (v: T) => void;
+  /** One line about the current choice, instead of a description under every option. */
+  hint?: string;
 }) {
   return (
     <View style={{ gap: space.sm }}>
@@ -902,32 +863,39 @@ function Segmented<T extends string>({
           <Pressable
             key={v}
             accessibilityRole="radio"
-            accessibilityState={{ selected: value === v }}
+            accessibilityState={{ checked: value === v }}
             onPress={() => onChange(v)}
             style={[styles.choice, value === v && styles.selected]}
           >
-            <Strong size={type.detail}>{l}</Strong>
+            <Strong size={type.detail} style={{ textAlign: 'center' }}>
+              {l}
+            </Strong>
           </Pressable>
         ))}
       </View>
+      {hint && (
+        <Body tone="muted" size={type.note}>
+          {hint}
+        </Body>
+      )}
     </View>
   );
 }
 
-/** A number with what it means, used on the plan. */
-function Fact({ big, unit, text }: { big: string; unit: string; text: string }) {
-  return (
-    <View style={styles.card}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space.sm, flexWrap: 'wrap' }}>
-        <Display size={type.headline}>{big}</Display>
-        <Mono size={type.small} tone="muted">
-          {unit}
-        </Mono>
-      </View>
-      <Body tone="muted" size={type.note}>
-        {text}
-      </Body>
-    </View>
+/** Optional extras, closed until asked for: keeps each step to the questions that matter. */
+function More({ label, open: startOpen, children }: { label: string; open: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(startOpen);
+  return open ? (
+    <View style={{ gap: space.md }}>{children}</View>
+  ) : (
+    <Pressable
+      accessibilityRole="button"
+      hitSlop={8}
+      onPress={() => setOpen(true)}
+      style={{ alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
+    >
+      <Label tone="vial">{label}</Label>
+    </Pressable>
   );
 }
 
@@ -1022,4 +990,5 @@ const styles = StyleSheet.create({
     borderColor: color.cue,
   },
   tick: { width: 14, height: 4, borderRadius: 2, backgroundColor: color.vial, marginTop: 10 },
+  planRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: space.md, flexWrap: 'wrap' },
 });
