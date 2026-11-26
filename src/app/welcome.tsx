@@ -458,6 +458,10 @@ function GoalStep(props: StepProps) {
   return <ActiveGoal {...props} />;
 }
 
+/** A weekly loss in the user's units, to the nearest 0.25 lb or 0.05 kg. */
+const weeklyLoss = (kg: number, units: Profile['units']) =>
+  units === 'imperial' ? `${Math.round(kgToLb(kg) * 4) / 4} lb a week` : `${Math.round(kg * 20) / 20} kg a week`;
+
 function WeightGoal({ p, set, next }: StepProps) {
   const floor = Math.ceil(lowestHealthyKg(p.heightCm) * 2) / 2;
   // At least a kilo of room above the floor, or the target field's lowest value would be above its highest.
@@ -651,7 +655,10 @@ function PlanStep({ p, next, safety }: StepProps) {
         <Fact
           big={kcal(maint)}
           unit="kcal a day keeps you as you are"
-          text={`Your body's daily use, from your size, age and activity. Eating ${kcal(plan.dailyDeficit)} less a day loses about ${paceLabel(p.pace, p.units)} at first.`}
+          // What this gap really loses: with the safety floor in place it's less than the pace picked.
+          text={`Your body's daily use, from your size, age and activity. Eating ${kcal(plan.dailyDeficit)} less a day loses about ${
+            plan.floored ? weeklyLoss((plan.dailyDeficit * 7) / 7700, p.units) : paceLabel(p.pace, p.units)
+          } at first.`}
         />
         {workouts}
         <Body tone="muted" size={type.note}>

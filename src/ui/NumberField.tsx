@@ -74,7 +74,8 @@ export function NumberField({
             returnKeyType="done"
             selectTextOnFocus
             maxLength={6}
-            style={styles.input}
+            // Grows with what's typed: a fixed box cut "49.2" to "49." (digits ~15 pt wide at this size, a point ~7).
+            style={[styles.input, { width: Math.max(36, 8 + [...text].reduce((w, c) => w + (/[0-9]/.test(c) ? 15 : 7), 0)) }]}
           />
           {unit && <Text style={styles.unit}>{unit}</Text>}
         </View>

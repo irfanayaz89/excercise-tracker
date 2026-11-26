@@ -42,6 +42,13 @@ const startOfDay = (daysAgo = 0) => {
 const startOfToday = () => startOfDay(0);
 
 /**
+ * The planned date stays the goal, but when today's weight puts the finish more than two weeks
+ * later (weight went up, or less came off than planned), say when it now looks likely.
+ */
+const behindTo = (planned: number, fromToday: number) =>
+  Number.isFinite(fromToday) && fromToday > planned + 14 * 86_400_000 ? `; from today's weight, about ${dayMonth(fromToday)}` : '';
+
+/**
  * Home: the goal as a big filling number, today's work and what it burned,
  * every exercise one tap away, and recent sets.
  */
@@ -451,7 +458,7 @@ function GoalBlock({
       ) : lose && startPlan && plan ? (
         <Body tone="muted">
           {Number.isFinite(plan.weeks)
-            ? `${Number.isFinite(startPlan.by) ? `Planned for ${dayMonth(startPlan.by)}. ` : ''}Eat about ${kcal(plan.eatKcal)} kcal a day.`
+            ? `${Number.isFinite(startPlan.by) ? `Planned for ${dayMonth(startPlan.by)}${behindTo(startPlan.by, plan.by)}. ` : ''}Eat about ${kcal(plan.eatKcal)} kcal a day.`
             : 'Eating less isn’t safe for your body right now: workouts and strength are the plan.'}
         </Body>
       ) : null}

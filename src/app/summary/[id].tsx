@@ -118,6 +118,8 @@ export default function SummaryScreen() {
     router.replace(demo ? { pathname: '/session', params: { demo: '1', ex: exercise } } : '/session');
   };
   const counted = fixed !== null || data.summary.counted !== undefined;
+  // What the camera counted: kept from an earlier fix, or this set's own count when fixed just now.
+  const cameraCount = data.summary.counted?.total ?? (fixed !== null ? data.summary.totalReps : null);
   const s =
     fixed === null
       ? data.summary
@@ -201,9 +203,7 @@ export default function SummaryScreen() {
           </View>
           {!counted && <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />}
           {counted && (
-            <Mono tone="muted">
-              {`Count fixed by hand${data.summary.counted ? ` (the camera counted ${data.summary.counted.total})` : ''}.`}
-            </Mono>
+            <Mono tone="muted">{`Count fixed by hand${cameraCount !== null ? ` (the camera counted ${cameraCount})` : ''}.`}</Mono>
           )}
           {/* Same inputs as the history list (active time over reps), so a set shows one calorie figure everywhere. */}
           <SetCalories exercise={ex} activeMs={s.activeMs} holdMs={0} reps={s.totalReps} />
@@ -232,7 +232,8 @@ export default function SummaryScreen() {
         <Stat size="lg" style={styles.stat} label="Clean" value={String(s.cleanReps)} tone="good" />
         <Stat size="lg" style={styles.stat} label="Flagged" value={String(flagged)} tone={flagged ? 'cue' : 'chalk'} />
         {!counted && <Stat size="lg" style={styles.stat} label="Best streak" value={String(s.bestCleanStreak)} />}
-        <Stat size="lg" style={styles.stat} label="Avg rep" value={s.avgRepMs ? `${(s.avgRepMs / 1000).toFixed(1)}s` : '—'} />
+        {/* The camera's rep times no longer describe a count fixed by hand (like the streak and tempo). */}
+        {!counted && <Stat size="lg" style={styles.stat} label="Avg rep" value={s.avgRepMs ? `${(s.avgRepMs / 1000).toFixed(1)}s` : '—'} />}
       </View>
 
       {!counted && s.reps.length > 1 && <TempoChart reps={s.reps} />}
