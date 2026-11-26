@@ -1,3 +1,4 @@
+import { useIsFocused } from 'expo-router';
 import { useEffect, useState } from 'react';
 import Animated, {
   Easing,
@@ -39,7 +40,10 @@ export function ExerciseAnimation({
   const front = view === 'front' && EXERCISES[exercise].frontView;
   // Pull-ups are always seen facing the phone, hanging from a bar.
   const pull = exercise === 'pullup';
-  const reduce = useReducedMotion();
+  // Still when motion is reduced, and when this screen isn't the one showing (a live set runs on
+  // top of the exercise screen: the loop would compete with the camera and the pose model).
+  const focused = useIsFocused();
+  const reduce = useReducedMotion() || !focused;
   const p = useSharedValue(STILL_P[exercise]);
   const period = MOTION_MS[exercise];
 
@@ -73,8 +77,8 @@ export function ExerciseAnimation({
         pull
           ? `Animation of a pull-up, seen from the front: from a dead hang to the chin over the bar and back. The phone stands ${distance} from the bar, about waist high, facing you.`
           : front
-          ? `Animation of ${label(exercise)}, seen head-on. The phone stands on the floor beyond your hands, ${distance} away, facing you.`
-          : `Animation of ${label(exercise)}. The phone stands on the floor ${distance} away, level with your hips and at a right angle to your body, so it sees you ${exercise === 'sidePlank' ? 'from the front, lying on your side' : 'side-on'}.`
+            ? `Animation of ${label(exercise)}, seen head-on. The phone stands on the floor beyond your hands, ${distance} away, facing you.`
+            : `Animation of ${label(exercise)}. The phone stands on the floor ${distance} away, level with your hips and at a right angle to your body, so it sees you ${exercise === 'sidePlank' ? 'from the front, lying on your side' : 'side-on'}.`
       }
     >
       {/* ── camera view ── */}
@@ -201,7 +205,15 @@ function BarMap({ distance }: { distance: string }) {
 }
 
 function label(e: Exercise): string {
-  return e === 'pullup' ? 'a pull-up' : e === 'pushup' ? 'a push-up' : e === 'crunch' ? 'a crunch' : e === 'plank' ? 'a plank' : 'a side plank on each side';
+  return e === 'pullup'
+    ? 'a pull-up'
+    : e === 'pushup'
+      ? 'a push-up'
+      : e === 'crunch'
+        ? 'a crunch'
+        : e === 'plank'
+          ? 'a plank'
+          : 'a side plank on each side';
 }
 
 /** The number in the corner: reps counted, seconds held, or the side being held. */

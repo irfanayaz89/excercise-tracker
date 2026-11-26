@@ -37,9 +37,10 @@ export const font = {
   displayBlack: 'BigShouldersDisplay_900Black',
   displayMed: 'BigShouldersDisplay_600SemiBold',
   body: 'Archivo_400Regular',
-  bodyMed: 'Archivo_500Medium',
+  // Medium and bold aren't loaded (unused, ~240 KB): they map to the weights that are.
+  bodyMed: 'Archivo_400Regular',
   bodySemi: 'Archivo_600SemiBold',
-  bodyBold: 'Archivo_700Bold',
+  bodyBold: 'Archivo_600SemiBold',
   mono: 'JetBrainsMono_400Regular',
   monoMed: 'JetBrainsMono_500Medium',
 } as const;
@@ -49,13 +50,29 @@ export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, huge: 48 }
 export const radius = { sm: 6, md: 10, lg: 16, pill: 999 } as const;
 
 /** Type scale. Live-session sizes are tuned for reading at ~2 m. */
+/**
+ * The type scale. Every size in the app comes from here, so screens agree.
+ * Text: micro → lead. Display (condensed headlines and numbers): wordmark → hero.
+ */
 export const type = {
   micro: 11,
+  small: 12,
   caption: 13,
+  note: 14,
+  detail: 15,
   body: 16,
+  callout: 17,
+  emphasis: 18,
   lead: 19,
+  wordmark: 20,
   title: 26,
+  /** Display sizes. */
+  displayS: 28,
+  displayM: 32,
+  stat: 36,
   headline: 40,
+  pageHero: 44,
+  big: 56,
   hero: 72,
   liveCue: 46,
   liveCount: 168,

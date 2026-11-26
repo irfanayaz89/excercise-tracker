@@ -99,6 +99,13 @@ export class HoldTimer {
   /** A fault seen but not yet confirmed: when it started and the time since. */
   private pendingSince: number | null = null;
   private pendingMs = 0;
+  /**
+   * Leaky fault budget: fills during fault frames and drains at a third of
+   * the speed in good form. The hold breaks when it reaches the grace period, so dipping
+   * in and out of form (sag for most of each second, straighten briefly)
+   * can't dodge a break the way one-off grace periods could.
+   */
+  private faultBudget = 0;
   /** A problem not yet warned about: which, and since when. */
   private candidate: HoldFault | null = null;
   private candidateSince: number | null = null;
@@ -134,6 +141,7 @@ export class HoldTimer {
     this.lastT = null;
     this.runMs = 0;
     this.hipHistory = [];
+    this.faultBudget = 0;
   }
 
   /** The session paused (left position, lost tracking): stop the clock. An unconfirmed fault is dropped. */
@@ -141,6 +149,7 @@ export class HoldTimer {
     this.clearPending();
     this.lastT = null;
     this.runMs = 0;
+    this.faultBudget = 0;
   }
 
   get currentState(): HoldState {
@@ -212,9 +221,11 @@ export class HoldTimer {
       // Inside the grace period: hold the time aside until we know.
       if (this.pendingSince === null) this.pendingSince = t;
       this.pendingMs += dt;
-      if (t - this.pendingSince >= h.graceMs) {
+      this.faultBudget += dt;
+      if (this.faultBudget >= h.graceMs) {
         this.addFault(fault, this.pendingMs);
         this.clearPending();
+        this.faultBudget = 0;
         this.breaks += 1;
         this.candidate = null;
         this.candidateSince = null;
@@ -228,10 +239,13 @@ export class HoldTimer {
       return this.warn(fault, t);
     }
 
-    // Good frame: any pending fault was a blip, so its time was good after all.
+    // Good frame: a single fault that cleared inside the grace period was a
+    // wobble, so its time was good after all. The fault budget drains slowly,
+    // so repeated dips still add up to a break.
     this.goodMs += this.pendingMs + dt;
     this.runMs += this.pendingMs + dt;
     this.longestMs = Math.max(this.longestMs, this.runMs);
+    this.faultBudget = Math.max(0, this.faultBudget - dt / 3);
     this.clearPending();
 
     const warn = this.warningOf(m);

@@ -169,6 +169,8 @@ export interface EngineConfig {
     autoEndPausedMs: number;
     /** In position but no rep for this long, the session ends on its own. */
     autoEndIdleMs: number;
+    /** Stuck in setup (phone or body check) this long with nobody starting: end, so the camera and screen don't run until the battery dies. */
+    setupTimeoutMs: number;
     /** Same cue is not repeated within this window. */
     cueCooldownMs: number;
     /** Hip centre jump (normalized units) that means a different person. */
@@ -422,6 +424,7 @@ export const DEFAULT_CONFIG: EngineConfig = {
     pauseAfterMs: 2000,
     autoEndPausedMs: 60000,
     autoEndIdleMs: 45000,
+    setupTimeoutMs: 600000,
     cueCooldownMs: 3500,
     identityJump: 0.25,
     identityScale: 0.35,

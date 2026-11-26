@@ -1,4 +1,4 @@
-import { Archivo_400Regular, Archivo_500Medium, Archivo_600SemiBold, Archivo_700Bold } from '@expo-google-fonts/archivo';
+import { Archivo_400Regular, Archivo_600SemiBold } from '@expo-google-fonts/archivo';
 import {
   BigShouldersDisplay_600SemiBold,
   BigShouldersDisplay_800ExtraBold,
@@ -30,9 +30,7 @@ export default function RootLayout() {
     BigShouldersDisplay_800ExtraBold,
     BigShouldersDisplay_900Black,
     Archivo_400Regular,
-    Archivo_500Medium,
     Archivo_600SemiBold,
-    Archivo_700Bold,
     JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
   });
@@ -78,6 +76,7 @@ export default function RootLayout() {
           <Stack.Screen name="screen-time/lock/[id]" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="screen-time/apps" options={{ animation: 'slide_from_bottom' }} />
           <Stack.Screen name="earn" options={{ animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="calories" options={{ animation: 'slide_from_bottom' }} />
         </Stack>
         {intro && <AnimatedSplash onDone={endIntro} />}
       </SafeAreaProvider>

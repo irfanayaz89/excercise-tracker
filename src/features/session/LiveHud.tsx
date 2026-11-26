@@ -1,19 +1,30 @@
 import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import type { SessionSnapshot } from '@/engine/session';
+import { heldMs, type SessionSnapshot } from '@/engine/session';
 import { formatDuration, pauseCopy } from '@/session/copy';
 import type { Banner } from '@/session/useSessionController';
 import { DepthGauge } from '@/ui/DepthGauge';
 import { LineGauge } from '@/ui/LineGauge';
 import { Body, Button, Display, Label, Mono } from '@/ui/primitives';
 import { Tally } from '@/ui/Tally';
-import { color, radius, space, type } from '@/ui/theme';
+import { color, font, radius, space, type } from '@/ui/theme';
 import { EXERCISES, isTimed } from '@/engine/exercises';
+import { useSettings } from '@/storage/settings';
 
 /** The giant rep counter column, readable from across a room. */
 export function CountColumn({ snap, repMarks, compact }: { snap: SessionSnapshot; repMarks: boolean[]; compact: boolean }) {
   const pop = useSharedValue(1);
+  const [{ voice }] = useSettings();
+  // With a screen reader on and the voice coach off, each rep is read out once. Android: the count
+  // is a live region (below). iPhone has no live regions, so it is announced. Doing both on
+  // Android read every rep twice (checked with TalkBack).
+  useEffect(() => {
+    if (voice || snap.reps === 0 || Platform.OS !== 'ios') return;
+    void AccessibilityInfo.isScreenReaderEnabled().then((on) => {
+      if (on) AccessibilityInfo.announceForAccessibility(String(snap.reps));
+    });
+  }, [snap.reps, voice]);
   useEffect(() => {
     if (snap.reps > 0) pop.value = withSequence(withTiming(1.12, { duration: 90 }), withTiming(1, { duration: 220 }));
   }, [snap.reps, pop]);
@@ -22,13 +33,20 @@ export function CountColumn({ snap, repMarks, compact }: { snap: SessionSnapshot
   const size = compact ? 120 : type.liveCount;
 
   return (
-    <View style={styles.count}>
+    // One stop for a screen reader, not four.
+    <View
+      style={styles.count}
+      accessible
+      // No running clock in the label: it would change every second and be read again and again.
+      accessibilityLabel={`${snap.reps} ${snap.reps === 1 ? 'rep' : 'reps'}${snap.targetReps ? ` of ${snap.targetReps}` : ''}, ${snap.cleanReps} clean`}
+      accessibilityLiveRegion={!voice ? 'polite' : 'none'}
+    >
       <Label>{snap.targetReps ? `Reps · target ${snap.targetReps}` : 'Reps'}</Label>
       <Animated.View style={popStyle}>
         <Display
           size={size}
           tone={snap.reps > 0 && !lastClean ? 'cue' : 'chalk'}
-          style={{ fontFamily: 'BigShouldersDisplay_900Black' }}
+          style={{ fontFamily: font.displayBlack }}
           accessibilityLabel={`${snap.reps} reps`}
         >
           {snap.reps}
@@ -59,12 +77,19 @@ export function TimerColumn({ snap, compact }: { snap: SessionSnapshot; compact:
   const which = side && snap.activeSide ? ` · ${snap.activeSide}` : '';
   const each = side ? ' each' : '';
   return (
-    <View style={styles.count}>
+    <View
+      style={styles.count}
+      accessible
+      // Ten-second steps: a label that changes every second is read again and again.
+      accessibilityLabel={`${name}${which}: ${Math.floor(goodMs / 10_000) * 10} seconds in good form${target ? ` of ${Math.round(target / 1000)}` : ''}, ${
+        h?.state === 'broken' ? 'clock stopped' : h?.state === 'warning' ? 'form slipping' : 'good form'
+      }`}
+    >
       <Label>{target ? `${name}${which} · target ${formatDuration(target)}${each}` : `${name}${which}`}</Label>
       <Display
         size={size}
         tone={tone}
-        style={{ fontFamily: 'BigShouldersDisplay_900Black', fontVariant: ['tabular-nums'] }}
+        style={{ fontFamily: font.displayBlack, fontVariant: ['tabular-nums'] }}
         accessibilityLabel={`${Math.floor(goodMs / 1000)} seconds in good form`}
       >
         {formatDuration(goodMs)}
@@ -106,6 +131,14 @@ export function LineColumn({ snap, warnAt }: { snap: SessionSnapshot; warnAt: nu
 /** Big coaching banner after a rep, a miss, or a fault. */
 export function CueBanner({ banner, detailed = true }: { banner: Banner | null; detailed?: boolean }) {
   const y = useSharedValue(0);
+  const [{ voice }] = useSettings();
+  // As with reps: iPhone screen readers ignore live regions, so say the cue when the voice coach is off.
+  useEffect(() => {
+    if (voice || !banner) return;
+    void AccessibilityInfo.isScreenReaderEnabled().then((on) => {
+      if (on) AccessibilityInfo.announceForAccessibility(banner.short);
+    });
+  }, [banner, voice]);
   useEffect(() => {
     if (banner) y.value = withSequence(withTiming(-6, { duration: 80 }), withTiming(0, { duration: 160 }));
   }, [banner, y]);
@@ -118,7 +151,7 @@ export function CueBanner({ banner, detailed = true }: { banner: Banner | null; 
         {banner.short}
       </Display>
       {detailed && (
-        <Body tone="chalk" size={15}>
+        <Body tone="chalk" size={type.detail}>
           {banner.detail}
         </Body>
       )}
@@ -141,9 +174,9 @@ export function DepthColumn({ snap }: { snap: SessionSnapshot }) {
   );
 }
 
-export function PausedPanel({ snap, onEnd }: { snap: SessionSnapshot; onEnd: () => void }) {
+export function PausedPanel({ snap, onEnd, confirming = false }: { snap: SessionSnapshot; onEnd: () => void; confirming?: boolean }) {
   const c = pauseCopy(snap.pauseReason ?? 'lost-tracking', snap.exercise);
-  const saved = isTimed(snap.exercise) ? `${formatDuration(snap.hold?.goodMs ?? 0)} saved` : `${snap.reps} reps saved`;
+  const saved = isTimed(snap.exercise) ? `${formatDuration(heldMs(snap))} saved` : `${snap.reps} reps saved`;
   // A screen instead of a person is an alert, not a rest: red, and stays up until a real person is back.
   const notReal = snap.pauseReason === 'not-real';
   return (
@@ -158,7 +191,12 @@ export function PausedPanel({ snap, onEnd }: { snap: SessionSnapshot; onEnd: () 
       <View style={styles.hold}>
         <View style={[styles.holdFill, { width: `${Math.round(snap.plankProgress * 100)}%` }]} />
       </View>
-      <Button label="Finish set" variant="ghost" onPress={onEnd} style={{ alignSelf: 'flex-start' }} />
+      <Button
+        label={confirming ? 'Tap again to finish' : 'Finish set'}
+        variant="ghost"
+        onPress={onEnd}
+        style={{ alignSelf: 'flex-start' }}
+      />
     </View>
   );
 }
@@ -175,19 +213,19 @@ export function TrackingDebug({
   const f = (v: number | null | undefined, d = 0) => (v == null ? '—' : v.toFixed(d));
   return (
     <View style={styles.debug} pointerEvents="none">
-      <Mono size={11} tone="muted">
+      <Mono size={type.micro} tone="muted">
         {`${stats ? `${stats.fps.toFixed(0)}fps ${stats.inferenceMs.toFixed(0)}ms ${stats.model}/${stats.delegate}` : 'no stats'} · ${snap.phase}/${snap.repPhase ?? '-'} · side ${snap.side ?? '-'}`}
       </Mono>
-      <Mono size={11} tone="muted">
+      <Mono size={type.micro} tone="muted">
         {`elbow ${f(m?.elbowDeg)} line ${f(m?.bodyLineDeg)} hip ${f(m?.hipOffset, 2)} knee ${f(m?.kneeDeg)} tilt ${f(m?.trunkTiltDeg)} sh ${f(m?.shoulderHeight, 2)} vis ${snap.framing.meanVisibility.toFixed(2)}`}
       </Mono>
       {snap.exercise === 'crunch' && (
-        <Mono size={11} tone="muted">
+        <Mono size={type.micro} tone="muted">
           {`lift ${f(m?.trunkLiftDeg)} foot ${f(m?.footRise, 2)} neck ${f(m?.neckDeg)}`}
         </Mono>
       )}
       {snap.hold && (
-        <Mono size={11} tone="muted">
+        <Mono size={type.micro} tone="muted">
           {`hold ${(snap.hold.goodMs / 1000).toFixed(1)}/${(snap.hold.totalMs / 1000).toFixed(1)}s ${snap.hold.state}${snap.hold.fault ? ` (${snap.hold.fault})` : ''} ${snap.hold.variant} stack ${f(m?.elbowStack, 2)} rise ${f(m?.forearmRise, 2)}`}
         </Mono>
       )}
@@ -196,7 +234,15 @@ export function TrackingDebug({
 }
 
 const styles = StyleSheet.create({
-  count: { gap: 6, alignItems: 'flex-start' },
+  // A dark plate behind the count: readable from 2 m even against a bright wall or window.
+  count: {
+    gap: 6,
+    alignItems: 'flex-start',
+    alignSelf: 'flex-start',
+    backgroundColor: color.scrimStrong,
+    borderRadius: radius.lg,
+    padding: space.md,
+  },
   subRow: { flexDirection: 'row', gap: space.lg, marginBottom: 6 },
   banner: {
     backgroundColor: color.scrimStrong,

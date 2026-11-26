@@ -7,6 +7,7 @@ import type { SafetyFlag } from '@/storage/settings';
  * clinician. Sources: ACE and ACOG exercise guidance, McGill on spinal flexion.
  */
 export const SAFETY_LABELS: Record<SafetyFlag, string> = {
+  heart: 'A heart condition, high blood pressure, chest pain or dizziness',
   back: 'Lower-back pain',
   neck: 'Neck or shoulder pain',
   wrist: 'Wrist pain',
@@ -15,6 +16,18 @@ export const SAFETY_LABELS: Record<SafetyFlag, string> = {
 };
 
 const NOTES: Record<SafetyFlag, Partial<Record<Exercise, string>>> = {
+  heart: {
+    pushup:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+    crunch:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+    plank:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+    sidePlank:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+    pullup:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+  },
   back: {
     crunch: 'With back pain, keep the lift small and slow, and stop if it hurts. Planks are often easier on the back.',
     pushup: 'Keep your body in one line and stop if your back hurts. Knee push-ups (Easy) take load off.',
@@ -26,7 +39,8 @@ const NOTES: Record<SafetyFlag, Partial<Record<Exercise, string>>> = {
     crunch: 'Cross your arms on your chest instead of hands by your head, and keep a fist of space under your chin.',
     pushup: 'Keep your head in line with your body. Stop if your shoulder hurts.',
     sidePlank: 'Side planks load the shoulder a lot; start on your knees (Easy).',
-    pullup: 'Pull-ups load the shoulders a lot. Start with short dead hangs or slow lowering from the top, and stop if your shoulder hurts.',
+    pullup:
+      'Pull-ups load the shoulders a lot. Start with short dead hangs or slow lowering from the top, and stop if your shoulder hurts.',
   },
   wrist: {
     pushup: 'Knuckle push-ups or push-up handles keep the wrist straight. Stop if it hurts.',
@@ -53,6 +67,6 @@ const NOTES: Record<SafetyFlag, Partial<Record<Exercise, string>>> = {
 
 /** The notes for one exercise, most important first. */
 export function safetyNotes(flags: SafetyFlag[], exercise: Exercise): string[] {
-  const order: SafetyFlag[] = ['pregnancy', 'injury', 'back', 'neck', 'wrist'];
+  const order: SafetyFlag[] = ['heart', 'pregnancy', 'injury', 'back', 'neck', 'wrist'];
   return order.filter((f) => flags.includes(f)).flatMap((f) => (NOTES[f][exercise] ? [NOTES[f][exercise]!] : []));
 }

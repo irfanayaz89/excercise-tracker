@@ -8,7 +8,7 @@ import { AppState, Platform, StyleSheet, View, useWindowDimensions, type LayoutC
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, useCameraDevice, useCameraDevices, useCameraPermission, type CameraDevice } from 'react-native-vision-camera';
 import { usePoseStream, type PoseStats } from '@/camera/usePoseStream';
-import type { SessionSnapshot, SessionSummary } from '@/engine/session';
+import { heldMs, type SessionSnapshot, type SessionSummary } from '@/engine/session';
 import type { PhoneOrientation } from '@/engine/types';
 import { Gate, openSettings } from '@/features/session/Gate';
 import { demoScenario, useDemoFeed, type DemoScenario } from '@/features/session/useDemoFeed';
@@ -18,7 +18,7 @@ import { BodyPanel, PhonePanel } from '@/features/session/SetupPanels';
 import { usePhoneAttitude } from '@/sensors/usePhoneAttitude';
 import { setLastSummary } from '@/session/lastSummary';
 import { useSnapshot } from '@/session/snapshotStore';
-import { useSessionController, type Controller } from '@/session/useSessionController';
+import { useControllerUi, useSessionController, type Controller } from '@/session/useSessionController';
 import { saveSession } from '@/storage/history';
 import { useSettings, type Settings } from '@/storage/settings';
 import { PlankGhost } from '@/ui/Diagrams';
@@ -29,7 +29,7 @@ import { isExercise, isTimed, viewFor } from '@/engine/exercises';
 
 /** Something worth saving: a counted rep, or a second of plank in good form. */
 function hasWork(s: SessionSnapshot): boolean {
-  return isTimed(s.exercise) ? (s.hold?.goodMs ?? 0) >= 1000 : s.reps > 0;
+  return isTimed(s.exercise) ? heldMs(s) >= 1000 : s.reps > 0;
 }
 
 /** Back if there is somewhere to go back to (not after a cold-start deep link), else home. */
@@ -104,7 +104,7 @@ export default function SessionScreen() {
       <Gate
         eyebrow="Camera"
         title="Let Trueline see you"
-        body="The camera watches your body position to count push-ups and check your form. Everything runs on this phone; no video is saved or sent anywhere."
+        body="The camera watches your body position to count your reps and check your form. Everything runs on this phone; no video is saved or sent anywhere."
         primary={{ label: 'Allow camera', onPress: () => void permission.requestPermission() }}
         secondary={{ label: 'Not now', onPress: goBack }}
       />
@@ -112,7 +112,7 @@ export default function SessionScreen() {
       <Gate
         eyebrow="Camera is off"
         title="Camera access needed"
-        body="Camera access was turned off for Trueline. Turn it on in Settings to count push-ups."
+        body="Camera access was turned off for Trueline. Turn it on in Settings to count your reps."
         primary={{ label: 'Open Settings', onPress: openSettings }}
         secondary={{ label: 'Back', onPress: goBack }}
       />
@@ -206,10 +206,11 @@ function LiveSession({
       // A demo set is synthetic: show its summary but keep it out of your history.
       const id = demo ? null : saveSession(summary, wallStart);
       // Only a saved, real set earns screen time (and only once: the id is its key).
-      let earned: { minutes: number; capped: boolean } | null = null;
+      let earned: { minutes: number; capped: boolean; bonus?: number; halfRate?: boolean } | null = null;
       try {
         const res = id ? creditSet(summary, id, demo) : null;
-        if (res && (res.minutes > 0 || res.reason === 'cap-reached')) earned = { minutes: res.minutes, capped: res.capped };
+        if (res && (res.minutes > 0 || res.reason === 'cap-reached'))
+          earned = { minutes: res.minutes, capped: res.capped, bonus: res.bonus, halfRate: res.halfRate };
       } catch {
         // Screen time must never get in the way of saving a set.
       }
@@ -217,16 +218,23 @@ function LiveSession({
       let focus: { heldMin: number; continuesUntil: number | null } | null = null;
       try {
         if (!demo && getScreenTime().focus) {
-          const res = endFocusNow('completed');
-          focus = res.ended ? { heldMin: focusMinutes(res.record), continuesUntil: null } : res.focus ? { heldMin: 0, continuesUntil: res.focus.until } : null;
+          // A set with nothing in it didn't complete the workout a focus was waiting for.
+          const empty = summary.totalReps === 0 && (summary.hold?.goodMs ?? 0) < 1000;
+          const res = endFocusNow(empty ? 'abandoned' : 'completed');
+          focus = res.ended
+            ? { heldMin: focusMinutes(res.record), continuesUntil: null }
+            : res.focus
+              ? { heldMin: 0, continuesUntil: res.focus.until }
+              : null;
         }
       } catch {
         // Never let screen time get in the way of the summary.
       }
       setLastSummary({ summary, wallStart, savedId: id, demo, earned, focus });
-      void c.saveTuningRecording(modelRef.current);
+      // Tuning recordings are of real people only.
+      if (!demo) void c.saveTuningRecording(modelRef.current);
       allowLeaveRef.current?.();
-      router.replace({ pathname: '/summary/[id]', params: { id: id ?? 'last' } });
+      router.replace({ pathname: '/summary/[id]', params: { id: id ?? 'last', fresh: '1' } });
     },
     [demo],
   );
@@ -284,6 +292,13 @@ function LiveSession({
     [ctrl],
   );
   const onInterruptStart = useCallback(() => ctrl.interrupt(), [ctrl]);
+  // The camera running again means any interruption is over, even if its "ended" event never came
+  // (otherwise the set can stay on "Paused · Welcome back" for good).
+  const poseStarted = pose.onCameraStarted;
+  const onCameraStarted = useCallback(() => {
+    poseStarted();
+    ctrl.resume();
+  }, [poseStarted, ctrl]);
   const onInterruptEnd = useCallback(() => ctrl.resume(), [ctrl]);
   // Portrait frames are wider than a tall phone screen; "cover" would crop the
   // sides, which is exactly where the head and feet are. Show the whole frame.
@@ -339,7 +354,8 @@ function LiveSession({
 
   return (
     <View style={styles.root}>
-      <View style={StyleSheet.absoluteFill} onLayout={onLayout}>
+      {/* The camera picture and its drawn guides are visual only: the HUD says the same in words. */}
+      <View style={StyleSheet.absoluteFill} onLayout={onLayout} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         {device && !demo ? (
           <Camera
             key={cameraKey}
@@ -347,7 +363,7 @@ function LiveSession({
             device={device}
             isActive={appActive}
             outputs={pose.outputs}
-            onStarted={pose.onCameraStarted}
+            onStarted={onCameraStarted}
             constraints={constraints}
             resizeMode={fit}
             // Frames follow the locked screen, not the phone's physical angle,
@@ -475,6 +491,7 @@ function Hud({
 }) {
   const insets = useSafeAreaInsets();
   const snap = useSnapshot(ctrl.store);
+  const ui = useControllerUi(ctrl);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const counting = snap.phase === 'counting';
   const plank = isTimed(snap.exercise);
@@ -486,6 +503,7 @@ function Hud({
     return () => clearTimeout(t);
   }, [confirmEnd]);
 
+  const confirmAtRef = useRef(0);
   const requestEnd = () => {
     // Nothing to save yet: leave straight away (same as the back button). Otherwise ask for a second tap.
     if (!worked) {
@@ -494,8 +512,11 @@ function Hud({
     }
     if (!confirmEnd) {
       setConfirmEnd(true);
+      confirmAtRef.current = Date.now();
       return;
     }
+    // A fast double tap is one tap: the second tap must be a deliberate one.
+    if (Date.now() - confirmAtRef.current < 400) return;
     ctrl.end();
   };
   useLayoutEffect(() => {
@@ -543,8 +564,8 @@ function Hud({
               />
             )}
             {snap.phase === 'body-check' && <BodyPanel snap={snap} orientation={orientation} guided={guided} config={ctrl.config} />}
-            {snap.phase === 'paused' && <PausedPanel snap={snap} onEnd={() => ctrl.end()} />}
-            {counting && <CueBanner banner={ctrl.banner} detailed={guided} />}
+            {snap.phase === 'paused' && <PausedPanel snap={snap} onEnd={requestEnd} confirming={confirmEnd} />}
+            {counting && <CueBanner banner={ui.banner} detailed={guided} />}
           </View>
         </View>
 
@@ -553,7 +574,7 @@ function Hud({
             (plank ? (
               <TimerColumn snap={snap} compact={!landscape} />
             ) : (
-              <CountColumn snap={snap} repMarks={ctrl.repMarks} compact={!landscape} />
+              <CountColumn snap={snap} repMarks={ui.repMarks} compact={!landscape} />
             ))}
           <View style={{ flex: 1 }} />
           <Button

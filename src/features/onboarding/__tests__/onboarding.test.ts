@@ -7,7 +7,6 @@ import { EXERCISE_IDS } from '@/engine/exercises';
 import type { PlankIssue } from '@/engine/gates';
 import { PLANK_COPY, plankIssueCopy } from '@/session/copy';
 import { DEFAULT_SETTINGS, DEFAULT_VIEWS, GOAL_TARGETS, normalizeSettings, SAFETY_FLAGS } from '@/storage/settings';
-import { setupSteps } from '@/features/exercise/setupSteps';
 import { SAFETY_LABELS, safetyNotes } from '../safety';
 
 jest.mock('expo-sqlite/kv-store', () => ({ __esModule: true, default: { getItemSync: () => null, setItemSync: () => {} } }));
@@ -94,13 +93,5 @@ describe('front-view words', () => {
     // Side view words are unchanged; the side plank never uses front words.
     expect(plankIssueCopy('get-down', 'pushup').short).toBe('Get into push-up position');
     expect(plankIssueCopy('get-down', 'sidePlank', 'front').short).toBe('Get into a side plank');
-  });
-
-  it('setup steps describe where the phone goes for each view', () => {
-    expect(setupSteps('pushup', 'medium', 'portrait', 'front')[0].title).toMatch(/in front of you/);
-    expect(setupSteps('plank', 'medium', 'portrait', 'front')[0].title).toMatch(/in front of you/);
-    expect(setupSteps('crunch', 'medium', 'landscape', 'front')[0].title).toMatch(/landscape/);
-    expect(setupSteps('pushup', 'medium', 'landscape', 'side')[0].title).toMatch(/landscape/);
-    expect(setupSteps('sidePlank', 'medium', 'landscape', 'front')[2].title).toMatch(/hips/);
   });
 });

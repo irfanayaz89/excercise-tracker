@@ -19,7 +19,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.format.DateUtils
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -88,6 +88,19 @@ class BlockActivity : Activity() {
     goHome()
   }
 
+  // The screen refreshes every few seconds only while it's on screen: once the user has gone
+  // Home it stops, and it looks again when it comes back.
+  override fun onStop() {
+    tick?.let { ticker.removeCallbacks(it) }
+    super.onStop()
+  }
+
+  override fun onRestart() {
+    super.onRestart()
+    shownSig = null
+    render()
+  }
+
   override fun onDestroy() {
     tick?.let { ticker.removeCallbacks(it) }
     super.onDestroy()
@@ -110,7 +123,8 @@ class BlockActivity : Activity() {
 
   private fun render() {
     tick?.let { ticker.removeCallbacks(it) }
-    val now = System.currentTimeMillis()
+    // The trusted time (STCore.now): moving the phone clock doesn't shorten what's shown here.
+    val now = STCore.now(this)
     val p = STCore.plan(this)
     val st = STCore.state(this, now)
     val pkg = intent.getStringExtra("pkg")
@@ -283,7 +297,8 @@ class BlockActivity : Activity() {
     shownSig = "pause|$pkg"
     val passes = STCore.pausePasses(p, st, now)
     val wait = p.pause.wait(passes)
-    val openAt = now + wait * 1000L
+    // Counted on the time since boot, so moving the clock can't skip the wait.
+    val openAt = SystemClock.elapsedRealtime() + wait * 1000L
     val col = column()
     col.addView(brandRow())
     col.addView(space(26))
@@ -314,7 +329,7 @@ class BlockActivity : Activity() {
     enter(col)
     val r = object : Runnable {
       override fun run() {
-        val left = ((openAt - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0)
+        val left = ((openAt - SystemClock.elapsedRealtime() + 999) / 1000).coerceAtLeast(0)
         ring.count = if (left > 0) "$left" else "✓"
         ring.invalidate()
         open.isEnabled = left == 0L
@@ -447,7 +462,7 @@ class BlockActivity : Activity() {
   /** "4:00 pm", "tomorrow 7:00 am", or a date further out. */
   private fun whenText(at: Long, now: Long): String {
     val clock = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(at))
-    if (DateUtils.isToday(at)) return clock
+    if (STCore.dayKey(at) == STCore.dayKey(now)) return clock
     val tomorrow = Calendar.getInstance().apply { timeInMillis = now; add(Calendar.DAY_OF_YEAR, 1) }
     val day = Calendar.getInstance().apply { timeInMillis = at }
     return if (day.get(Calendar.YEAR) == tomorrow.get(Calendar.YEAR) && day.get(Calendar.DAY_OF_YEAR) == tomorrow.get(Calendar.DAY_OF_YEAR)) "tomorrow $clock"

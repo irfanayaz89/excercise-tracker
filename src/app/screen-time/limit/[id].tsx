@@ -1,14 +1,14 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { changeRules, countLabel, describeChange, pickApps, selectionProblem } from '@/screentime/edit';
-import { appLimitProblem, coreOf, EMPTY_SELECTION, MAX_APP_LIMITS } from '@/screentime/rules';
+import { changeRules, countLabel, describeChange, editBase, pickApps, selectionProblem } from '@/screentime/edit';
+import { appLimitProblem, EMPTY_SELECTION, MAX_APP_LIMITS } from '@/screentime/rules';
 import { getScreenTime } from '@/screentime/store';
 import type { AppLimit } from '@/screentime/types';
 import { Body, Button, Chip, Display, Label } from '@/ui/primitives';
 import { Section, ToggleRow } from '@/ui/rows';
-import { color, font, radius, space } from '@/ui/theme';
+import { color, font, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
 const MINUTES: [number | null, string][] = [
@@ -44,14 +44,22 @@ export default function AppLimitEditor() {
   const existing = getScreenTime().rules.appLimits.find((l) => l.id === id) ?? null;
   const isNew = !existing;
   const [limit, setLimit] = useState<AppLimit>(
-    () => existing ?? { id: `limit-${Date.now().toString(36)}`, name: '', apps: EMPTY_SELECTION, dailyMin: 20, opensPerDay: null, enabled: true },
+    () =>
+      existing ?? {
+        id: `limit-${Date.now().toString(36)}`,
+        name: '',
+        apps: EMPTY_SELECTION,
+        dailyMin: 20,
+        opensPerDay: null,
+        enabled: true,
+      },
   );
   const [message, setMessage] = useState<string | null>(null);
   const set = (patch: Partial<AppLimit>) => setLimit((l) => ({ ...l, ...patch }));
   const problem = appLimitProblem(limit);
 
   const commit = (appLimits: AppLimit[]) => {
-    const res = changeRules({ ...coreOf(getScreenTime().rules), appLimits });
+    const res = changeRules({ ...editBase(), appLimits });
     if (res.result === 'applied') router.back();
     else setMessage(describeChange(res));
   };
@@ -70,7 +78,7 @@ export default function AppLimitEditor() {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.header}>
-        <Display size={32}>{isNew ? 'New app limit' : limit.name || 'App limit'}</Display>
+        <Display size={type.displayM}>{isNew ? 'New app limit' : limit.name || 'App limit'}</Display>
         <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
           <Label tone="chalk">Cancel</Label>
         </Pressable>
@@ -78,8 +86,10 @@ export default function AppLimitEditor() {
 
       <Section title="Apps">
         <View style={styles.pad}>
-          <Body tone="muted" size={13}>
-            {countLabel(limit.apps) === 'None picked' ? 'One app or a group, like Instagram, or Instagram and TikTok together.' : countLabel(limit.apps)}
+          <Body tone="muted" size={type.caption}>
+            {countLabel(limit.apps) === 'None picked'
+              ? 'One app or a group, like Instagram, or Instagram and TikTok together.'
+              : countLabel(limit.apps)}
           </Body>
           <Button
             size="sm"
@@ -114,7 +124,7 @@ export default function AppLimitEditor() {
               <Chip key={l} label={l} selected={limit.dailyMin === v} onPress={() => set({ dailyMin: v })} />
             ))}
           </View>
-          <Body tone="muted" size={13}>
+          <Body tone="muted" size={type.caption}>
             {Platform.OS === 'ios'
               ? 'iPhone counts this itself and can be a few minutes off either way, so treat it as approximate.'
               : 'Counted to the second while the apps are on screen.'}
@@ -130,7 +140,7 @@ export default function AppLimitEditor() {
                 <Chip key={l} label={l} selected={limit.opensPerDay === v} onPress={() => set({ opensPerDay: v })} />
               ))}
             </View>
-            <Body tone="muted" size={13}>
+            <Body tone="muted" size={type.caption}>
               Each time you open one of these apps counts. Once they’re used up, the next open is blocked until tomorrow.
             </Body>
           </View>
@@ -139,20 +149,34 @@ export default function AppLimitEditor() {
 
       {!isNew && (
         <Section title="On or off">
-          <ToggleRow label="Limit on" hint="Switching it off counts as making things easier." value={limit.enabled} onChange={(enabled) => set({ enabled })} />
+          <ToggleRow
+            label="Limit on"
+            hint="Switching it off counts as making things easier."
+            value={limit.enabled}
+            onChange={(enabled) => set({ enabled })}
+          />
         </Section>
       )}
 
       {(message || problem) && (
         <View style={styles.note} accessibilityLiveRegion="polite">
-          <Body size={14}>{message ?? (problem ? PROBLEM[problem] : '')}</Body>
+          <Body size={type.note}>{message ?? (problem ? PROBLEM[problem] : '')}</Body>
         </View>
       )}
 
       <View style={{ gap: space.md }}>
         <Button label={isNew ? 'Add limit' : 'Save'} disabled={!!problem} onPress={save} />
         {!isNew && (
-          <Button variant="danger" label="Delete" onPress={() => commit(getScreenTime().rules.appLimits.filter((l) => l.id !== limit.id))} />
+          <Button
+            variant="danger"
+            label="Delete"
+            onPress={() =>
+              Alert.alert('Delete this app limit?', 'These apps go back to the main rules.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => commit(editBase().appLimits.filter((l) => l.id !== limit.id)) },
+              ])
+            }
+          />
         )}
       </View>
     </ScrollView>
@@ -161,7 +185,14 @@ export default function AppLimitEditor() {
 
 const styles = StyleSheet.create({
   page: { paddingHorizontal: space.xl, gap: space.xl, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.md },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    rowGap: space.xs,
+    alignItems: 'center',
+    gap: space.md,
+  },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   pad: { padding: space.lg, gap: space.md },
   input: { padding: space.lg, color: color.chalk, fontFamily: font.body, fontSize: 17 },

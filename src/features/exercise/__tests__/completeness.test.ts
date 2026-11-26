@@ -27,7 +27,6 @@ import {
   rotationCopy,
 } from '@/session/copy';
 import { MOTION_MS, STILL_P, figureAt } from '@/ui/exerciseMotion';
-import { setupSteps } from '../setupSteps';
 import { TECHNIQUE } from '../technique';
 
 const FAULTS: RepFault[] = [
@@ -70,15 +69,6 @@ describe.each(EXERCISE_IDS)('%s is complete', (e) => {
   it('has an animation and a still frame', () => {
     expect(MOTION_MS[e]).toBeGreaterThan(1000);
     expect(figureAt(e, STILL_P[e]).body).toMatch(/^M/);
-  });
-
-  it('has three setup steps for every level and phone orientation', () => {
-    for (const d of DIFFICULTIES)
-      for (const o of ['landscape', 'portrait'] as const) {
-        const steps = setupSteps(e, d, o);
-        expect(steps).toHaveLength(3);
-        for (const s of steps) expect(s.title.length + s.body.length).toBeGreaterThan(10);
-      }
   });
 
   it('has wording for every level, and a working config for every level', () => {

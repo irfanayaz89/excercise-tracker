@@ -26,19 +26,23 @@ export function rollDay(zone: Zone, log: DayLog | null, now: number): DayLog {
   return log;
 }
 
-/** The platform reports minutes the blocked apps were open (counts against the limit, or earned time). */
-export function addUsage(log: DayLog, minutes: number, fromEarned: boolean): DayLog {
-  const m = Math.max(0, minutes);
-  if (!fromEarned) return { ...log, usedMin: log.usedMin + m };
-  return { ...log, earnedUsedMin: Math.min(log.earnedMin, log.earnedUsedMin + m) };
-}
-
 const earnedLeft = (log: DayLog) => Math.max(0, log.earnedMin - log.earnedUsedMin);
 
 interface ActiveLock {
   lock: LockTime;
   end: number;
 }
+
+/**
+ * iPhone can only count time in apps that were picked, never "all apps", so an "Everything" lock
+ * can't be opened with earned time there (the native side refuses it too). Set once at startup.
+ */
+let everythingEarnable = true;
+export function setEverythingEarnable(on: boolean) {
+  everythingEarnable = on;
+}
+/** Earned time opens this lock time on this phone. */
+export const earnableHere = (l: { earnable: boolean; apps: unknown }) => l.earnable && (l.apps !== 'all' || everythingEarnable);
 
 function activeLocks(zone: Zone, rules: ScreenTimeRules, now: number): ActiveLock[] {
   const out: ActiveLock[] = [];
@@ -65,8 +69,8 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   const main = locks.filter((a) => a.lock.apps === 'main' || a.lock.apps === 'all');
   const own = locks.filter((a) => a.lock.apps !== 'main' && a.lock.apps !== 'all');
   // Locked out entirely by a lock time that doesn't allow earning; earnable ones give way to earned time.
-  const hardLock = main.filter((a) => !a.lock.earnable);
-  const softLock = main.filter((a) => a.lock.earnable);
+  const hardLock = main.filter((a) => !earnableHere(a.lock));
+  const softLock = main.filter((a) => earnableHere(a.lock));
   const limitLeft = rules.dailyLimitMin === null ? null : Math.max(0, rules.dailyLimitMin - log.usedMin);
 
   let reason: Decision['reason'] = null;
@@ -83,20 +87,29 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
     reason = 'focus';
     usingEarned = false;
   }
-  if (unlock) {
+  // A key lock or Strict focus can't be opened by an unlock: only the key (or its end) lifts it.
+  const lockedFocus = !!focus && (focus.kind === 'key' || focus.strict);
+  if (unlock && !lockedFocus) {
     reason = null;
     usingEarned = false;
   }
   const blocking = reason === 'lock' ? (hardLock.length ? hardLock : softLock) : [];
   const last = blocking.reduce<ActiveLock | null>((a, b) => (!a || b.end > a.end ? b : a), null);
 
-  const emergenciesUsed = log.unlocks.filter((u) => u.kind === 'emergency').length;
-  const oneMoresUsed = log.unlocks.filter((u) => u.kind === 'one-more').length;
+  // An unlock taken late yesterday that runs past midnight doesn't use up today's.
+  const takenToday = log.unlocks.filter((u) => dayKey(zone.local(u.from)) === log.day);
+  const emergenciesUsed = takenToday.filter((u) => u.kind === 'emergency').length;
+  const oneMoresUsed = takenToday.filter((u) => u.kind === 'one-more').length;
   const capLeft = Math.max(0, rules.earning.dailyCapMin - log.earnedMin);
-  const canEarn = reason !== null && reason !== 'focus' && rules.earning.enabled && capLeft > 0 && (reason === 'limit' || blocking.every((a) => a.lock.earnable));
+  const canEarn =
+    reason !== null &&
+    reason !== 'focus' &&
+    rules.earning.enabled &&
+    capLeft > 0 &&
+    (reason === 'limit' || blocking.every((a) => earnableHere(a.lock)));
 
   const ownLocks = own
-    .filter((a) => !unlock && !(a.lock.earnable && left > 0))
+    .filter((a) => !unlock && !(earnableHere(a.lock) && left > 0))
     .map((a) => ({ id: a.lock.id, name: a.lock.name, until: a.end, apps: a.lock.apps as Selection }));
 
   // Per-app limits: their own apps close once their time or opens are used up. Earned time doesn't
@@ -105,7 +118,8 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   if (!unlock) {
     for (const l of rules.appLimits) {
       if (!l.enabled) continue;
-      if (l.dailyMin !== null && (log.appUsed?.[l.id] ?? 0) >= l.dailyMin) limitBlocks.push({ id: l.id, name: l.name, apps: l.apps, why: 'time' });
+      if (l.dailyMin !== null && (log.appUsed?.[l.id] ?? 0) >= l.dailyMin)
+        limitBlocks.push({ id: l.id, name: l.name, apps: l.apps, why: 'time' });
       else if (l.opensPerDay !== null && (log.appOpens?.[l.id] ?? 0) >= l.opensPerDay)
         limitBlocks.push({ id: l.id, name: l.name, apps: l.apps, why: 'opens' });
     }
@@ -132,11 +146,11 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
     unlockedUntil: unlock ? unlock.until : null,
     canEarn,
     emergency: {
-      available: blockedAny && mode === 'standard' && emergenciesUsed < EMERGENCIES_PER_DAY,
+      available: blockedAny && !lockedFocus && mode === 'standard' && emergenciesUsed < EMERGENCIES_PER_DAY,
       minutes: EMERGENCY_MIN,
     },
     oneMore: {
-      available: blockedAny && mode === 'nudge' && oneMoresUsed < ONE_MORE_PER_DAY,
+      available: blockedAny && !lockedFocus && mode === 'nudge' && oneMoresUsed < ONE_MORE_PER_DAY,
       left: Math.max(0, ONE_MORE_PER_DAY - oneMoresUsed),
     },
     ownLocks,

@@ -5,8 +5,11 @@
  */
 import type { SessionSummary } from '@/engine/session';
 import { freshDay } from '../decide';
-import { earnFromSet, minutesFor } from '../earn';
+import { earnFromSet, setPe, setWorth } from '../earn';
 import { london, rules, T } from './helpers';
+
+/** Base minutes for a set: its push-up equivalents, rounded down (before milestones and bonuses). */
+const minutesFor = (...a: Parameters<typeof setPe>) => Math.floor(setPe(...a) + 1e-9);
 
 const NOW = T(london, '2026-11-18 12:00');
 const base: SessionSummary = {
@@ -45,15 +48,23 @@ describe('minutes per set', () => {
     expect(minutesFor(r, reps('pushup', 3, 0))).toBe(1);
   });
 
-  it('crunches: ½ min per clean rep, ¼ per flagged', () => {
-    expect(minutesFor(r, reps('crunch', 30, 30))).toBe(15);
-    expect(minutesFor(r, reps('crunch', 10, 6))).toBe(4);
+  it('pull-ups are worth 2.5 push-ups; crunches 0.4 (a lighter effort class)', () => {
+    expect(minutesFor(r, reps('pullup', 4, 4))).toBe(10);
+    expect(minutesFor(r, reps('pullup', 5, 4))).toBe(11);
+    expect(minutesFor(r, reps('crunch', 30, 30))).toBe(12);
+    expect(minutesFor(r, reps('crunch', 10, 6))).toBe(3);
   });
 
-  it('planks and side planks: 2 min per 10 s in good form', () => {
-    expect(minutesFor(r, hold('plank', 60_000))).toBe(12);
-    expect(minutesFor(r, hold('plank', 9_999))).toBe(1);
-    expect(minutesFor(r, hold('sidePlank', 45_000))).toBe(9);
+  it('planks and side planks: 1 min per 6 s in good form (a 60 s plank ≈ 10 push-ups)', () => {
+    expect(minutesFor(r, hold('plank', 60_000))).toBe(10);
+    expect(minutesFor(r, hold('plank', 5_999))).toBe(0);
+    expect(minutesFor(r, hold('plank', 6_000))).toBe(1);
+    expect(minutesFor(r, hold('sidePlank', 45_000))).toBe(7);
+  });
+
+  it('a plank seen head-on earns half: the camera cannot see the hips sag', () => {
+    expect(minutesFor(r, { ...hold('plank', 60_000), view: 'front' })).toBe(5);
+    expect(minutesFor(r, { ...hold('plank', 60_000), view: 'side' })).toBe(10);
   });
 
   it('older summaries with no exercise are push-ups', () => {
@@ -66,14 +77,66 @@ describe('minutes per set', () => {
   });
 });
 
+describe('set tiers: 1 min per push-up equivalent plus milestones', () => {
+  const w = (summary: SessionSummary, earnedToday = 0, extra: { firstOfDay?: boolean; cameBack?: boolean } = {}) =>
+    setWorth(r, summary, { earnedToday, ...extra });
+
+  it('10 push-ups earn 15 min and 20 earn 30', () => {
+    expect(w(reps('pushup', 10, 10))).toMatchObject({ minutes: 15, bonus: 5, halfRate: false });
+    expect(w(reps('pushup', 20, 20)).minutes).toBe(30);
+    expect(w(reps('pushup', 9, 9)).minutes).toBe(9);
+  });
+
+  it('other exercises reach the same milestones in push-up equivalents', () => {
+    expect(w(reps('pullup', 4, 4)).minutes).toBe(15); // 10 PE
+    expect(w(reps('pullup', 8, 8)).minutes).toBe(30); // 20 PE
+    expect(w(reps('crunch', 25, 25)).minutes).toBe(15);
+    expect(w(hold('plank', 60_000)).minutes).toBe(15);
+    expect(w(hold('plank', 120_000)).minutes).toBe(30);
+  });
+
+  it('a set is paid for at most 40 push-up equivalents (milestones still count)', () => {
+    const roomy = rules({ earning: { ...r.earning, fullRateMin: 120, dailyCapMin: 120 } });
+    expect(setWorth(roomy, reps('pushup', 50, 50), { earnedToday: 0 }).minutes).toBe(50);
+    expect(setWorth(roomy, reps('pushup', 80, 80), { earnedToday: 0 }).minutes).toBe(50);
+  });
+
+  it('splitting a set gains nothing: 2 × 10 pays the same as 1 × 20, and 4 × 5 less', () => {
+    const two = w(reps('pushup', 10, 10)).minutes + w(reps('pushup', 10, 10), 15).minutes;
+    expect(two).toBe(w(reps('pushup', 20, 20)).minutes);
+    const four = [0, 5, 10, 15].reduce((n, earned) => n + w(reps('pushup', 5, 5), earned).minutes, 0);
+    expect(four).toBeLessThan(two);
+  });
+
+  it('the first real set of the day earns +3, and coming back after a break +5 more', () => {
+    expect(w(reps('pushup', 10, 10), 0, { firstOfDay: true }).minutes).toBe(18);
+    expect(w(reps('pushup', 10, 10), 0, { firstOfDay: true, cameBack: true }).minutes).toBe(23);
+    // A token set of 3 earns no day bonus.
+    expect(w(reps('pushup', 3, 3), 0, { firstOfDay: true, cameBack: true }).minutes).toBe(3);
+  });
+
+  it('past the full-rate minutes, the rest of a set earns half', () => {
+    // 25 earned, full rate to 30: 5 at full rate, then (30 − 5) / 2 = 12.
+    expect(w(reps('pushup', 20, 20), 25)).toMatchObject({ minutes: 17, halfRate: true });
+  });
+});
+
 describe('crediting a set', () => {
   const input = (summary: SessionSummary, sessionId = 's1', demo = false) => ({ summary, sessionId, demo });
 
   it('adds the minutes to today and records where they came from', () => {
-    const res = earnFromSet(london, r, freshDay(london, NOW), input(reps('pushup', 20, 20)), NOW);
-    expect(res).toMatchObject({ minutes: 20, reason: 'earned', capped: false });
-    expect(res.log.earnedMin).toBe(20);
-    expect(res.log.grants).toEqual([{ id: `s1:${NOW}`, at: NOW, minutes: 20, exercise: 'pushup', sessionId: 's1' }]);
+    const res = earnFromSet(london, r, freshDay(london, NOW), input(reps('pushup', 10, 10)), NOW);
+    // 10 + milestone 5 + first set of the day 3.
+    expect(res).toMatchObject({ minutes: 18, bonus: 8, halfRate: false, reason: 'earned', capped: false });
+    expect(res.log.earnedMin).toBe(18);
+    expect(res.log.grants).toEqual([{ id: `s1:${NOW}`, at: NOW, minutes: 18, exercise: 'pushup', sessionId: 's1', real: true }]);
+    // The second set of the day has no first-set bonus.
+    expect(earnFromSet(london, r, res.log, input(reps('pushup', 5, 5), 's2'), NOW).minutes).toBe(5);
+  });
+
+  it('coming back after a break earns the welcome-back bonus once', () => {
+    const res = earnFromSet(london, r, freshDay(london, NOW), { ...input(reps('pushup', 10, 10)), cameBack: true }, NOW);
+    expect(res.minutes).toBe(23);
   });
 
   it('demo sets never earn', () => {
@@ -88,12 +151,15 @@ describe('crediting a set', () => {
     expect(earnFromSet(london, r, first.log, input(reps('pushup', 10, 10)), NOW + 1000)).toMatchObject({ minutes: 0, reason: 'duplicate' });
   });
 
-  it('stops at the daily cap, and says so', () => {
+  it('stops at the daily most (60 by default), and says so', () => {
     let log = freshDay(london, NOW);
-    log = earnFromSet(london, r, log, input(reps('pushup', 100, 100), 'a'), NOW).log;
+    // 40 PE cap + 10 milestones + 3 first set = 53: 30 at full rate, 23 / 2 = 11.
+    const first = earnFromSet(london, r, log, input(reps('pushup', 100, 100), 'a'), NOW);
+    expect(first).toMatchObject({ minutes: 41, halfRate: true, capped: false });
+    log = first.log;
     const second = earnFromSet(london, r, log, input(reps('pushup', 50, 50), 'b'), NOW);
-    expect(second).toMatchObject({ minutes: 20, capped: true, reason: 'earned' });
-    expect(second.log.earnedMin).toBe(120);
+    expect(second).toMatchObject({ minutes: 19, capped: true, reason: 'earned' });
+    expect(second.log.earnedMin).toBe(60);
     expect(earnFromSet(london, r, second.log, input(reps('pushup', 5, 5), 'c'), NOW)).toMatchObject({
       minutes: 0,
       reason: 'cap-reached',
@@ -105,7 +171,7 @@ describe('crediting a set', () => {
     let log = freshDay(london, NOW);
     log = earnFromSet(london, r, log, input(reps('pushup', 200, 200), 'a'), NOW).log;
     const tomorrow = T(london, '2026-11-19 08:00');
-    expect(earnFromSet(london, r, log, input(reps('pushup', 10, 10), 'b'), tomorrow)).toMatchObject({ minutes: 10, reason: 'earned' });
+    expect(earnFromSet(london, r, log, input(reps('pushup', 10, 10), 'b'), tomorrow)).toMatchObject({ minutes: 18, reason: 'earned' });
   });
 
   it('earning switched off: nothing is credited', () => {

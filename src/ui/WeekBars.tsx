@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 import { Mono } from './primitives';
-import { color, space } from './theme';
+import { color, space, type } from './theme';
 
 const DAY = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -15,10 +15,13 @@ export function WeekBars({ days, values, label, height = 70 }: { days: Date[]; v
           <View key={i} style={styles.col}>
             <View style={styles.track}>
               <View
-                style={[styles.bar, { height: `${Math.max(v > 0 ? 8 : 0, (v / peak) * 100)}%`, backgroundColor: isToday ? color.vial : color.chalk2 }]}
+                style={[
+                  styles.bar,
+                  { height: `${Math.max(v > 0 ? 8 : 0, (v / peak) * 100)}%`, backgroundColor: isToday ? color.vial : color.chalk2 },
+                ]}
               />
             </View>
-            <Mono size={11} tone={isToday ? 'vial' : 'faint'}>
+            <Mono size={type.micro} tone={isToday ? 'vial' : 'faint'}>
               {DAY[days[i].getDay()]}
             </Mono>
           </View>

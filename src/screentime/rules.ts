@@ -1,7 +1,7 @@
 import { EXERCISE_IDS } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
 import { activeOccurrence, addDays, lockLengthMin, nextMidnight, occurrences, parseHHMM, type Zone } from './time';
-import type { AppLimit, EarningRules, LockTime, PauseRules, Rate, RulesCore, ScreenTimeRules, Selection, Strictness } from './types';
+import type { AppLimit, EarningRules, Focus, LockTime, PauseRules, Rate, RulesCore, ScreenTimeRules, Selection, Strictness } from './types';
 
 /**
  * Apple monitors at most 20 schedules per app. Lock times use 2 each (start and end);
@@ -14,7 +14,7 @@ export const MIN_LOCK_MIN = 15;
 export const MAX_APPS = 50;
 /** What a stored list keeps at most (Android has no 50-app limit, so this is only a sanity bound). */
 const MAX_STORED_APPS = 1000;
-export const MAX_DAILY_CAP_MIN = 240;
+export const MAX_DAILY_CAP_MIN = 120;
 /** Strict: a loosening change waits this long. */
 export const STRICT_WAIT_MS = 24 * 60 * 60 * 1000;
 /** Strict: turning it off early costs this many verified push-ups (or the 24 h wait). */
@@ -35,14 +35,33 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const EMPTY_SELECTION: Selection = { apps: [], categories: [], domains: [] };
 
+/**
+ * Minutes per unit of work, weighted by effort (research notes: no published
+ * conversion exists, so these are design weights to tune with real use).
+ * A push-up moves about 64% of body weight; a pull-up nearly all of it and is
+ * far harder for most people, so it is worth 2.5. Crunches are a lighter
+ * effort class (2.8 METs against 3.8–7.5), so they can't become the easy way
+ * to farm minutes. Planks earn 1 min per 6 s in good form: a 60 s plank is
+ * worth about 10 push-ups.
+ */
 export const DEFAULT_RATES: Record<Exercise, Rate> = {
   pushup: { perCleanRep: 1, perFlaggedRep: 0.5 },
-  // A pull-up is far harder than a push-up for most people: worth twice the time.
-  pullup: { perCleanRep: 2, perFlaggedRep: 1 },
-  crunch: { perCleanRep: 0.5, perFlaggedRep: 0.25 },
-  plank: { per10s: 2 },
-  sidePlank: { per10s: 2 },
+  pullup: { perCleanRep: 2.5, perFlaggedRep: 1.25 },
+  crunch: { perCleanRep: 0.4, perFlaggedRep: 0.2 },
+  plank: { per10s: 10 / 6 },
+  sidePlank: { per10s: 10 / 6 },
 };
+
+/**
+ * Set milestones, in push-up equivalents (PE: 1 push-up, 2.5 a pull-up, 0.4 a
+ * crunch, 6 s of plank). Each one reached in a set adds `milestoneMin`: 10
+ * push-ups earn 15 min, 20 earn 30, and two sets of 10 pay the same as one of
+ * 20, so splitting a set gains nothing (research: a linear rate with visible
+ * milestones, Kivetz 2006 goal gradient).
+ */
+export const MILESTONES_PE = [10, 20] as const;
+/** A set smaller than this earns no day bonuses (first set, coming back). */
+export const MIN_BONUS_PE = 5;
 
 export const DEFAULT_RULES: ScreenTimeRules = {
   version: 1,
@@ -50,7 +69,17 @@ export const DEFAULT_RULES: ScreenTimeRules = {
   allowed: EMPTY_SELECTION,
   dailyLimitMin: 60,
   lockTimes: [],
-  earning: { enabled: true, rates: DEFAULT_RATES, dailyCapMin: 120 },
+  // A 60 min base plus a 60 min earning most: exercise adds to the day, it doesn't double it.
+  earning: {
+    enabled: true,
+    rates: DEFAULT_RATES,
+    dailyCapMin: 60,
+    fullRateMin: 30,
+    milestoneMin: 5,
+    setCapPe: 40,
+    firstSetMin: 3,
+    comebackMin: 5,
+  },
   strictness: 'standard',
   appLimits: [],
   pause: { enabled: false, seconds: 10 },
@@ -58,11 +87,6 @@ export const DEFAULT_RULES: ScreenTimeRules = {
   strictUntil: null,
   pending: null,
 };
-
-/** The wait before a paused app opens, after `passesToday` passes. */
-export function pauseSeconds(p: PauseRules, passesToday: number): number {
-  return Math.min(PAUSE_MAX_S, p.seconds + PAUSE_STEP_S * Math.max(0, passesToday));
-}
 
 /** Ready-made lock times offered when adding one. */
 export const LOCK_PRESETS: Omit<LockTime, 'id'>[] = [
@@ -151,10 +175,20 @@ function earning(v: unknown): EarningRules {
         ? { per10s: num(x.per10s, 0, 10) ?? d.per10s }
         : { perCleanRep: num(x.perCleanRep, 0, 10) ?? d.perCleanRep, perFlaggedRep: num(x.perFlaggedRep, 0, 10) ?? d.perFlaggedRep };
   }
+  const capRaw = typeof o.dailyCapMin === 'number' && Number.isFinite(o.dailyCapMin) ? o.dailyCapMin : null;
+  // Older builds allowed up to 240: those are clamped to today's most; anything beyond that is junk.
+  const cap =
+    capRaw === null || capRaw < 0 || capRaw > 240 ? DEFAULT_RULES.earning.dailyCapMin : Math.min(MAX_DAILY_CAP_MIN, Math.round(capRaw));
   return {
     enabled: o.enabled !== false,
     rates,
-    dailyCapMin: num(o.dailyCapMin, 0, MAX_DAILY_CAP_MIN) ?? DEFAULT_RULES.earning.dailyCapMin,
+    // An older build allowed more: clamp to today's most rather than resetting to the default.
+    dailyCapMin: cap,
+    fullRateMin: Math.min(cap, num(o.fullRateMin, 0, MAX_DAILY_CAP_MIN) ?? Math.min(cap, DEFAULT_RULES.earning.fullRateMin)),
+    milestoneMin: num(o.milestoneMin, 0, 10) ?? DEFAULT_RULES.earning.milestoneMin,
+    setCapPe: num(o.setCapPe, 10, 100) ?? DEFAULT_RULES.earning.setCapPe,
+    firstSetMin: num(o.firstSetMin, 0, 10) ?? DEFAULT_RULES.earning.firstSetMin,
+    comebackMin: num(o.comebackMin, 0, 10) ?? DEFAULT_RULES.earning.comebackMin,
   };
 }
 
@@ -170,7 +204,10 @@ function core(o: Record<string, unknown>): RulesCore {
     ),
     earning: earning(o.earning),
     strictness: o.strictness === 'nudge' || o.strictness === 'strict' ? o.strictness : 'standard',
-    appLimits: (Array.isArray(o.appLimits) ? o.appLimits.map(appLimit).filter((l): l is AppLimit => l !== null) : []).slice(0, MAX_APP_LIMITS),
+    appLimits: (Array.isArray(o.appLimits) ? o.appLimits.map(appLimit).filter((l): l is AppLimit => l !== null) : []).slice(
+      0,
+      MAX_APP_LIMITS,
+    ),
     pause: pause(o.pause),
     silenceNotifications: o.silenceNotifications === true,
   };
@@ -336,6 +373,8 @@ export function loosens(prev: RulesCore, next: RulesCore): boolean {
   if (order.indexOf(next.strictness) < order.indexOf(prev.strictness)) return true;
   if (next.earning.enabled && !prev.earning.enabled) return true;
   if (next.earning.dailyCapMin > prev.earning.dailyCapMin) return true;
+  const e = (k: 'fullRateMin' | 'milestoneMin' | 'setCapPe' | 'firstSetMin' | 'comebackMin') => next.earning[k] > prev.earning[k];
+  if (e('fullRateMin') || e('milestoneMin') || e('setCapPe') || e('firstSetMin') || e('comebackMin')) return true;
   for (const e of EXERCISE_IDS) {
     const a = prev.earning.rates[e];
     const b = next.earning.rates[e];
@@ -347,10 +386,11 @@ export function loosens(prev: RulesCore, next: RulesCore): boolean {
 
 export type ChangeResult =
   | { result: 'applied'; rules: ScreenTimeRules; cancelledPending: boolean }
-  | { result: 'scheduled'; rules: ScreenTimeRules; effectiveAt: number }
+  /** `replacedPending`: an easier change that was already waiting is replaced by this one. */
+  | { result: 'scheduled'; rules: ScreenTimeRules; effectiveAt: number; replacedPending?: boolean }
   | { result: 'refused'; rules: ScreenTimeRules; reason: RefusalReason };
 
-export type RefusalReason = 'strict-running-lock' | 'strict-remove-apps' | 'strict-off-early' | 'invalid';
+export type RefusalReason = 'strict-running-lock' | 'strict-remove-apps' | 'strict-off-early' | 'focus-locked' | 'invalid';
 
 /** The core fields of full rules. */
 export function coreOf(r: ScreenTimeRules): RulesCore {
@@ -378,7 +418,8 @@ function touchesRunningLock(zone: Zone, prev: RulesCore, next: RulesCore, now: n
     if (!still || still.end < occ.end || (n.earnable && !p.earnable)) return true;
     if (p.apps === 'all' && n.apps !== 'all') return true;
     if (p.apps === 'main' && n.apps !== 'main' && n.apps !== 'all') return true;
-    if (p.apps !== 'main' && p.apps !== 'all' && (n.apps === 'main' || n.apps === 'all' || !subset(asSet(p.apps), asSet(n.apps)))) return true;
+    if (p.apps !== 'main' && p.apps !== 'all' && (n.apps === 'main' || n.apps === 'all' || !subset(asSet(p.apps), asSet(n.apps))))
+      return true;
   }
   return false;
 }
@@ -393,7 +434,7 @@ function touchesRunningLock(zone: Zone, prev: RulesCore, next: RulesCore, now: n
  *   time can't be shortened, skipped or switched off, Strict can't be turned
  *   off early (see `endStrictEarly`), and other loosening waits 24 hours.
  */
-export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore, now: number): ChangeResult {
+export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore, now: number, focus: Focus | null = null): ChangeResult {
   const next: RulesCore = core(nextIn as unknown as Record<string, unknown>);
   if (
     nextIn.lockTimes.some((l) => lockProblem(l) !== null) ||
@@ -412,6 +453,10 @@ export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore,
     const strictUntil = applied.strictness !== 'strict' ? null : strictActive(r, now) ? r.strictUntil : now + DEFAULT_STRICT_DAYS * DAY_MS;
     return { result: 'applied', rules: { ...r, ...applied, strictUntil, pending: null }, cancelledPending: r.pending !== null };
   }
+  // A key lock or a Strict focus can't be loosened while it runs, in any mode: that's what makes it a lock.
+  if (focusLocks(focus, now)) {
+    return { result: 'refused', rules: r, reason: 'focus-locked' };
+  }
   const mode = effectiveStrictness(r, now);
   if (mode === 'nudge') return { result: 'applied', rules: { ...r, ...next, strictUntil: null, pending: null }, cancelledPending: false };
   if (mode === 'strict') {
@@ -419,15 +464,24 @@ export function requestChange(zone: Zone, r: ScreenTimeRules, nextIn: RulesCore,
     if (!subset(asSet(prev.blocked), asSet(next.blocked))) return { result: 'refused', rules: r, reason: 'strict-remove-apps' };
     if (touchesRunningLock(zone, prev, next, now)) return { result: 'refused', rules: r, reason: 'strict-running-lock' };
     const effectiveAt = now + STRICT_WAIT_MS;
-    return { result: 'scheduled', rules: { ...r, pending: { effectiveAt, next } }, effectiveAt };
+    return { result: 'scheduled', rules: { ...r, pending: { effectiveAt, next } }, effectiveAt, replacedPending: r.pending !== null };
   }
   const effectiveAt = nextMidnight(zone, now);
-  return { result: 'scheduled', rules: { ...r, pending: { effectiveAt, next } }, effectiveAt };
+  return { result: 'scheduled', rules: { ...r, pending: { effectiveAt, next } }, effectiveAt, replacedPending: r.pending !== null };
 }
 
-/** Apply a waiting change once its time has come (call on every app open and at midnight). */
-export function applyPending(r: ScreenTimeRules, now: number): ScreenTimeRules {
+/** A key lock or Strict focus is running: rules may only get stricter. */
+export function focusLocks(focus: Focus | null, now: number): boolean {
+  return !!focus && (focus.kind === 'key' || focus.strict) && focus.startedAt <= now && now < focus.until;
+}
+
+/**
+ * Apply a waiting change once its time has come (call on every app open and at midnight).
+ * An easier change asked for before a key lock or Strict focus waits until that ends.
+ */
+export function applyPending(r: ScreenTimeRules, now: number, focus: Focus | null = null): ScreenTimeRules {
   if (!r.pending || now < r.pending.effectiveAt) return r;
+  if (focusLocks(focus, now) && loosens(coreOf(r), r.pending.next)) return r;
   const next = r.pending.next;
   return { ...r, ...next, strictUntil: next.strictness === 'strict' ? r.strictUntil : null, pending: null };
 }
@@ -448,7 +502,8 @@ export function endStrictEarly(r: ScreenTimeRules, now: number, verifiedPushupsS
     return {
       result: 'applied',
       rules: { ...r, strictness: 'standard', strictUntil: null, pending: null },
-      cancelledPending: r.pending !== null,
+      // The waiting "end Strict" request is what just happened; only some other easier change is dropped.
+      cancelledPending: r.pending !== null && r.pending.next.strictness === 'strict',
     };
   }
   const effectiveAt = now + STRICT_WAIT_MS;
@@ -456,13 +511,17 @@ export function endStrictEarly(r: ScreenTimeRules, now: number, verifiedPushupsS
 }
 
 /** Skip the next (or running) occurrence of a lock time: loosening, so it follows `requestChange`. */
-export function skipNext(zone: Zone, r: ScreenTimeRules, lockId: string, now: number): ChangeResult {
+export function skipNext(zone: Zone, r: ScreenTimeRules, lockId: string, now: number, focus: Focus | null = null): ChangeResult {
   const lock = r.lockTimes.find((l) => l.id === lockId);
   if (!lock) return { result: 'refused', rules: r, reason: 'invalid' };
-  const occ = activeOccurrence(zone, lock, now) ?? occurrences(zone, lock, now, 7).find((o) => o.start > now);
+  // A skip is loosening, so it waits (Standard: midnight; Strict: 24 h). Skip the first occurrence that starts
+  // once it applies: skipping tonight's at noon in Standard would only cut it from 00:00, and in Strict never.
+  const mode = effectiveStrictness(r, now);
+  const from = mode === 'standard' ? nextMidnight(zone, now) : mode === 'strict' ? now + STRICT_WAIT_MS : now;
+  const occ = (mode === 'nudge' ? activeOccurrence(zone, lock, now) : null) ?? occurrences(zone, lock, now, 9).find((o) => o.start >= from);
   if (!occ) return { result: 'refused', rules: r, reason: 'invalid' };
   const next = { ...coreOf(r), lockTimes: r.lockTimes.map((l) => (l.id === lockId ? { ...l, skipDate: occ.day } : l)) };
-  return requestChange(zone, r, next, now);
+  return requestChange(zone, r, next, now, focus);
 }
 
 /** Today's date key, for clearing skips that are in the past. */

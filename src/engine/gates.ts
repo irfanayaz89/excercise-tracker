@@ -27,9 +27,14 @@ export interface PhoneCheck {
  * missing or stale (permission denied, no hardware), reports `no-sensor` so
  * the UI can offer a manual "Phone is set" confirmation instead of blocking.
  */
+/** Mid-set, a phone that keeps moving this long pauses the set (it is being held, or was picked up). */
+const MOVING_PAUSE_MS = 2000;
+
 export class PhoneGate {
   private steadySince: number | null = null;
   private last: PhoneAttitude | null = null;
+  /** When the phone started turning faster than a phone resting on the floor does (null while still). */
+  private movingSince: number | null = null;
   /** Attitude the user accepted by skipping the level check; "moved" is measured from here. */
   private base = { roll: 0, pitch: 0 };
 
@@ -47,6 +52,11 @@ export class PhoneGate {
     if (!Number.isFinite(a.rollDeg) || !Number.isFinite(a.pitchDeg)) return;
     if (this.last && a.t < this.last.t) return;
     this.last = a;
+    // A phone on the floor barely turns; one that keeps turning is held or moving, and then
+    // the real-person check (which needs a still phone) can't see a video played to it.
+    const moving = Number.isFinite(a.motionDegPerSec) && a.motionDegPerSec > this.cfg.reality.stillPhoneDegPerSec + 1;
+    if (!moving) this.movingSince = null;
+    else if (this.movingSince === null) this.movingSince = a.t;
   }
 
   /** Roll to use for horizon correction; 0 when the sensor is unavailable. */
@@ -95,6 +105,7 @@ export class PhoneGate {
     const p = this.cfg.phone;
     const rollLimit = Math.min(p.maxRollDeg * 3, 30);
     const pitchLimit = Math.min(p.maxPitchDeg * 2.5, 50);
+    if (this.movingSince !== null && a.t - this.movingSince >= MOVING_PAUSE_MS) return true;
     return Math.abs(a.rollDeg - this.base.roll) > rollLimit || Math.abs(a.pitchDeg - this.base.pitch) > pitchLimit;
   }
 }

@@ -39,14 +39,24 @@ export function windowsToday(zone: Zone, rules: ScreenTimeRules, now: number): {
   for (const lock of rules.lockTimes) {
     for (const o of occurrences(zone, lock, dayStart, 1)) {
       if (o.end <= dayStart || o.start >= dayEnd) continue;
-      windows.push({ id: lock.id, name: lock.name, start: Math.max(o.start, dayStart), end: Math.min(o.end, dayEnd), earnable: lock.earnable });
+      windows.push({
+        id: lock.id,
+        name: lock.name,
+        start: Math.max(o.start, dayStart),
+        end: Math.min(o.end, dayEnd),
+        earnable: lock.earnable,
+      });
     }
   }
   return { dayStart, dayEnd, windows: windows.sort((a, b) => a.start - b.start) };
 }
 
 /** The next lock time to start (or the one running), for "Sleep at 22:00". */
-export function nextLock(zone: Zone, rules: ScreenTimeRules, now: number): { name: string; start: number; end: number; running: boolean } | null {
+export function nextLock(
+  zone: Zone,
+  rules: ScreenTimeRules,
+  now: number,
+): { name: string; start: number; end: number; running: boolean } | null {
   let best: { name: string; start: number; end: number; running: boolean } | null = null;
   for (const lock of rules.lockTimes) {
     for (const o of occurrences(zone, lock, now, 7)) {
@@ -83,4 +93,32 @@ export function summarizeDays(rules: ScreenTimeRules, days: DayLog[]): DaySummar
     focusMin: Math.round((d.focuses ?? []).reduce((n, f) => n + Math.max(0, f.to - f.from), 0) / 60_000),
     offMin: Math.round((d.gaps ?? []).reduce((n, g) => n + Math.max(0, g.to - g.from), 0) / 60_000),
   }));
+}
+
+/** A rate in words: "2.5 min per clean rep" or "10 min per minute in good form". */
+export function rateText(r: { perCleanRep?: number; per10s?: number }): string {
+  const n = (v: number) => String(Math.round(v * 100) / 100);
+  return r.per10s !== undefined ? `${n(r.per10s * 6)} min per minute in good form` : `${n(r.perCleanRep ?? 0)} min per clean rep`;
+}
+
+/**
+ * The milestone tiers in words, for one exercise: "10 push-ups 15 min · 20 push-ups 30 min",
+ * "60 s 15 min · 120 s 30 min". Each milestone is a number of push-up equivalents.
+ */
+export function tierText(
+  r: { perCleanRep?: number; per10s?: number },
+  milestoneMin: number,
+  unit: string,
+  milestones: readonly number[] = [10, 20],
+): string {
+  const parts = milestones.map((pe, i) => {
+    const minutes = pe + milestoneMin * (i + 1);
+    if (r.per10s !== undefined) {
+      const s = r.per10s > 0 ? Math.ceil((pe / r.per10s) * 10) : 0;
+      return `${s} s: ${minutes} min`;
+    }
+    const n = r.perCleanRep ? Math.ceil(pe / r.perCleanRep) : 0;
+    return `${n} ${unit}: ${minutes} min`;
+  });
+  return parts.join(' · ');
 }

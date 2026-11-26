@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { Platform } from 'react-native';
 import { ScreenTime } from '../../modules/screen-time/src';
-import { MAX_APPS, requestChange, type ChangeResult, type RefusalReason } from './rules';
-import { getScreenTime, saveRules } from './store';
+import { coreOf, MAX_APPS, requestChange, STRICT_WAIT_MS, type ChangeResult, type RefusalReason } from './rules';
+import { getScreenTime, saveRules, screenTimeNow } from './store';
 import { formatClock } from './summary';
 import { deviceZone } from './time';
 import type { RulesCore, Selection } from './types';
@@ -12,28 +12,43 @@ import type { RulesCore, Selection } from './types';
  * (Standard: midnight; Strict: 24 h) or is refused (plan §2–3). Saved and sent
  * to the phone's blocking when it applies or is scheduled.
  */
-export function changeRules(next: RulesCore, now = Date.now()): ChangeResult {
-  const res = requestChange(deviceZone, getScreenTime().rules, next, now);
+export function changeRules(next: RulesCore, now = screenTimeNow()): ChangeResult {
+  const s = getScreenTime();
+  const res = requestChange(deviceZone, s.rules, next, now, s.focus);
   if (res.result !== 'refused') saveRules(res.rules);
   return res;
 }
 
+/**
+ * The rules a screen should edit from: the ones in force. Building on a
+ * waiting change instead would make a tightening read as a loosening (and in
+ * Strict, refuse every edit while "end Strict" waits). A new easier change
+ * replaces a waiting one; `describeChange` says so.
+ */
+export function editBase(): RulesCore {
+  return coreOf(getScreenTime().rules);
+}
+
 /** One line telling the user what happened to their change. */
-export function describeChange(res: ChangeResult, now = Date.now()): string | null {
+export function describeChange(res: ChangeResult, now = screenTimeNow()): string | null {
   // A stricter change replaces an easier one that was still waiting: say so, or it vanishes without a word.
-  if (res.result === 'applied') return res.cancelledPending ? 'Saved. The easier change that was waiting to start has been cancelled.' : null;
+  if (res.result === 'applied')
+    return res.cancelledPending ? 'Saved. The easier change that was waiting to start has been cancelled.' : null;
   if (res.result === 'refused') return REFUSALS[res.reason];
   // Same clock wording as everywhere else in the app ("tomorrow 00:00"), not the phone's own format.
   const when = formatClock(deviceZone, res.effectiveAt, now);
-  return res.effectiveAt - now >= 20 * 3_600_000
-    ? `That makes things easier on you, so it starts in 24 hours (${when}).`
-    : `That makes things easier on you, so it starts at midnight (${when}).`;
+  const replaced = res.replacedPending ? ' It replaces the easier change that was already waiting.' : '';
+  // Strict waits exactly 24 h; Standard waits until midnight, which can be up to 24 h away too.
+  return res.effectiveAt - now >= STRICT_WAIT_MS - 60_000
+    ? `That makes things easier on you, so it starts in 24 hours (${when}).${replaced}`
+    : `That makes things easier on you, so it starts at midnight (${when}).${replaced}`;
 }
 
 const REFUSALS: Record<RefusalReason, string> = {
   'strict-running-lock': "Strict mode: a lock time that's running can't be shortened, skipped or switched off.",
   'strict-remove-apps': "Strict mode: apps can't be taken off the blocked list until the lock period ends.",
   'strict-off-early': 'Strict mode is on. End it early from the Strictness section.',
+  'focus-locked': 'A workout lock is on. Rules can only get stricter until it ends.',
   invalid: "That lock time can't be saved: check its days and times (at least 15 minutes).",
 };
 

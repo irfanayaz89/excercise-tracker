@@ -45,7 +45,7 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
       return config(shown, "\(app) is done for today", lines, kind, s, pauseLeft: 0, app: app, symbol: "hourglass.bottomhalf.filled")
     case .own(let lock):
       lines.append("Your \(lock.name) lock time is on, and \(app) is on its list.")
-      if let w = STShared.active(lock, at: Date()) { lines.append(opens(w.1)) }
+      if let w = STShared.active(lock, at: STShared.now()) { lines.append(opens(w.1)) }
       return config(shown, "\(app) is locked", lines, kind, s, pauseLeft: 0, app: app, symbol: "lock.fill")
     case .pause:
       let pauseLeft = STShared.pauseLeft(shown.pauseKey ?? app)
@@ -63,6 +63,7 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
       symbol = "key.fill"
       lines.append("You started a key lock. Scan your key in Trueline to open your apps.")
       if let until = s.until { lines.append("If you can't, it ends by itself at \(clock(until)).") }
+      if notificationsOff { lines.append("Notifications are off, so this screen can't take you there: open Trueline yourself.") }
     } else if s.reason == "limit" {
       title = "Today's time is up"
       symbol = "hourglass.bottomhalf.filled"
@@ -80,14 +81,24 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
       lines.append(s.blockAll ? "Your \(name) lock time is on. Everything except your always-allowed apps stays closed." : "Your \(name) lock time is on, so your blocked apps stay closed.")
       if let until = s.until { lines.append(opens(until)) }
     }
-    if s.canEarn { lines.append("Do a set in Trueline to earn minutes.") }
+    // Below iOS 26.5 "Earn time" reaches Trueline through a notification: with those off, say so.
+    if s.canEarn {
+      lines.append(notificationsOff ? "Notifications are off, so this screen can't take you there: open Trueline yourself and do a set to earn minutes." : "Do a set in Trueline to earn minutes.")
+    }
     if s.mode == "strict" { lines.append("Strict mode: no unlocks. You chose this to stay on track.") }
     return config(shown, title, lines, kind, s, pauseLeft: 0, app: app, symbol: symbol)
   }
 
-  /// "Opens at 7:00 AM (6 h 12 min left)", with the day when it isn't today.
+  /// The buttons can't open Trueline themselves (before iOS 26.5) and notifications are known to be off.
+  private var notificationsOff: Bool {
+    if #available(iOS 26.5, *) { return false }
+    return STShared.defaults?.object(forKey: "st.notify") as? Bool == false
+  }
+
+  /// "Opens at 7:00 AM (6 h 12 min left)", with the day when it isn't today. By the trusted clock,
+  /// so a moved phone clock doesn't change it.
   private func opens(_ at: Date) -> String {
-    let min = max(1, Int(ceil(at.timeIntervalSinceNow / 60)))
+    let min = max(1, Int(ceil(at.timeIntervalSince(STShared.now()) / 60)))
     let left = min < 60 ? "\(min) min" : (min % 60 == 0 ? "\(min / 60) h" : "\(min / 60) h \(min % 60) min")
     return "Opens at \(clock(at)) (\(left) left)."
   }
@@ -96,8 +107,10 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
     let f = DateFormatter()
     f.timeStyle = .short
     f.dateStyle = .none
-    if Calendar.current.isDate(at, inSameDayAs: Date()) { return f.string(from: at) }
-    if Calendar.current.isDateInTomorrow(at) { return "tomorrow \(f.string(from: at))" }
+    let cal = Calendar.current
+    let now = STShared.now()
+    if cal.isDate(at, inSameDayAs: now) { return f.string(from: at) }
+    if let tomorrow = cal.date(byAdding: .day, value: 1, to: now), cal.isDate(at, inSameDayAs: tomorrow) { return "tomorrow \(f.string(from: at))" }
     f.dateStyle = .short
     return f.string(from: at)
   }

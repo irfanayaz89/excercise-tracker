@@ -139,6 +139,46 @@ export function listSessions(limit = 60, since = 0, exercise?: Exercise): Sessio
   }
 }
 
+/** How many sets are saved in all. */
+export function countSessions(): number {
+  const d = getDb();
+  if (!d) return 0;
+  try {
+    return d.getFirstSync<{ n: number }>('SELECT COUNT(*) AS n FROM sessions')?.n ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * One time per day that has any set, oldest first, for streaks over the whole history without
+ * loading every row. Days are the phone's local days.
+ */
+export function activeDays(): number[] {
+  const d = getDb();
+  if (!d) return [];
+  try {
+    return d
+      .getAllSync<{ t: number }>(
+        "SELECT MIN(started_at) AS t FROM sessions GROUP BY date(started_at / 1000, 'unixepoch', 'localtime') ORDER BY t",
+      )
+      .map((r) => r.t);
+  } catch {
+    return [];
+  }
+}
+
+/** When the first set of an exercise was done (null if never). */
+export function firstSessionAt(exercise: Exercise): number | null {
+  const d = getDb();
+  if (!d) return null;
+  try {
+    return d.getFirstSync<{ t: number | null }>('SELECT MIN(started_at) AS t FROM sessions WHERE exercise = ?', exercise)?.t ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Recent sets of one exercise, newest first. */
 export function listSessionsFor(exercise: Exercise, limit = 30): SessionRow[] {
   return listSessions(limit, 0, exercise);
@@ -194,6 +234,76 @@ export function getSession(id: string): { row: SessionRow; summary: SessionSumma
     return { row, summary: normalizeSummary(parsed, row) };
   } catch {
     return null;
+  }
+}
+
+/**
+ * "Fix my count": the user corrects a set's rep total after the camera missed
+ * or added some. History and calories follow the fix; screen time already
+ * earned does not (so a fix can never be a way to earn more). Clean reps are
+ * never more than the camera counted clean. Fixing to 0 deletes the set (an
+ * empty set is never kept). Returns 'deleted', 'saved', or null if nothing
+ * changed.
+ */
+export function correctReps(id: string, totalReps: number): 'saved' | 'deleted' | null {
+  const d = getDb();
+  if (!d) return null;
+  const total = Math.max(0, Math.min(500, Math.round(totalReps)));
+  try {
+    const r = d.getFirstSync<{ summary: string; clean_reps: number; total_reps: number }>(
+      'SELECT summary, clean_reps, total_reps FROM sessions WHERE id = ?',
+      id,
+    );
+    if (!r) return null;
+    if (total === 0) {
+      d.runSync('DELETE FROM sessions WHERE id = ?', id);
+      return 'deleted';
+    }
+    let summary: Record<string, unknown> = {};
+    try {
+      summary = JSON.parse(r.summary) as Record<string, unknown>;
+    } catch {
+      // Keep going with the columns alone.
+    }
+    const prev = summary.counted as { total?: unknown; clean?: unknown } | undefined;
+    const counted =
+      prev && typeof prev.total === 'number' && typeof prev.clean === 'number'
+        ? { total: prev.total, clean: prev.clean }
+        : { total: r.total_reps, clean: r.clean_reps };
+    const clean = Math.min(counted.clean, total);
+    const next = { ...summary, totalReps: total, cleanReps: clean, counted };
+    d.runSync('UPDATE sessions SET total_reps = ?, clean_reps = ?, summary = ? WHERE id = ?', total, clean, JSON.stringify(next), id);
+    return 'saved';
+  } catch {
+    return null;
+  }
+}
+
+/** The best set of an exercise before this one (null if this is the first). */
+export function bestBefore(exercise: Exercise, id: string): number | null {
+  const d = getDb();
+  if (!d) return null;
+  try {
+    const col = isTimed(exercise) ? 'hold_ms' : 'total_reps';
+    const r = d.getFirstSync<{ best: number | null }>(
+      `SELECT MAX(${col}) AS best FROM sessions WHERE exercise = ? AND id != ? AND started_at <= (SELECT started_at FROM sessions WHERE id = ?)`,
+      exercise,
+      id,
+      id,
+    );
+    return r?.best ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Delete every saved set (Settings › Delete my workout data). */
+export function deleteAllSessions(): boolean {
+  try {
+    getDb()?.runSync('DELETE FROM sessions');
+    return true;
+  } catch {
+    return false;
   }
 }
 

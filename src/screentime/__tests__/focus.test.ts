@@ -115,18 +115,27 @@ describe('ending a focus', () => {
 describe('the plan and report carry focus, usage and gaps', () => {
   it('the plan tells the phone when the focus ends and how much was used', () => {
     const f = startFocus(standard, null, 30, NOON);
-    expect(toNativePlan(london, standard, day({ usedMin: 37 }), NOON + MIN, f)).toMatchObject({ focusUntil: f.until, focusKind: 'timed', usedMin: 37 });
+    expect(toNativePlan(london, standard, day({ usedMin: 37 }), NOON + MIN, f)).toMatchObject({
+      focusUntil: f.until,
+      focusKind: 'timed',
+      usedMin: 37,
+    });
     expect(toNativePlan(london, standard, day(), f.until + 1, f).focusUntil).toBeNull();
   });
 
   it('stop gaps reported by Android are kept once, and bad ones are dropped', () => {
     const gap = { from: NOON - HOUR, to: NOON - 30 * MIN, kind: 'stopped' };
     const report = parseReport(
-      JSON.stringify({ day: '2026-11-18', unlocks: [], gaps: [gap, { kind: 'magic', from: 1, to: 2 }, { kind: 'killed', from: 5, to: 3 }], tokensExpired: true }),
+      JSON.stringify({
+        day: '2026-11-18',
+        unlocks: [],
+        gaps: [gap, { kind: 'magic', from: 1, to: 2 }, { kind: 'killed', from: 5, to: 3 }],
+        tokensExpired: true,
+      }),
     );
     expect(report).toMatchObject({ gaps: [gap], tokensExpired: true });
-    let log = mergeReport(london, standard, day(), report, NOON);
-    log = mergeReport(london, standard, log, report, NOON);
+    let log = mergeReport(london, day(), report, NOON);
+    log = mergeReport(london, log, report, NOON);
     expect(log.gaps).toEqual([gap]);
   });
 });
@@ -135,6 +144,9 @@ describe('lock-time cap', () => {
   it('stays within the iPhone schedule budget (5 + 2 per lock time ≤ 20)', () => {
     expect(5 + 2 * MAX_LOCK_TIMES).toBeLessThanOrEqual(20);
     const many = Array.from({ length: MAX_LOCK_TIMES + 1 }, (_, i) => lock({ id: `l${i}`, start: `0${i}:00`, end: `0${i}:30` }));
-    expect(requestChange(london, standard, { ...coreOf(standard), lockTimes: many }, NOON)).toMatchObject({ result: 'refused', reason: 'invalid' });
+    expect(requestChange(london, standard, { ...coreOf(standard), lockTimes: many }, NOON)).toMatchObject({
+      result: 'refused',
+      reason: 'invalid',
+    });
   });
 });

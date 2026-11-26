@@ -1,6 +1,6 @@
 import { decide, EMERGENCIES_PER_DAY, EMERGENCY_MIN, ONE_MORE_MIN, ONE_MORE_PER_DAY, rollDay } from './decide';
 import { effectiveStrictness, PAUSE_MAX_S, PAUSE_PASS_MIN, PAUSE_STEP_S } from './rules';
-import { parseHHMM, type Zone } from './time';
+import { dayKey, parseHHMM, type Zone } from './time';
 import type { DayLog, Focus, Gap, ScreenTimeRules, Selection, Unlock } from './types';
 
 /**
@@ -71,6 +71,10 @@ export interface NativePlan {
   focusKind: 'set' | 'timed' | 'key' | null;
   /** The running focus blocks every app except the always-allowed ones. */
   focusAll: boolean;
+  /** A key lock or Strict focus: no unlock opens the main apps and no unlock is offered until it ends. */
+  focusLocked: boolean;
+  /** The app's trusted "now" when it made this plan: the phone carries on from it if its clock is moved (clock.ts). */
+  madeAt: number;
   /** Per-app limits (enabled ones only). */
   appLimits: NativeAppLimit[];
   /** A pause before the blocked apps open outside blocks: the first wait and today's passes so far. */
@@ -86,7 +90,8 @@ export interface NativePlan {
 export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: number, focus: Focus | null = null): NativePlan {
   const log = rollDay(zone, logIn, now);
   const d = decide(zone, rules, log, now, focus);
-  const used = (kind: Unlock['kind']) => log.unlocks.filter((u) => u.kind === kind).length;
+  // Only unlocks taken today count, as in decide(): one carried over from late last night doesn't.
+  const used = (kind: Unlock['kind']) => log.unlocks.filter((u) => u.kind === kind && dayKey(zone.local(u.from)) === log.day).length;
   return {
     day: log.day,
     dailyLimitMin: rules.dailyLimitMin,
@@ -108,6 +113,8 @@ export function toNativePlan(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, 
     focusUntil: d.focus ? d.focus.until : null,
     focusKind: d.focus ? d.focus.kind : null,
     focusAll: d.focus !== null && focus?.blockAll === true,
+    focusLocked: d.focus !== null && (d.focus.kind === 'key' || d.focus.strict),
+    madeAt: now,
     appLimits: rules.appLimits
       .filter((l) => l.enabled)
       .map((l) => ({
@@ -176,14 +183,15 @@ export function parseReport(json: string): NativeReport | null {
     if (!o || typeof o !== 'object' || typeof o.day !== 'string') return null;
     const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
     const unlocks = Array.isArray(o.unlocks)
-      ? o.unlocks.filter(
-          (u): u is Unlock =>
-            !!u &&
-            (u.kind === 'emergency' || u.kind === 'one-more') &&
-            typeof u.from === 'number' &&
-            typeof u.until === 'number' &&
-            u.until > u.from,
-        )
+      ? o.unlocks
+          .filter(
+            (u): u is Unlock =>
+              !!u &&
+              (u.kind === 'emergency' || u.kind === 'one-more') &&
+              typeof u.from === 'number' &&
+              typeof u.until === 'number' &&
+              u.until > u.from,
+          )
           // iOS reports fractional milliseconds; whole ones compare cleanly with the app's clock.
           .map((u) => ({ ...u, from: Math.floor(u.from) }))
       : [];
@@ -200,7 +208,8 @@ export function parseReport(json: string): NativeReport | null {
     const counts = (v: unknown): Record<string, number> => {
       const out: Record<string, number> = {};
       if (v && typeof v === 'object')
-        for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (typeof x === 'number' && Number.isFinite(x) && x >= 0) out[k] = x;
+        for (const [k, x] of Object.entries(v as Record<string, unknown>))
+          if (typeof x === 'number' && Number.isFinite(x) && x >= 0) out[k] = x;
       return out;
     };
     return {
@@ -229,7 +238,7 @@ export function parseReport(json: string): NativeReport | null {
  * Usage only ever goes up, earned time spent never exceeds what was earned,
  * and an unlock is recorded once however often it is reported.
  */
-export function mergeReport(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, report: NativeReport | null, now: number): DayLog {
+export function mergeReport(zone: Zone, logIn: DayLog, report: NativeReport | null, now: number): DayLog {
   const log = rollDay(zone, logIn, now);
   if (!report) return log;
   const seen = new Set(log.unlocks.map((u) => `${u.kind}:${u.from}`));

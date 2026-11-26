@@ -262,7 +262,11 @@ export class PullupCounter {
 
   update(r: PullupReading): RepEvent | null {
     const c = this.cfg.pullup;
-    if (r.wrist && r.overhead && r.bothWrists) {
+    // Learn the bar only from a straight-armed hang, never mid-rep: otherwise
+    // hands brought down to the mouth while standing would drag the "bar" with
+    // them and count as pull-ups (found in an audit).
+    const straight = r.elbowDeg !== null ? r.elbowDeg >= c.hangElbowDeg : this.phase === 'hanging' || this.phase === 'resting';
+    if (r.wrist && r.overhead && r.bothWrists && straight && (this.phase === 'hanging' || this.phase === 'resting')) {
       this.bars.push(r.wrist.y);
       if (this.bars.length > BAR_WINDOW) this.bars.shift();
     }
@@ -291,7 +295,8 @@ export class PullupCounter {
           // The lowest hanging height (and its legs) is where every rep starts from.
           this.hangDrop = this.hangDrop === null ? drop : this.hangDrop * 0.8 + drop * 0.2;
           if (kneeGap !== null) this.hangKneeGap = this.hangKneeGap === null ? kneeGap : this.hangKneeGap * 0.8 + kneeGap * 0.2;
-          if (r.elbowDeg !== null) this.hangElbow = this.hangElbow === null ? r.elbowDeg : Math.max(this.hangElbow * 0.9 + r.elbowDeg * 0.1, 0);
+          if (r.elbowDeg !== null)
+            this.hangElbow = this.hangElbow === null ? r.elbowDeg : Math.max(this.hangElbow * 0.9 + r.elbowDeg * 0.1, 0);
         }
         const rise = this.hangDrop === null ? 0 : this.hangDrop - drop;
         if (rise >= c.leaveRise || (!hang && r.elbowDeg !== null && r.elbowDeg < c.hangElbowDeg - 15)) {
@@ -348,7 +353,7 @@ export class PullupCounter {
       if (a.kneeRise >= c.kipKneeRise) return this.miss('kipped', t, a.minElbow);
       const faults: RepFault[] = [];
       if (this.cfg.form.enabled) {
-        const swing = a.hipXs.length ? (Math.max(...a.hipXs) - Math.min(...a.hipXs)) : 0;
+        const swing = a.hipXs.length ? Math.max(...a.hipXs) - Math.min(...a.hipXs) : 0;
         if (swing > c.swingFault) faults.push('swinging');
         if (r.shoulderTilt > c.tiltFault) faults.push('uneven');
       }

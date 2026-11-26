@@ -5,11 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenTime } from '../../../modules/screen-time/src';
 import { countLabel, pickApps, selectionProblem } from '@/screentime/edit';
 import { DEFAULT_STRICT_DAYS, describeLock, LOCK_PRESETS, startStrict } from '@/screentime/rules';
-import { availability, getScreenTime, markSetUp, saveRules, syncScreenTime } from '@/screentime/store';
+import { availability, getScreenTime, markSetUp, saveRules, screenTimeNow, syncScreenTime } from '@/screentime/store';
 import { formatMin } from '@/screentime/summary';
 import type { LockTime, ScreenTimeRules, Strictness } from '@/screentime/types';
 import { Body, Button, Chip, Display, Label, Mono, Strong } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { color, radius, space, type } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 
 type Step = 'why' | 'access' | 'blocked' | 'allowed' | 'limit' | 'locks' | 'strictness' | 'done';
@@ -82,8 +82,10 @@ export default function ScreenTimeSetup() {
   };
 
   const finish = () => {
-    const now = Date.now();
-    saveRules(rules.strictness === 'strict' ? startStrict(rules, now, DEFAULT_STRICT_DAYS) : { ...rules, strictUntil: null, pending: null });
+    const now = screenTimeNow();
+    saveRules(
+      rules.strictness === 'strict' ? startStrict(rules, now, DEFAULT_STRICT_DAYS) : { ...rules, strictUntil: null, pending: null },
+    );
     markSetUp();
     router.replace('/screen-time');
   };
@@ -107,7 +109,7 @@ export default function ScreenTimeSetup() {
           <Label tone="chalk">{STEPS.indexOf(step) === 0 || reconnect ? 'Close' : 'Back'}</Label>
         </Pressable>
         {!reconnect && (
-          <Mono size={12} tone="muted">
+          <Mono size={type.small} tone="muted">
             {`${STEPS.indexOf(step) + 1} / ${STEPS.length}`}
           </Mono>
         )}
@@ -116,8 +118,8 @@ export default function ScreenTimeSetup() {
       {step === 'why' && (
         <Block title="Earn your scroll">
           <Body tone="muted">
-            Pick the apps that take more of your day than you&apos;d like. Trueline blocks them during lock times and once your daily limit is
-            used up. Do a set (push-ups, crunches or a plank) and you earn minutes to open them again.
+            Pick the apps that take more of your day than you&apos;d like. Trueline blocks them during lock times and once your daily limit
+            is used up. Do a set (push-ups, crunches or a plank) and you earn minutes to open them again.
           </Body>
           <Body tone="muted">
             {Platform.OS === 'ios'
@@ -144,7 +146,7 @@ export default function ScreenTimeSetup() {
               : 'Android will open two settings screens: turn on Usage access, then Display over other apps, for Trueline.'}
           </Body>
           {access === 'needs-permission' && asked && !busy && (
-            <Body tone="cue" size={14}>
+            <Body tone="cue" size={type.note}>
               {Platform.OS === 'android'
                 ? 'One is still off. Tap Allow access again and turn on the next screen too (Usage access and Display over other apps).'
                 : 'Access isn\u2019t on yet. Without it Trueline can\u2019t block anything.'}
@@ -157,7 +159,7 @@ export default function ScreenTimeSetup() {
           )}
           {access === 'ready' && Platform.OS === 'android' && (
             <>
-              <Body tone="muted" size={14}>
+              <Body tone="muted" size={type.note}>
                 {batteryOk
                   ? 'Background running is allowed: battery savers will leave blocking alone.'
                   : "Some phones stop apps in the background to save battery, which would stop blocking. In the list that opens, find Trueline and choose \u201cDon't optimise\u201d (or \u201cUnrestricted\u201d)."}
@@ -192,7 +194,7 @@ export default function ScreenTimeSetup() {
             })}
           />
           {pickError && (
-            <Body tone="cue" size={14}>
+            <Body tone="cue" size={type.note}>
               {pickError}
             </Body>
           )}
@@ -218,7 +220,7 @@ export default function ScreenTimeSetup() {
             })}
           />
           {pickError && (
-            <Body tone="cue" size={14}>
+            <Body tone="cue" size={type.note}>
               {pickError}
             </Body>
           )}
@@ -240,9 +242,7 @@ export default function ScreenTimeSetup() {
 
       {step === 'locks' && (
         <Block title="Lock times">
-          <Body tone="muted">
-            Times when the apps don&apos;t open at all. Sleep is on to start with. You can add your own times later.
-          </Body>
+          <Body tone="muted">Times when the apps don&apos;t open at all. Sleep is on to start with. You can add your own times later.</Body>
           {LOCK_PRESETS.map((p) => {
             const on = rules.lockTimes.some((l) => l.name === p.name);
             return (
@@ -254,7 +254,7 @@ export default function ScreenTimeSetup() {
                 style={[styles.option, on && styles.optionOn]}
               >
                 <Strong>{p.name}</Strong>
-                <Body tone="muted" size={13}>
+                <Body tone="muted" size={type.caption}>
                   {describeLock({ id: '', ...p })}
                 </Body>
               </Pressable>
@@ -285,7 +285,7 @@ export default function ScreenTimeSetup() {
               style={[styles.option, rules.strictness === v && styles.optionOn]}
             >
               <Strong>{label}</Strong>
-              <Body tone="muted" size={13}>
+              <Body tone="muted" size={type.caption}>
                 {hint}
               </Body>
             </Pressable>
@@ -300,7 +300,7 @@ export default function ScreenTimeSetup() {
           <Summary label="Always allowed" value={countLabel(rules.allowed)} />
           <Summary label="Daily limit" value={rules.dailyLimitMin === null ? 'None' : formatMin(rules.dailyLimitMin)} />
           <Summary label="Lock times" value={rules.lockTimes.length ? rules.lockTimes.map(describeLock).join('\n') : 'None'} />
-          <Summary label="Earning" value={`Up to ${formatMin(rules.earning.dailyCapMin)} a day · 1 min per clean push-up`} />
+          <Summary label="Earning" value={`Up to ${formatMin(rules.earning.dailyCapMin)} a day · 10 push-ups earn 15 min, 20 earn 30`} />
           <Summary label="Strictness" value={rules.strictness[0].toUpperCase() + rules.strictness.slice(1)} />
           <Button label="Turn on" size="lg" onPress={finish} />
         </Block>
@@ -312,7 +312,7 @@ export default function ScreenTimeSetup() {
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <View style={{ gap: space.lg }}>
-      <Display size={40}>{title}</Display>
+      <Display size={type.headline}>{title}</Display>
       {children}
     </View>
   );
@@ -321,10 +321,10 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
 function Summary({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.summary}>
-      <Mono size={12} tone="muted" style={{ width: 110 }}>
+      <Mono size={type.small} tone="muted" style={{ width: 110 }}>
         {label}
       </Mono>
-      <Body size={14} style={{ flex: 1 }}>
+      <Body size={type.note} style={{ flex: 1 }}>
         {value}
       </Body>
     </View>
@@ -333,9 +333,23 @@ function Summary({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+  },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  option: { gap: 2, padding: space.lg, borderRadius: radius.lg, borderWidth: 1.5, borderColor: color.lineSoft, backgroundColor: color.surface },
+  option: {
+    gap: 2,
+    padding: space.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: color.lineSoft,
+    backgroundColor: color.surface,
+  },
   optionOn: { borderColor: color.vial },
   summary: { flexDirection: 'row', gap: space.md, paddingVertical: space.xs },
 });

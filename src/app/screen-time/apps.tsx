@@ -7,7 +7,7 @@ import { finishPick } from '@/screentime/edit';
 import { EMPTY_SELECTION } from '@/screentime/rules';
 import type { Selection } from '@/screentime/types';
 import { Body, Button, Display, Label, Mono, Strong } from '@/ui/primitives';
-import { color, font, radius, space } from '@/ui/theme';
+import { color, font, radius, space, type } from '@/ui/theme';
 
 /** Android's app picker (iPhone uses Apple's own). Lists launchable apps with their categories. */
 export default function AppPicker() {
@@ -48,7 +48,7 @@ export default function AppPicker() {
     <View style={{ flex: 1, backgroundColor: color.ground, paddingTop: insets.top + space.lg }}>
       <View style={[styles.pad, { gap: space.md }]}>
         <View style={styles.header}>
-          <Display size={30}>{title ?? 'Pick apps'}</Display>
+          <Display size={type.displayM}>{title ?? 'Pick apps'}</Display>
           <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
             <Label tone="chalk">Cancel</Label>
           </Pressable>
@@ -63,7 +63,7 @@ export default function AppPicker() {
                 onPress={() => setCats((s) => toggle(s, c))}
                 style={[styles.chip, cats.has(c) && styles.chipOn]}
               >
-                <Mono size={12} tone={cats.has(c) ? 'ink' : 'chalk'}>
+                <Mono size={type.small} tone={cats.has(c) ? 'ink' : 'chalk'}>
                   {`All ${c}`}
                 </Mono>
               </Pressable>
@@ -100,8 +100,8 @@ export default function AppPicker() {
               >
                 <View style={[styles.box, on && styles.boxOn]} />
                 <View style={{ flex: 1 }}>
-                  <Strong size={15}>{item.label}</Strong>
-                  <Mono size={11} tone="faint">
+                  <Strong size={type.detail}>{item.label}</Strong>
+                  <Mono size={type.micro} tone="muted">
                     {viaCat ? `in ${item.category}` : item.category || item.packageName}
                   </Mono>
                 </View>
@@ -125,12 +125,40 @@ export default function AppPicker() {
 
 const styles = StyleSheet.create({
   pad: { paddingHorizontal: space.xl },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+  },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  chip: { paddingHorizontal: space.md, height: 34, borderRadius: radius.pill, borderWidth: 1, borderColor: color.line, justifyContent: 'center' },
+  chip: {
+    paddingHorizontal: space.md,
+    height: 34,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.line,
+    justifyContent: 'center',
+  },
   chipOn: { backgroundColor: color.vial, borderColor: color.vial },
-  search: { height: 44, borderRadius: radius.md, backgroundColor: color.surface, paddingHorizontal: space.md, color: color.chalk, fontFamily: font.body },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: color.line },
+  search: {
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: color.surface,
+    paddingHorizontal: space.md,
+    color: color.chalk,
+    fontFamily: font.body,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingVertical: space.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: color.line,
+  },
   box: { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: color.line },
   boxOn: { backgroundColor: color.vial, borderColor: color.vial },
 });

@@ -34,15 +34,6 @@ export function signedOffsetBelowLine(a: Vec2, b: Vec2, p: Vec2): number | null 
   return d;
 }
 
-/** Angle of the line A→B from horizontal in degrees (0..90), ignoring direction. */
-export function tiltFromHorizontalDeg(a: Vec2, b: Vec2): number | null {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  if (Math.hypot(dx, dy) < 1e-6) return null;
-  const deg = Math.abs((Math.atan2(dy, dx) * 180) / Math.PI);
-  return deg > 90 ? 180 - deg : deg;
-}
-
 /** Signed angle of the line A→B from horizontal in degrees (-90..90). */
 export function signedTiltDeg(a: Vec2, b: Vec2): number | null {
   let dx = b.x - a.x;

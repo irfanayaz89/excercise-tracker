@@ -72,8 +72,7 @@ function merge(current: Focus | null, next: Focus, now: number): Focus {
 export type EndReason = 'completed' | 'abandoned' | 'manual' | 'key';
 
 export type EndResult =
-  | { ended: true; focus: null; record: FocusRecord }
-  | { ended: false; focus: Focus | null; why: 'strict' | 'timed' | 'none' };
+  { ended: true; focus: null; record: FocusRecord } | { ended: false; focus: Focus | null; why: 'strict' | 'timed' | 'none' };
 
 /**
  * End a focus. Finishing the set ends a "set" focus. Backing out ends it
@@ -82,11 +81,18 @@ export type EndResult =
  */
 export function endFocus(f: Focus | null, reason: EndReason, now: number): EndResult {
   if (!f) return { ended: false, focus: null, why: 'none' };
-  if (!focusActive(f, now)) return { ended: true, focus: null, record: { from: f.startedAt, to: Math.min(now, f.until), outcome: 'expired' } };
-  const record = (outcome: FocusRecord['outcome']): EndResult => ({ ended: true, focus: null, record: { from: f.startedAt, to: now, outcome } });
+  if (!focusActive(f, now))
+    return { ended: true, focus: null, record: { from: f.startedAt, to: Math.min(now, f.until), outcome: 'expired' } };
+  const record = (outcome: FocusRecord['outcome']): EndResult => ({
+    ended: true,
+    focus: null,
+    record: { from: f.startedAt, to: now, outcome },
+  });
   // Scanning the key ends anything, even in Strict: that's what the key is for.
   if (reason === 'key') return record('ended');
   if (reason === 'completed') return f.kind === 'set' ? record('completed') : { ended: false, focus: f, why: 'timed' };
+  // Backing out of a set only ends a "for this set" focus; a timed or key one keeps going.
+  if (reason === 'abandoned' && f.kind !== 'set') return { ended: false, focus: f, why: 'timed' };
   if (f.strict) return { ended: false, focus: f, why: 'strict' };
   return record(reason === 'abandoned' ? 'abandoned' : 'ended');
 }

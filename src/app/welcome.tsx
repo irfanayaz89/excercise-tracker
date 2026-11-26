@@ -1,104 +1,133 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import * as Speech from 'expo-speech';
 import { DeviceMotion } from 'expo-sensors';
 import { useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react';
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCameraPermission } from 'react-native-vision-camera';
-import type { Difficulty } from '@/engine/difficulty';
-import { EXERCISE_IDS, EXERCISES, viewFor } from '@/engine/exercises';
-import type { CameraView, Exercise } from '@/engine/types';
-import { SAFETY_LABELS, safetyNotes } from '@/features/onboarding/safety';
-import { rotationCopy } from '@/session/copy';
+import { EXERCISE_IDS } from '@/engine/exercises';
+import type { Exercise } from '@/engine/types';
+import { SAFETY_LABELS } from '@/features/onboarding/safety';
 import {
-  DEFAULT_VIEWS,
-  GOAL_TARGETS,
-  SAFETY_FLAGS,
-  useSettings,
-  type DailyGoal,
-  type Experience,
-  type SafetyFlag,
-  type Settings,
-} from '@/storage/settings';
+  cmToFtIn,
+  ftInToCm,
+  kgToLb,
+  lbToKg,
+  lowestHealthyKg,
+  relativeFatMass,
+  maintenance,
+  PACES,
+  strengthFuel,
+  weightPlan,
+  workoutKcal,
+  type Activity,
+  type Pace,
+  type Sex,
+} from '@/fitness/energy';
+import { dayMonth, kcal, paceLabel, weight, WHY_LABELS } from '@/fitness/format';
+import { ProjectionCard } from '@/features/energy/Projection';
+import { planWorkoutKcalPerDay } from '@/fitness/goal';
+import { rotationCopy } from '@/session/copy';
+import { useScreenTime } from '@/screentime/store';
+import { bodyOf, defaultProfile, LIMITS, startProfile, useProfile, WHYS, type Aim, type Profile } from '@/storage/profile';
+import { SAFETY_FLAGS, useSettings, type SafetyFlag } from '@/storage/settings';
+import { NumberField } from '@/ui/NumberField';
+import { Body, Button, Chip, Display, Label, LinkText, Strong } from '@/ui/primitives';
 import { ExerciseGlyph } from '@/ui/Diagrams';
-import { ExerciseAnimation } from '@/ui/ExerciseAnimation';
-import { OrientationPicker } from '@/ui/OrientationPicker';
-import { Body, Button, Display, Label, Mono, Strong } from '@/ui/primitives';
-import { color, radius, space } from '@/ui/theme';
+import { color, font, radius, space, type } from '@/ui/theme';
 
-/** Everything onboarding asks, kept as a draft until the end so Back always works. */
-type Draft = Pick<Settings, 'focus' | 'difficulty' | 'experience' | 'dailyGoal' | 'safety' | 'voice' | 'orientation' | 'camera' | 'views'>;
+type StepId = 'intro' | 'aim' | 'you' | 'goal' | 'plan' | 'access' | 'rotation';
 
-type StepId = 'welcome' | 'train' | 'strict' | 'help' | 'goal' | 'safety' | 'voice' | 'phone' | 'access' | 'rotation' | 'plan';
-
-const RECOMMENDED: Omit<Draft, 'views'> & { views: Draft['views'] } = {
-  focus: [...EXERCISE_IDS],
-  difficulty: 'medium',
-  experience: 'guided',
-  dailyGoal: 'regular',
-  safety: [],
-  voice: true,
-  orientation: 'landscape',
-  camera: 'front',
-  views: DEFAULT_VIEWS,
+/** The exercises shown first on Home for each aim. */
+const FOCUS: Record<Aim, Exercise[]> = {
+  'lose-fat': ['pushup', 'plank', 'crunch', 'pullup', 'sidePlank'],
+  'get-stronger': ['pushup', 'pullup', 'plank'],
+  'stay-active': [...EXERCISE_IDS],
+  'less-screen': ['pushup', 'plank', 'crunch', 'pullup', 'sidePlank'],
 };
 
 /**
- * First launch (and "Redo setup" in Settings): a few one-question screens that
- * set the app up, ask for the camera with a plain explanation first, and end
- * with a summary. No account, nothing leaves the phone. "Use recommended
- * setup" skips straight to the camera question.
+ * First launch (and "Your goal and plan" in Settings): what you want, a few numbers
+ * about you, a goal, and a plan with honest numbers. Then the camera. Four
+ * short screens; everything stays on the phone.
  */
 export default function Welcome() {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const { redo } = useLocalSearchParams<{ redo?: string }>();
-  const [settings, update] = useSettings();
-  const [draft, setDraft] = useState<Draft>(() =>
-    redo
-      ? {
-          focus: settings.focus.length ? settings.focus : [...EXERCISE_IDS],
-          difficulty: settings.difficulty,
-          experience: settings.experience ?? 'guided',
-          dailyGoal: settings.dailyGoal,
-          safety: settings.safety,
-          voice: settings.voice,
-          orientation: settings.orientation,
-          camera: settings.camera,
-          views: settings.views,
-        }
-      : RECOMMENDED,
-  );
-  const set = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
+  const [settings, updateSettings] = useSettings();
+  const [saved, setProfile] = useProfile();
+  const screenTime = useScreenTime();
+  // A saved profile is the starting point whenever there is one (redo, or settings lost while the profile survived).
+  // Coming back later to add a weight (setup was skipped): start from Stay active, not a weight-loss goal.
+  const [p, setP] = useState<Profile>(() => (saved ? { ...saved } : { ...defaultProfile(), aim: redo ? 'stay-active' : 'lose-fat' }));
+  const [safety, setSafety] = useState<SafetyFlag[]>(settings.safety);
+  const set = (patch: Partial<Profile>) => setP((d) => ({ ...d, ...patch }));
 
-  // The Rotation Lock step only matters on iPhone, in landscape.
   const steps = useMemo<StepId[]>(
     () =>
-      (['welcome', 'train', 'strict', 'help', 'goal', 'safety', 'voice', 'phone', 'access', 'rotation', 'plan'] as StepId[]).filter(
-        (s) => s !== 'rotation' || (Platform.OS === 'ios' && draft.orientation === 'landscape'),
+      (['intro', 'aim', 'you', 'goal', 'plan', 'access', 'rotation'] as StepId[]).filter(
+        (s) => (s !== 'intro' || !redo) && (s !== 'rotation' || (Platform.OS === 'ios' && settings.orientation === 'landscape')),
       ),
-    [draft.orientation],
+    [redo, settings.orientation],
   );
-  const [at, setAt] = useState<StepId>('welcome');
+  const [at, setAt] = useState<StepId>(steps[0]);
   const index = steps.indexOf(at);
-  const go = (to: StepId) => setAt(to);
-  const next = () => setAt(steps[Math.min(index + 1, steps.length - 1)]);
-  const back = () => (index > 0 ? setAt(steps[index - 1]) : redo ? (router.canGoBack() ? router.back() : router.replace('/')) : undefined);
+  const next = () => {
+    if (index === steps.length - 1) finish();
+    else setAt(steps[index + 1]);
+  };
+  /** Skip the questions: no goal, just count reps. */
+  const [skipped, setSkipped] = useState(false);
+  const back = () => {
+    // Skipped straight to the camera: Back returns to the intro, and the questions count again.
+    if (skipped && at === 'access') {
+      setSkipped(false);
+      setAt(steps[0]);
+      return;
+    }
+    if (index > 0) setAt(steps[index - 1]);
+    else if (redo && router.canGoBack()) router.back();
+  };
 
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   useEffect(() => scroll.current?.scrollTo({ y: 0, animated: false }), [at]);
 
-  const finish = (openExercise?: Exercise) => {
-    update({ ...draft, experience: draft.experience as Experience, exercise: openExercise ?? draft.focus[0] ?? settings.exercise });
-    if (openExercise) {
-      router.replace('/');
-      router.push({ pathname: '/exercise/[id]', params: { id: openExercise } });
-    } else if (redo && router.canGoBack()) router.back();
-    else router.replace('/');
+  const finish = () => {
+    if (!skipped) setProfile(startProfile(p, saved));
+    // A heart condition or recent injury starts gently.
+    const gentle = safety.includes('heart') || safety.includes('injury');
+    const first = skipped ? settings.exercise : FOCUS[p.aim][0];
+    updateSettings({
+      experience: settings.experience ?? 'guided',
+      difficulty: gentle ? 'easy' : redo ? settings.difficulty : 'medium',
+      focus: skipped ? [] : FOCUS[p.aim],
+      exercise: first,
+      safety,
+    });
+    if (redo && router.canGoBack()) {
+      router.back();
+      return;
+    }
+    // First launch: straight into the first set (the first counted set decides whether people come back),
+    // or for "less phone time", into Screen time setup.
+    router.replace('/');
+    if (!skipped && p.aim === 'less-screen' && screenTime.availability !== 'unsupported' && !screenTime.meta.setUp)
+      router.push('/screen-time/setup');
+    else router.push({ pathname: '/exercise/[id]', params: { id: first } });
   };
 
-  const art = Math.min(width, 560) - space.xl * 2;
-  const content = renderStep(at, { draft, set, next, go, finish, art });
+  const questions: StepId[] = steps.filter((s) => s !== 'intro' && s !== 'access' && s !== 'rotation');
+  const qIndex = questions.indexOf(at);
+  const content = renderStep(at, {
+    p,
+    set,
+    next,
+    safety,
+    setSafety,
+    skip: () => {
+      setSkipped(true);
+      setAt('access');
+    },
+  });
 
   return (
     <View style={{ flex: 1, backgroundColor: color.ground }}>
@@ -111,78 +140,76 @@ export default function Welcome() {
           ) : (
             <View style={styles.wordmark}>
               <View style={styles.markLine} />
-              <Display size={20} style={{ letterSpacing: 4 }}>
+              <Display size={type.wordmark} style={{ letterSpacing: 4 }}>
                 TRUELINE
               </Display>
             </View>
           )}
-          {at !== 'welcome' && at !== 'plan' && at !== 'access' && (
-            <Pressable accessibilityRole="button" onPress={next} hitSlop={12}>
-              <Label tone="muted">Skip</Label>
-            </Pressable>
+          {qIndex >= 0 && (
+            <Label tone="muted">
+              {qIndex + 1} of {questions.length}
+            </Label>
           )}
         </View>
-        {at !== 'welcome' && (
-          <View style={styles.progress} accessibilityLabel={`Step ${index} of ${steps.length - 1}`}>
-            {steps.slice(1).map((s, i) => (
-              <View key={s} style={[styles.dot, i < index && { backgroundColor: color.vial }]} />
+        {qIndex >= 0 && (
+          <View style={styles.progress} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            {questions.map((s, i) => (
+              <View key={s} style={[styles.dot, i <= qIndex && { backgroundColor: color.vial }]} />
             ))}
           </View>
         )}
       </View>
-      <ScrollView ref={scroll} contentContainerStyle={[styles.page, { paddingBottom: insets.bottom + space.xl }]}>
-        {content}
-      </ScrollView>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          ref={scroll}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[styles.page, { paddingBottom: insets.bottom + space.xl }]}
+        >
+          {content}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 interface StepProps {
-  draft: Draft;
-  set: (p: Partial<Draft>) => void;
+  p: Profile;
+  set: (patch: Partial<Profile>) => void;
   next: () => void;
-  go: (s: StepId) => void;
-  finish: (openExercise?: Exercise) => void;
-  art: number;
+  skip: () => void;
+  safety: SafetyFlag[];
+  setSafety: (s: SafetyFlag[]) => void;
 }
 
-function renderStep(at: StepId, p: StepProps): ReactNode {
+function renderStep(at: StepId, props: StepProps): ReactNode {
   switch (at) {
-    case 'welcome':
-      return <WelcomeStep {...p} />;
-    case 'train':
-      return <TrainStep {...p} />;
-    case 'strict':
-      return <StrictStep {...p} />;
-    case 'help':
-      return <HelpStep {...p} />;
+    case 'intro':
+      return <IntroStep {...props} />;
+    case 'aim':
+      return <AimStep {...props} />;
+    case 'you':
+      return <YouStep {...props} />;
     case 'goal':
-      return <GoalStep {...p} />;
-    case 'safety':
-      return <SafetyStep {...p} />;
-    case 'voice':
-      return <VoiceStep {...p} />;
-    case 'phone':
-      return <PhoneStep {...p} />;
-    case 'access':
-      return <AccessStep {...p} />;
-    case 'rotation':
-      return <RotationStep {...p} />;
+      return <GoalStep {...props} />;
     case 'plan':
-      return <PlanStep {...p} />;
+      return <PlanStep {...props} />;
+    case 'access':
+      return <AccessStep {...props} />;
+    case 'rotation':
+      return <RotationStep {...props} />;
   }
 }
 
 // ─── Steps ──────────────────────────────────────────────────────────────────
 
-function WelcomeStep({ next, go, set }: StepProps) {
+function IntroStep({ next, skip }: StepProps) {
   return (
     <>
       <View style={{ gap: space.md, marginTop: space.xl }}>
-        <Display size={46}>Your rep counter on the floor</Display>
+        <Display size={type.pageHero}>Pick a goal. Your camera counts the reps.</Display>
         <Body tone="muted">
-          Trueline watches through your camera, counts push-ups and crunches, times your planks and checks your form as you go. Video never
-          leaves your phone.
+          A few quick questions give you a plan with real numbers: what to eat, when you will get there and what your workouts burn. Video
+          never leaves your phone.
         </Body>
       </View>
       <View style={styles.glyphRow}>
@@ -191,249 +218,507 @@ function WelcomeStep({ next, go, set }: StepProps) {
         ))}
       </View>
       <View style={{ gap: space.md }}>
-        <Button label="Set up · 1 minute" size="lg" onPress={next} />
-        <Button
-          label="Use recommended setup"
-          variant="ghost"
-          onPress={() => {
-            set(RECOMMENDED);
-            go('access');
-          }}
-        />
-        <Mono tone="faint" style={{ textAlign: 'center' }}>
-          No account needed. Change anything later in Settings.
-        </Mono>
+        <Button label="Set my goal" size="lg" onPress={next} />
+        <Button label="Skip, just count reps" variant="ghost" onPress={skip} />
       </View>
     </>
   );
 }
 
-function TrainStep({ draft, set, next }: StepProps) {
-  const toggle = (e: Exercise) =>
-    set({
-      focus: draft.focus.includes(e) ? draft.focus.filter((x) => x !== e) : EXERCISE_IDS.filter((x) => x === e || draft.focus.includes(x)),
-    });
+const AIMS: { value: Aim; title: string; detail: string }[] = [
+  { value: 'lose-fat', title: 'Lose fat', detail: 'A target weight, a safe pace and a daily calorie number.' },
+  { value: 'get-stronger', title: 'Get stronger', detail: 'Work up to a big set of push-ups or pull-ups.' },
+  { value: 'stay-active', title: 'Stay active', detail: 'A few short workouts every week, counted for you.' },
+  { value: 'less-screen', title: 'Spend less time on my phone', detail: 'Exercise to earn your scrolling time back.' },
+];
+
+function AimStep({ p, set, next }: StepProps) {
+  // Earning screen time needs Screen Time on this phone: don't offer an aim it can't keep.
+  const canBlock = useScreenTime().availability !== 'unsupported';
   return (
     <>
-      <Title title="What do you want to train?" detail="Pick any. They show first on your home screen; the rest stay one tap away." />
-      <View style={styles.grid}>
-        {EXERCISE_IDS.map((e) => (
-          <Pressable
-            key={e}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: draft.focus.includes(e) }}
-            onPress={() => toggle(e)}
-            style={[styles.tile, draft.focus.includes(e) && styles.selected]}
-          >
-            <ExerciseGlyph exercise={e} size={56} active={draft.focus.includes(e)} />
-            <Strong size={17}>{EXERCISES[e].label}</Strong>
-            <Mono size={12} tone={draft.focus.includes(e) ? 'vial' : 'muted'}>
-              {EXERCISES[e].tagline}
-            </Mono>
-          </Pressable>
+      <Title title="What are you here for?" />
+      <View style={{ gap: space.sm }}>
+        {AIMS.filter((a) => a.value !== 'less-screen' || canBlock || p.aim === 'less-screen').map((a) => (
+          <Lane
+            key={a.value}
+            title={a.title}
+            detail={a.detail}
+            selected={p.aim === a.value}
+            onPress={() =>
+              set({
+                aim: a.value,
+                repGoal: a.value === 'get-stronger' ? (p.repGoal ?? { exercise: 'pushup', reps: 20 }) : p.repGoal,
+              })
+            }
+          />
         ))}
       </View>
-      <Button label="Continue" size="lg" disabled={draft.focus.length === 0} onPress={next} />
+      <More label="+ Add what would make it worth it (optional)" open={p.why.length > 0}>
+        <Label>What would make it worth it?</Label>
+        <View style={styles.chips}>
+          {WHYS.map((w) => (
+            <Chip
+              key={w}
+              label={WHY_LABELS[w]}
+              multi
+              selected={p.why.includes(w)}
+              onPress={() => set({ why: p.why.includes(w) ? p.why.filter((x) => x !== w) : [...p.why, w] })}
+            />
+          ))}
+        </View>
+      </More>
+      <Button label="Continue" size="lg" onPress={next} />
     </>
   );
 }
 
-const STRICT: { value: Difficulty; title: string; detail: string; badge?: string }[] = [
-  { value: 'easy', title: 'Easy', detail: 'Just count. Knees allowed, upper body in view is enough, no form checks.' },
-  { value: 'medium', title: 'Medium', detail: 'Count and check the main form points, with some slack.', badge: 'Recommended' },
-  { value: 'hard', title: 'Hard', detail: 'Strict form: full depth, a straight body, steady pace.' },
+const SEXES: [Sex, string][] = [
+  ['female', 'Female'],
+  ['male', 'Male'],
+  ['unspecified', 'Rather not say'],
 ];
 
-function StrictStep({ draft, set, next }: StepProps) {
-  return (
-    <>
-      <Title title="How strict should it be?" detail="You can change this for each set." />
-      {STRICT.map((o) => (
-        <Option
-          key={o.value}
-          title={o.title}
-          detail={o.detail}
-          badge={o.badge}
-          selected={draft.difficulty === o.value}
-          onPress={() => {
-            set({ difficulty: o.value });
-            next();
-          }}
-        />
-      ))}
-    </>
-  );
-}
-
-function HelpStep({ draft, set, next }: StepProps) {
-  return (
-    <>
-      <Title title="How much help do you want?" />
-      <Option
-        title="Guide me"
-        detail="A step-by-step guide before each set, full spoken instructions, tips after the set."
-        badge="New to this"
-        selected={draft.experience === 'guided'}
-        onPress={() => {
-          set({ experience: 'guided' });
-          next();
-        }}
-      />
-      <Option
-        title="Keep it quick"
-        detail="One tap to start, short cues, just the numbers. The guide still shows before your first set of each exercise."
-        selected={draft.experience === 'quick'}
-        onPress={() => {
-          set({ experience: 'quick' });
-          next();
-        }}
-      />
-    </>
-  );
-}
-
-const GOALS: { value: DailyGoal; title: string }[] = [
-  { value: 'light', title: 'Light' },
-  { value: 'regular', title: 'Regular' },
-  { value: 'serious', title: 'Serious' },
-  { value: 'none', title: 'No daily goal' },
+const ACTIVITY: { value: Activity; title: string; detail: string }[] = [
+  { value: 'low', title: 'Mostly sitting', detail: 'Desk work, little walking.' },
+  { value: 'some', title: 'Some', detail: 'On your feet some of the day: walking, standing, light work.' },
+  { value: 'high', title: 'Very active', detail: 'A physical job or regular sport.' },
 ];
 
-export function goalLine(g: DailyGoal): string {
-  if (g === 'none') return 'Just track what you do.';
-  const t = GOAL_TARGETS[g];
-  return `${t.reps} reps and ${t.holdMs / 1000 >= 60 ? `${t.holdMs / 60000} min` : `${t.holdMs / 1000} s`} of plank a day`;
-}
+/** Short chip labels for the health answers (the full wording is read out by screen readers). */
+const SAFETY_SHORT: Record<SafetyFlag, string> = {
+  heart: 'Heart or blood pressure',
+  back: 'Lower back',
+  neck: 'Neck or shoulder',
+  wrist: 'Wrists',
+  pregnancy: 'Pregnant or new baby',
+  injury: 'Recent injury',
+};
 
-function GoalStep({ draft, set, next }: StepProps) {
+function YouStep({ p, set, next, safety, setSafety }: StepProps) {
+  const imperial = p.units === 'imperial';
+  const { ft, inch } = cmToFtIn(p.heightCm);
+  const toggle = (f: SafetyFlag) => setSafety(safety.includes(f) ? safety.filter((x) => x !== f) : [...safety, f]);
+  // A calorie plan needs sex, height and activity; otherwise weight and age are enough for each set's calories.
+  const full = p.aim === 'lose-fat' || p.aim === 'get-stronger';
   return (
     <>
       <Title
-        title="Pick a daily goal"
-        detail="Reps count push-ups and crunches; plank time counts both planks. Home shows how far you are."
+        title="A bit about you"
+        detail={
+          full
+            ? 'Used for your calorie plan and the calories each set burns. It stays on this phone.'
+            : 'Your weight gives the calories each set burns. It stays on this phone.'
+        }
       />
-      {GOALS.map((g) => (
-        <Option
-          key={g.value}
-          title={g.title}
-          detail={goalLine(g.value)}
-          badge={g.value === 'regular' ? 'Recommended' : undefined}
-          selected={draft.dailyGoal === g.value}
-          onPress={() => {
-            set({ dailyGoal: g.value });
-            next();
-          }}
-        />
-      ))}
-    </>
-  );
-}
-
-function SafetyStep({ draft, set, next }: StepProps) {
-  const toggle = (f: SafetyFlag) => set({ safety: draft.safety.includes(f) ? draft.safety.filter((x) => x !== f) : [...draft.safety, f] });
-  return (
-    <>
-      <Title title="Quick safety check" detail="Does any of this apply? It only changes the tips you see, and stays on this phone." />
-      {SAFETY_FLAGS.map((f) => (
-        <Option key={f} title={SAFETY_LABELS[f]} selected={draft.safety.includes(f)} onPress={() => toggle(f)} multi />
-      ))}
-      <Option
-        title="None of these"
-        selected={draft.safety.length === 0}
-        onPress={() => {
-          set({ safety: [] });
-          next();
-        }}
+      <Segmented
+        label="Units"
+        value={p.units}
+        options={[
+          ['metric', 'kg and cm'],
+          ['imperial', 'lb and ft'],
+        ]}
+        onChange={(units) => set({ units })}
       />
-      <Body tone="faint" size={13}>
-        Trueline is not medical advice. If you have pain, an injury or a health condition, check with a doctor or physio before you start.
-      </Body>
-      {draft.safety.length > 0 && <Button label="Continue" size="lg" onPress={next} />}
-    </>
-  );
-}
-
-function VoiceStep({ draft, set, next }: StepProps) {
-  const sample = () => {
-    void Speech.stop();
-    Speech.speak('Three. Four. Lift your hips. Five.', { rate: 1 });
-  };
-  useEffect(() => () => void Speech.stop(), []);
-  return (
-    <>
-      <Title
-        title="Want a voice coach?"
-        detail="You'll be a couple of metres from the phone, too far to read the screen. The coach counts out loud and tells you what to fix."
-      />
-      <Button label="▶  Hear a sample" variant="quiet" onPress={sample} />
-      <Option
-        title="Voice coach on"
-        badge="Recommended"
-        selected={draft.voice}
-        onPress={() => {
-          set({ voice: true });
-          next();
-        }}
-      />
-      <Option
-        title="Voice coach off"
-        detail="Short sounds and big numbers only."
-        selected={!draft.voice}
-        onPress={() => {
-          set({ voice: false });
-          next();
-        }}
-      />
-    </>
-  );
-}
-
-function PhoneStep({ draft, set, next, art }: StepProps) {
-  const shown = draft.focus.length ? draft.focus : EXERCISE_IDS;
-  const setView = (e: Exercise, v: CameraView) => set({ views: { ...draft.views, [e]: v } });
-  return (
-    <>
-      <Title title="How will the phone stand?" detail="On the floor, propped against a wall or something steady." />
-      <OrientationPicker value={draft.orientation} onChange={(orientation) => set({ orientation })} />
-      <ExerciseAnimation exercise={shown[0]} orientation={draft.orientation} width={art} view={viewFor(shown[0], draft.views)} />
-      <View style={{ gap: space.sm }}>
-        <Label>Camera</Label>
-        <View style={styles.row}>
-          <Choice label="Front camera" detail="See the screen" on={draft.camera === 'front'} onPress={() => set({ camera: 'front' })} />
-          <Choice
-            label="Back camera"
-            detail="Sharper, can't see screen"
-            on={draft.camera === 'back'}
-            onPress={() => set({ camera: 'back' })}
+      {full && <Segmented label="Sex" value={p.sex} options={SEXES} onChange={(sex) => set({ sex })} />}
+      {full && p.sex === 'unspecified' && (
+        <Body tone="muted" size={type.note}>
+          Calorie needs differ by sex, so the plan uses a midpoint. It may be off by about 80 kcal a day.
+        </Body>
+      )}
+      <View style={styles.pair}>
+        <NumberField label="Age" value={p.age} onChange={(age) => set({ age })} min={LIMITS.age[0]} max={LIMITS.age[1]} />
+        {imperial ? (
+          <NumberField
+            label="Weight"
+            value={Math.round(kgToLb(p.weightKg))}
+            onChange={(lb) => set({ weightKg: lbToKg(lb) })}
+            min={Math.round(kgToLb(LIMITS.weightKg[0]))}
+            max={Math.round(kgToLb(LIMITS.weightKg[1]))}
+            unit="lb"
           />
+        ) : (
+          <NumberField
+            label="Weight"
+            value={p.weightKg}
+            onChange={(weightKg) => set({ weightKg })}
+            min={LIMITS.weightKg[0]}
+            max={LIMITS.weightKg[1]}
+            step={0.5}
+            decimals={1}
+            unit="kg"
+          />
+        )}
+      </View>
+      {!full ? null : imperial ? (
+        <View style={styles.pair}>
+          <NumberField label="Height" value={ft} onChange={(f) => set({ heightCm: clampH(ftInToCm(f, inch)) })} min={4} max={7} unit="ft" />
+          <NumberField label="and" value={inch} onChange={(i) => set({ heightCm: clampH(ftInToCm(ft, i)) })} min={0} max={11} unit="in" />
+        </View>
+      ) : (
+        <NumberField
+          label="Height"
+          value={p.heightCm}
+          onChange={(heightCm) => set({ heightCm })}
+          min={LIMITS.heightCm[0]}
+          max={LIMITS.heightCm[1]}
+          unit="cm"
+        />
+      )}
+      {full && (
+        <Segmented
+          label="Outside workouts, you are"
+          value={p.activity}
+          options={ACTIVITY.map((a) => [a.value, a.title])}
+          onChange={(activity) => set({ activity })}
+          hint={ACTIVITY.find((a) => a.value === p.activity)?.detail}
+        />
+      )}
+      {full && (
+        <More label="+ Make the numbers more accurate (optional)" open={p.muscular || p.waistCm !== null}>
+          <Segmented
+            label="Build"
+            value={p.muscular ? 'muscular' : 'average'}
+            options={[
+              ['average', 'Average'],
+              ['muscular', 'I lift / very muscular'],
+            ]}
+            onChange={(v) => set({ muscular: v === 'muscular' })}
+          />
+          <WaistField p={p} set={set} />
+        </More>
+      )}
+      <View style={{ gap: space.sm }}>
+        <Label>Anything to take care with? Optional</Label>
+        <View style={styles.chips}>
+          {SAFETY_FLAGS.map((f) => (
+            <Chip
+              key={f}
+              label={SAFETY_SHORT[f]}
+              multi
+              selected={safety.includes(f)}
+              onPress={() => toggle(f)}
+              accessibilityLabel={SAFETY_LABELS[f]}
+            />
+          ))}
         </View>
       </View>
-      <View style={{ gap: space.sm }}>
-        <Label>Where the phone sees you from</Label>
-        {shown.map((e) => (
-          <View key={e} style={styles.viewRow}>
-            <ExerciseGlyph exercise={e} size={40} />
-            <Strong size={15} style={{ flex: 1 }}>
-              {EXERCISES[e].label}
+      {(safety.includes('heart') || safety.includes('injury')) && (
+        <Note>Check with your doctor before you start. Trueline will start you on Easy, and you can stop any time.</Note>
+      )}
+      <Button label="Continue" size="lg" onPress={next} />
+    </>
+  );
+}
+
+/** Optional waist, for a body-fat estimate (Relative Fat Mass). It never changes workout calories. */
+function WaistField({ p, set }: Pick<StepProps, 'p' | 'set'>) {
+  const imperial = p.units === 'imperial';
+  if (p.waistCm === null) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        hitSlop={8}
+        onPress={() => set({ waistCm: p.sex === 'female' ? 80 : 90 })}
+        style={{ alignSelf: 'flex-start' }}
+      >
+        <LinkText>Add your waist for a body-fat estimate (optional) ›</LinkText>
+      </Pressable>
+    );
+  }
+  const bf = relativeFatMass(p.sex, p.heightCm, p.waistCm);
+  return (
+    <View style={{ gap: space.sm }}>
+      <NumberField
+        label="Waist, at the navel, relaxed"
+        value={imperial ? Math.round(p.waistCm / 2.54) : p.waistCm}
+        onChange={(v) => set({ waistCm: imperial ? v * 2.54 : v })}
+        min={imperial ? 20 : LIMITS.waistCm[0]}
+        max={imperial ? 79 : LIMITS.waistCm[1]}
+        unit={imperial ? 'in' : 'cm'}
+      />
+      {bf !== null && (
+        <Body tone="muted" size={type.note}>
+          {`Body fat about ${Math.round(bf)}% (give or take 5), from your waist and height. Measure again from Your goal and plan to see it change.`}
+        </Body>
+      )}
+      <Pressable accessibilityRole="button" hitSlop={8} onPress={() => set({ waistCm: null })} style={{ alignSelf: 'flex-start' }}>
+        <LinkText tone="muted">Remove waist</LinkText>
+      </Pressable>
+    </View>
+  );
+}
+
+const clampH = (cm: number) => Math.min(LIMITS.heightCm[1], Math.max(LIMITS.heightCm[0], cm));
+
+function GoalStep(props: StepProps) {
+  const { p, set, safety } = props;
+  if (p.aim === 'lose-fat' && (p.age < 18 || safety.includes('pregnancy'))) {
+    return (
+      <>
+        <Title
+          title="Let's not set a weight-loss goal"
+          detail={
+            p.age < 18
+              ? 'Under 18, your body is still growing, so Trueline won’t set a weight or calorie target. Regular workouts are the plan.'
+              : 'While pregnant or soon after birth, dieting to lose weight isn’t advised. Ask your midwife or doctor what suits you; gentle, regular workouts are the plan here.'
+          }
+        />
+        <Button label="Stay active instead" size="lg" onPress={() => set({ aim: 'stay-active' })} />
+      </>
+    );
+  }
+  if (p.aim === 'lose-fat') return <WeightGoal {...props} />;
+  if (p.aim === 'get-stronger') return <StrengthGoal {...props} />;
+  return <ActiveGoal {...props} />;
+}
+
+/** A weekly loss in the user's units, to the nearest 0.25 lb or 0.05 kg. */
+const weeklyLoss = (kg: number, units: Profile['units']) =>
+  units === 'imperial' ? `${Math.round(kgToLb(kg) * 4) / 4} lb a week` : `${Math.round(kg * 20) / 20} kg a week`;
+
+function WeightGoal({ p, set, next }: StepProps) {
+  const floor = Math.ceil(lowestHealthyKg(p.heightCm) * 2) / 2;
+  // Room for a target above the floor (a kilo, so the lb field's lowest value stays under its highest). A goal
+  // already set inside that room is kept: someone near their target can still change their pace or days.
+  const hasTarget = p.targetKg !== null && p.targetKg >= floor && p.targetKg < p.weightKg;
+  const tooLight = p.weightKg - 1 < floor && !hasTarget;
+  const under = p.weightKg < lowestHealthyKg(p.heightCm);
+  const suggested = Math.max(floor, Math.round(p.weightKg * 0.95 * 2) / 2);
+  const target = p.targetKg !== null && p.targetKg < p.weightKg && p.targetKg >= floor ? p.targetKg : suggested;
+  useEffect(() => {
+    if (!tooLight && p.targetKg !== target) set({ targetKg: target });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tooLight, target]);
+
+  if (tooLight) {
+    return (
+      <>
+        <Title
+          title={under ? 'Losing weight isn’t advised for you' : 'You are already at a healthy weight'}
+          detail={
+            under
+              ? `At your height, a healthy weight starts at ${weight(floor, p.units)}, so Trueline won't set a weight-loss goal. Building strength is a better aim.`
+              : `At your height, going under ${weight(floor, p.units)} would put you below a healthy weight (BMI 18.5), so Trueline won't set a weight-loss goal. Building strength is a better aim.`
+          }
+        />
+        <Button
+          label="Get stronger instead"
+          size="lg"
+          onPress={() => set({ aim: 'get-stronger', repGoal: p.repGoal ?? { exercise: 'pushup', reps: 20 } })}
+        />
+      </>
+    );
+  }
+
+  const plan = weightPlan(bodyOf(p), target, p.pace, undefined, planWorkoutKcalPerDay(p));
+  const imperial = p.units === 'imperial';
+  return (
+    <>
+      <Title title="Where do you want to get to?" detail={`You weigh ${weight(p.weightKg, p.units)} now.`} />
+      {imperial ? (
+        <NumberField
+          label="Target weight"
+          value={Math.round(kgToLb(target))}
+          onChange={(lb) => set({ targetKg: Math.max(floor, Math.min(p.weightKg - 0.5, lbToKg(lb))) })}
+          min={Math.ceil(kgToLb(floor))}
+          max={Math.floor(kgToLb(p.weightKg - 0.5))}
+          unit="lb"
+        />
+      ) : (
+        <NumberField
+          label="Target weight"
+          value={target}
+          onChange={(kg) => set({ targetKg: kg })}
+          min={floor}
+          max={p.weightKg - 0.5}
+          step={0.5}
+          decimals={1}
+          unit="kg"
+        />
+      )}
+      <Body tone="muted" size={type.note}>
+        The lowest target for your height is {weight(floor, p.units)}.
+      </Body>
+      <Segmented
+        label="How fast"
+        value={String(p.pace)}
+        options={PACES.map((pace) => [String(pace), pace === 0.25 ? 'Gentle' : pace === 0.5 ? 'Steady' : 'Faster'])}
+        onChange={(v) => set({ pace: Number(v) as Pace })}
+        hint={`${paceLabel(p.pace, p.units)}: ${p.pace === 0.25 ? 'easy to keep up.' : p.pace === 0.5 ? 'the usual advice.' : 'needs a bigger change in eating.'}`}
+      />
+      <Body size={type.detail}>
+        {Number.isFinite(plan.weeks)
+          ? `${plan.floored ? 'Without eating too little, that' : 'That'} gets you to ${weight(target, p.units)} by about ${dayMonth(plan.by)}, in ${plan.weeks} weeks, counting your ${p.daysPerWeek} workouts a week.`
+          : 'Your body already runs on very little, so eating less is not safe. Workouts and strength are the way forward.'}
+      </Body>
+      <DaysPicker {...{ p, set }} />
+      <Button label="See my plan" size="lg" onPress={next} />
+    </>
+  );
+}
+
+function StrengthGoal({ p, set, next }: StepProps) {
+  const g = p.repGoal ?? { exercise: 'pushup' as const, reps: 20 };
+  return (
+    <>
+      <Title title="Pick your big set" detail="One set, strict form, counted by the camera." />
+      <Segmented
+        label="Exercise"
+        value={g.exercise}
+        options={[
+          ['pushup', 'Push-ups'],
+          ['pullup', 'Pull-ups'],
+        ]}
+        onChange={(exercise) => set({ repGoal: { exercise, reps: exercise === 'pullup' ? 8 : 20 } })}
+      />
+      <NumberField
+        label="Reps in one set"
+        value={g.reps}
+        onChange={(reps) => set({ repGoal: { ...g, reps } })}
+        min={LIMITS.reps[0]}
+        max={LIMITS.reps[1]}
+      />
+      <Body tone="muted" size={type.note}>
+        {g.exercise === 'pullup'
+          ? 'Can’t do one yet? Set 1. Slow lowering from the top and long dead hangs build up to it.'
+          : 'A good first target is about twice what you can do today.'}
+      </Body>
+      <DaysPicker {...{ p, set }} />
+      <Button label="See my plan" size="lg" onPress={next} />
+    </>
+  );
+}
+
+function ActiveGoal({ p, set, next }: StepProps) {
+  return (
+    <>
+      <Title
+        title="How many days a week?"
+        detail={
+          p.aim === 'less-screen'
+            ? 'On workout days your sets earn screen time back. Each workout is about 10 minutes; two days is a good start.'
+            : 'Each workout is about 10 minutes of sets. Two days is a good start.'
+        }
+      />
+      <DaysPicker {...{ p, set }} hideLabel />
+      <Button label="See my plan" size="lg" onPress={next} />
+    </>
+  );
+}
+
+function DaysPicker({ p, set, hideLabel }: Pick<StepProps, 'p' | 'set'> & { hideLabel?: boolean }) {
+  return (
+    <View style={{ gap: space.sm }}>
+      {!hideLabel && <Label>Workout days a week</Label>}
+      <View style={styles.chips} accessibilityRole="radiogroup">
+        {[2, 3, 4, 5, 6, 7].map((n) => (
+          <Chip key={n} label={`${n} days`} selected={p.daysPerWeek === n} onPress={() => set({ daysPerWeek: n })} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function PlanStep({ p, next, safety }: StepProps) {
+  const b = bodyOf(p);
+  const maint = maintenance(b);
+  const perWorkout = workoutKcal({ weightKg: p.weightKg, heightCm: p.heightCm, sex: p.sex });
+  const week = perWorkout.kcal * p.daysPerWeek;
+  const noDiet = safety.includes('pregnancy') || p.age < 18;
+  const burn: [string, string] = ['Your workouts burn', `about ${kcal(week)} kcal a week`];
+  const lose = p.aim === 'lose-fat' && p.targetKg !== null && !noDiet;
+  const plan = lose ? weightPlan(b, p.targetKg!, p.pace, undefined, planWorkoutKcalPerDay(p)) : null;
+
+  // One headline number and a few plain rows. The method, the ranges and the sources are one tap away.
+  let head: ReactNode;
+  let rows: [string, string][] = [burn];
+  let note: string | null = null;
+  if (plan && Number.isFinite(plan.weeks)) {
+    head = (
+      <>
+        <Label>Eat about this much a day</Label>
+        <Big value={kcal(plan.eatKcal)} label={`${kcal(plan.eatKcal)} kcal a day`} />
+        <Strong size={type.callout}>
+          kcal a day, to reach {weight(p.targetKg!, p.units)}
+          {Number.isFinite(plan.by) ? ` by ${dayMonth(plan.by)}` : ''}
+        </Strong>
+      </>
+    );
+    rows = [
+      ['Your body uses', `about ${kcal(maint)} kcal a day`],
+      ['You lose about', plan.floored ? weeklyLoss((plan.dailyDeficit * 7) / 7700, p.units) : paceLabel(p.pace, p.units)],
+      burn,
+    ];
+    if (plan.floored) note = `A little slower than ${paceLabel(p.pace, p.units)}, so you never eat less than your body needs at rest.`;
+  } else if (p.aim === 'get-stronger' && p.repGoal) {
+    const fuel = strengthFuel(b);
+    head = (
+      <>
+        <Label>Your goal</Label>
+        <Big value={String(p.repGoal.reps)} label={`${p.repGoal.reps} in one set`} />
+        <Strong size={type.callout}>{p.repGoal.exercise === 'pullup' ? 'pull-ups in one set' : 'push-ups in one set'}</Strong>
+      </>
+    );
+    rows = [
+      ['Train', `${p.daysPerWeek} days a week`],
+      ['Protein', `about ${fuel.proteinG} g a day`],
+      ...(noDiet ? [] : ([['Eat', `about ${kcal(fuel.eatKcal)} kcal a day`]] as [string, string][])),
+      burn,
+    ];
+  } else if (p.aim === 'less-screen') {
+    head = (
+      <>
+        <Label>Earn your screen time</Label>
+        <Big value="15 / 30" label="15 minutes for 10 push-ups, 30 for 20" />
+        <Strong size={type.callout}>minutes for 10 / 20 push-ups in a set</Strong>
+      </>
+    );
+    rows = [['Workouts', `${p.daysPerWeek} days a week, about 10 minutes`], ['Also count', 'Pull-ups, crunches and planks'], burn];
+  } else {
+    head = (
+      <>
+        <Label>Your week</Label>
+        <Big value={String(p.daysPerWeek)} label={`${p.daysPerWeek} workout days a week`} />
+        <Strong size={type.callout}>workout days, about 10 minutes each</Strong>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <View style={{ gap: space.sm }}>{head}</View>
+      <View style={styles.card}>
+        {rows.map(([k, v]) => (
+          <View key={k} style={styles.planRow} accessible accessibilityLabel={`${k}: ${v}`}>
+            <Body tone="muted" size={type.detail}>
+              {k}
+            </Body>
+            <Strong size={type.detail} style={{ flexShrink: 1, textAlign: 'right' }}>
+              {v}
             </Strong>
-            {!EXERCISES[e].frontView ? (
-              <Mono size={12} tone="muted">
-                {e === 'sidePlank' ? 'Facing the phone' : 'Side-on only'}
-              </Mono>
-            ) : (
-              <View style={styles.seg}>
-                <Seg label="Side" on={draft.views[e] === 'side'} onPress={() => setView(e, 'side')} />
-                <Seg label="Front" on={draft.views[e] === 'front'} onPress={() => setView(e, 'front')} />
-              </View>
-            )}
           </View>
         ))}
-        <Body tone="muted" size={13}>
-          Side-on checks your whole body line. Front (facing the phone) is easier to set up and checks what can be seen head-on; the hip
-          line is only judged side-on. Crunches need side-on to see the curl.
-        </Body>
       </View>
-      <Button label="Continue" size="lg" onPress={next} />
+      {note && <Body size={type.note}>{note}</Body>}
+      {noDiet && (
+        <Note>
+          {p.age < 18
+            ? 'Under 18, your body is still growing: Trueline won’t set a calorie target. Workouts and a varied diet are the plan.'
+            : 'While pregnant or soon after birth, don’t diet to lose weight. Ask your midwife or doctor what suits you.'}
+        </Note>
+      )}
+      <ProjectionCard
+        perSession={perWorkout}
+        perWeek={p.daysPerWeek}
+        units={p.units}
+        dailyDeficit={plan && Number.isFinite(plan.weeks) ? plan.dailyDeficit : 0}
+        targetChangeKg={plan && Number.isFinite(plan.weeks) ? p.weightKg - p.targetKg! : null}
+      />
+      <Body tone="muted" size={type.caption}>
+        {lose ? 'Not medical advice. Your weekly weigh-in is the real check.' : 'Not medical advice.'}
+      </Body>
+      <Button label="Looks good" size="lg" onPress={next} />
     </>
   );
 }
@@ -449,7 +734,7 @@ function AccessStep({ next }: StepProps) {
     try {
       const m = await DeviceMotion.getPermissionsAsync();
       // Android's motion sensors need no permission (expo-sensors would ask for "physical activity", which isn't needed).
-        const granted = Platform.OS === 'android' || m.granted || (m.canAskAgain && (await DeviceMotion.requestPermissionsAsync()).granted);
+      const granted = Platform.OS === 'android' || m.granted || (m.canAskAgain && (await DeviceMotion.requestPermissionsAsync()).granted);
       setMotion(granted ? 'granted' : 'denied');
     } catch {
       setMotion('denied');
@@ -461,8 +746,8 @@ function AccessStep({ next }: StepProps) {
   return (
     <>
       <Title title="Trueline needs your camera to see your reps" />
-      <View style={styles.card}>
-        <Point text="Runs on this phone. Nothing is recorded or uploaded." />
+      <View style={{ gap: space.md }}>
+        <Point text="It runs on this phone. Nothing is recorded or uploaded." />
         <Point text="The camera is only on while a set is running." />
         <Point text="Motion sensors check the phone stands level, so angles read true." />
       </View>
@@ -481,7 +766,7 @@ function AccessStep({ next }: StepProps) {
         </>
       )}
       {motion === 'denied' && (
-        <Body tone="faint" size={13}>
+        <Body tone="muted" size={type.caption}>
           Motion is off: the level check will ask you to confirm the phone is set instead.
         </Body>
       )}
@@ -489,63 +774,17 @@ function AccessStep({ next }: StepProps) {
   );
 }
 
-function RotationStep({ next, set }: StepProps) {
+function RotationStep({ next }: StepProps) {
   const c = rotationCopy(Platform.OS);
   return (
     <>
       <Title title={c.title} detail={c.body} />
-      <View style={styles.card}>
+      <View style={{ gap: space.md }}>
         <Point text="Swipe down from the top-right corner of the screen." />
         <Point text="Find the lock with a circular arrow. If it is highlighted, tap it so it turns off." />
         <Point text="That's it: the picture now turns with the phone." />
       </View>
       <Button label={c.ok.replace(', start', '')} size="lg" onPress={next} />
-      <Button
-        label="Use portrait instead"
-        variant="ghost"
-        onPress={() => {
-          set({ orientation: 'portrait' });
-          next();
-        }}
-      />
-    </>
-  );
-}
-
-function PlanStep({ draft, go, finish }: StepProps) {
-  const focus = draft.focus.length ? draft.focus : EXERCISE_IDS;
-  const notes = focus.flatMap((e) => safetyNotes(draft.safety, e).map((n) => `${EXERCISES[e].label}: ${n}`));
-  return (
-    <>
-      <Title title="Your setup" detail="Tap a line to change it." />
-      <View style={styles.card}>
-        <Row label="Training" value={focus.map((e) => EXERCISES[e].label).join(', ')} onPress={() => go('train')} />
-        <Row label="Strictness" value={STRICT.find((s) => s.value === draft.difficulty)!.title} onPress={() => go('strict')} />
-        <Row label="Help" value={draft.experience === 'quick' ? 'Keep it quick' : 'Guide me'} onPress={() => go('help')} />
-        <Row label="Daily goal" value={goalLine(draft.dailyGoal)} onPress={() => go('goal')} />
-        <Row label="Voice coach" value={draft.voice ? 'On' : 'Off'} onPress={() => go('voice')} />
-        <Row
-          label="Phone"
-          value={`${draft.orientation === 'landscape' ? 'Landscape' : 'Portrait'}, ${draft.camera} camera · ${focus
-            .map(
-              (e) => `${EXERCISES[e].label} ${e === 'sidePlank' || viewFor(e, draft.views) === 'front' ? 'facing the phone' : 'side-on'}`,
-            )
-            .join(', ')}`}
-          onPress={() => go('phone')}
-        />
-      </View>
-      {notes.length > 0 && (
-        <View style={styles.warn}>
-          <Label tone="cue">Take care</Label>
-          {notes.slice(0, 4).map((n) => (
-            <Body key={n} size={14}>
-              {n}
-            </Body>
-          ))}
-        </View>
-      )}
-      <Button label={`Start with ${EXERCISES[focus[0]].label.toLowerCase()}`} size="lg" onPress={() => finish(focus[0])} />
-      <Button label="Go to home" variant="ghost" onPress={() => finish()} />
     </>
   );
 }
@@ -555,82 +794,107 @@ function PlanStep({ draft, go, finish }: StepProps) {
 function Title({ title, detail }: { title: string; detail?: string }) {
   return (
     <View style={{ gap: space.sm }}>
-      <Display size={38}>{title}</Display>
+      <Display size={type.headline}>{title}</Display>
       {detail && <Body tone="muted">{detail}</Body>}
     </View>
   );
 }
 
-function Option({
-  title,
-  detail,
-  badge,
-  selected,
-  onPress,
-  multi = false,
-}: {
-  title: string;
-  detail?: string;
-  badge?: string;
-  selected: boolean;
-  onPress: () => void;
-  multi?: boolean;
-}) {
+/** A big number on the plan, in the display face. */
+function Big({ value, label }: { value: string; label: string }) {
+  return (
+    <Display size={type.hero} tone="vial" style={{ fontFamily: font.displayBlack }} accessibilityLabel={label}>
+      {value}
+    </Display>
+  );
+}
+
+/** A choice row: title, one line of detail and a round mark. */
+function Lane({ title, detail, selected, onPress }: { title: string; detail?: string; selected: boolean; onPress: () => void }) {
   return (
     <Pressable
-      accessibilityRole={multi ? 'checkbox' : 'radio'}
-      accessibilityState={multi ? { checked: selected } : { selected }}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected }}
       onPress={onPress}
       style={({ pressed }) => [styles.option, selected && styles.selected, pressed && { opacity: 0.85 }]}
     >
       <View style={{ flex: 1, gap: 4 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
-          <Strong size={17}>{title}</Strong>
-          {badge && (
-            <Mono size={11} tone="vial">
-              {badge.toUpperCase()}
-            </Mono>
-          )}
-        </View>
+        <Strong size={type.callout}>{title}</Strong>
         {detail && (
-          <Body tone="muted" size={14}>
+          <Body tone="muted" size={type.note}>
             {detail}
           </Body>
         )}
       </View>
-      <View style={[styles.mark, multi && { borderRadius: 6 }, selected && styles.markOn]} />
+      <View style={[styles.mark, selected && styles.markOn]} />
     </Pressable>
   );
 }
 
-function Choice({ label, detail, on, onPress }: { label: string; detail: string; on: boolean; onPress: () => void }) {
+function Segmented<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: T;
+  options: [T, string][];
+  onChange: (v: T) => void;
+  /** One line about the current choice, instead of a description under every option. */
+  hint?: string;
+}) {
   return (
+    <View style={{ gap: space.sm }}>
+      <Label>{label}</Label>
+      <View style={styles.row} accessibilityRole="radiogroup" accessibilityLabel={label}>
+        {options.map(([v, l]) => (
+          <Pressable
+            key={v}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: value === v }}
+            onPress={() => onChange(v)}
+            style={[styles.choice, value === v && styles.selected]}
+          >
+            <Strong size={type.detail} style={{ textAlign: 'center' }}>
+              {l}
+            </Strong>
+          </Pressable>
+        ))}
+      </View>
+      {hint && (
+        <Body tone="muted" size={type.note}>
+          {hint}
+        </Body>
+      )}
+    </View>
+  );
+}
+
+/** Optional extras, closed until asked for: keeps each step to the questions that matter. */
+function More({ label, open: startOpen, children }: { label: string; open: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(startOpen);
+  return open ? (
+    <View style={{ gap: space.md }}>{children}</View>
+  ) : (
     <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected: on }}
-      onPress={onPress}
-      style={[styles.choice, on && styles.selected]}
+      accessibilityRole="button"
+      hitSlop={8}
+      onPress={() => setOpen(true)}
+      style={{ alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
     >
-      <Strong size={15}>{label}</Strong>
-      <Mono size={11} tone={on ? 'vial' : 'muted'}>
-        {detail}
-      </Mono>
+      <LinkText>{label}</LinkText>
     </Pressable>
   );
 }
 
-function Seg({ label, on, onPress }: { label: string; on: boolean; onPress: () => void }) {
+function Note({ children }: { children: ReactNode }) {
   return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected: on }}
-      onPress={onPress}
-      style={[styles.segItem, on && styles.segOn]}
-    >
-      <Strong size={14} tone={on ? 'ink' : 'chalk'}>
-        {label}
-      </Strong>
-    </Pressable>
+    <View style={styles.warn}>
+      <Label tone="cue">Take care</Label>
+      <Body size={type.note}>{children}</Body>
+    </View>
   );
 }
 
@@ -638,22 +902,10 @@ function Point({ text }: { text: string }) {
   return (
     <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
       <View style={styles.tick} />
-      <Body size={15} style={{ flex: 1 }}>
+      <Body size={type.detail} style={{ flex: 1 }}>
         {text}
       </Body>
     </View>
-  );
-}
-
-function Row({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`${label}: ${value}. Change`} onPress={onPress} style={styles.planRow}>
-      <Label style={{ width: 92 }}>{label}</Label>
-      <Body size={15} style={{ flex: 1 }}>
-        {value}
-      </Body>
-      <Label tone="chalk">›</Label>
-    </Pressable>
   );
 }
 
@@ -669,24 +921,23 @@ const styles = StyleSheet.create({
     backgroundColor: color.ground,
     zIndex: 2,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 28 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    columnGap: space.md,
+    rowGap: space.xs,
+    alignItems: 'center',
+    minHeight: 28,
+  },
   wordmark: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   markLine: { width: 22, height: 4, borderRadius: 2, backgroundColor: color.vial },
   progress: { flexDirection: 'row', gap: 4, marginTop: space.xs },
   dot: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line },
   page: { paddingHorizontal: space.xl, paddingTop: space.lg, gap: space.lg, width: '100%', maxWidth: 560, alignSelf: 'center' },
   glyphRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.lg, justifyContent: 'center', paddingVertical: space.xl },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
-  tile: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    gap: space.sm,
-    padding: space.lg,
-    borderRadius: radius.lg,
-    backgroundColor: color.surface,
-    borderWidth: 1.5,
-    borderColor: color.lineSoft,
-  },
+  pair: { flexDirection: 'row', gap: space.md },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -703,19 +954,17 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: space.md },
   choice: {
     flex: 1,
-    gap: 2,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: space.md,
     borderRadius: radius.md,
     backgroundColor: color.surface,
     borderWidth: 1.5,
     borderColor: color.lineSoft,
   },
-  viewRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.xs },
-  seg: { flexDirection: 'row', borderRadius: radius.pill, borderWidth: 1, borderColor: color.line, overflow: 'hidden' },
-  segItem: { paddingHorizontal: space.lg, paddingVertical: space.sm },
-  segOn: { backgroundColor: color.vial },
   card: {
-    gap: space.md,
+    gap: space.sm,
     padding: space.lg,
     borderRadius: radius.lg,
     backgroundColor: color.surface,
@@ -731,5 +980,5 @@ const styles = StyleSheet.create({
     borderColor: color.cue,
   },
   tick: { width: 14, height: 4, borderRadius: 2, backgroundColor: color.vial, marginTop: 10 },
-  planRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.xs },
+  planRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: space.md, flexWrap: 'wrap' },
 });

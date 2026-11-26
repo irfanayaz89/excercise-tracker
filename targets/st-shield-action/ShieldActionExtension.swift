@@ -26,14 +26,16 @@ class ShieldActionExtension: ShieldActionDelegate {
   }
 
   override func handle(action: ShieldAction, for category: ActivityCategoryToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
-    // No app or site token here at all: what the blocked screen last showed is the best guide.
-    respond(action, key: nil, shown: STShared.shieldShown, completionHandler) {
+    // No app or site token here at all: what the blocked screen last showed for this category is the
+    // best guide (another shield drawn since, or an old record, would give the wrong buttons).
+    let key = STShared.key(category)
+    respond(action, key: nil, shown: matching { key != nil && $0.category == key }, completionHandler) {
       STShared.shieldKind(app: nil, site: nil, category: category, $0)
     }
   }
 
   private func matching(_ match: (STShared.ShieldShown) -> Bool) -> STShared.ShieldShown? {
-    guard let r = STShared.shieldShown, match(r), Date().timeIntervalSince1970 - r.at < recent else { return nil }
+    guard let r = STShared.shieldShown, match(r), STShared.now().timeIntervalSince1970 - r.at < recent else { return nil }
     return r
   }
 
@@ -41,6 +43,9 @@ class ShieldActionExtension: ShieldActionDelegate {
     _ action: ShieldAction, key tokenKey: String?, shown: STShared.ShieldShown?,
     _ done: @escaping (ShieldActionResponse) -> Void, fallback: (STShared.Status) -> STShared.ShieldKind
   ) {
+    // A backstop for a missed wake-up: put the blocks right first (an unlock that ran out while its
+    // end callback never came closes again here).
+    STShared.reapply()
     let s = STShared.status()
     let key: String?
     let primary: STShared.ShieldButton

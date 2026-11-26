@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HINT_FAULTS, type MissReason, type RepFault, type RepRecord } from '@/engine/repCounter';
 import type { Exercise } from '@/engine/types';
@@ -8,12 +9,13 @@ import type { SessionSummary } from '@/engine/session';
 import type { HoldFault, HoldSummary } from '@/engine/holdTimer';
 import { DIFFICULTY_COPY, FAULT_COPY, HOLD_COPY, faultCopy, formatDuration, missCopy } from '@/session/copy';
 import { getLastSummary } from '@/session/lastSummary';
-import { getSession } from '@/storage/history';
+import { bestBefore, correctReps, deleteSession, getSession } from '@/storage/history';
+import { SetCalories } from '@/features/energy/Calories';
 import { useSettings } from '@/storage/settings';
-import { Body, Button, Display, Label, Mono, Rule, Strong } from '@/ui/primitives';
+import { Body, Button, Display, Label, LinkText, Mono, Rule, Stat, Strong } from '@/ui/primitives';
 import { ExerciseGlyph } from '@/ui/Diagrams';
 import { Tally } from '@/ui/Tally';
-import { color, radius, space, type } from '@/ui/theme';
+import { color, radius, space, type, font } from '@/ui/theme';
 import { useTapGuard } from '@/ui/useTapGuard';
 import { EXERCISES, isTimed } from '@/engine/exercises';
 
@@ -22,7 +24,7 @@ function EarnedNote({
   earned,
   focus,
 }: {
-  earned: { minutes: number; capped: boolean } | null;
+  earned: { minutes: number; capped: boolean; bonus?: number; halfRate?: boolean } | null;
   focus?: { heldMin: number; continuesUntil: number | null } | null;
 }) {
   if (!earned && !focus) return null;
@@ -30,7 +32,7 @@ function EarnedNote({
   if (earned)
     parts.push(
       earned.minutes > 0
-        ? `+${earned.minutes} min screen time${earned.capped ? ' · today’s earning limit reached' : ''}`
+        ? `+${earned.minutes} min screen time${earned.bonus ? `, including ${earned.bonus} min of bonuses` : ''}${earned.capped ? ' · today’s earning limit reached' : earned.halfRate ? ' · half rate after your first hour today' : ''}`
         : 'Today’s earning limit is reached: this set earned no screen time.',
     );
   if (focus?.continuesUntil)
@@ -59,13 +61,15 @@ export { ErrorScreen as ErrorBoundary } from '@/ui/ErrorScreen';
 export default function SummaryScreen() {
   const insets = useSafeAreaInsets();
   const guard = useTapGuard();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const [settings] = useSettings();
+  const { id, fresh: freshParam } = useLocalSearchParams<{ id: string; fresh?: string }>();
+  const [settings, updateSettings] = useSettings();
   const guided = settings.experience !== 'quick';
 
   const data = useMemo(() => {
     const last = getLastSummary();
-    if (id === 'last' || (last && last.savedId === id)) {
+    // The in-memory copy is only for the set that just ended (opened from the session);
+    // opened later from history, read what's saved (it may have been fixed since).
+    if (id === 'last' || (last && last.savedId === id && freshParam === '1')) {
       return last
         ? {
             summary: last.summary,
@@ -74,12 +78,27 @@ export default function SummaryScreen() {
             demo: !!last.demo,
             earned: last.earned ?? null,
             focus: last.focus ?? null,
+            savedId: last.savedId,
+            fresh: true,
           }
         : null;
     }
     const stored = id ? getSession(id) : null;
-    return stored ? { summary: stored.summary, wallStart: stored.row.startedAt, saved: true, demo: false, earned: null, focus: null } : null;
-  }, [id]);
+    return stored
+      ? {
+          summary: stored.summary,
+          wallStart: stored.row.startedAt,
+          saved: true,
+          demo: false,
+          earned: null,
+          focus: null,
+          savedId: id,
+          fresh: false,
+        }
+      : null;
+  }, [id, freshParam]);
+  // A count fixed by hand on this screen (history and calories follow it).
+  const [fixed, setFixed] = useState<number | null>(null);
 
   if (!data) {
     return (
@@ -91,13 +110,28 @@ export default function SummaryScreen() {
     );
   }
 
-  const { summary: s, wallStart, saved, demo, earned, focus } = data;
+  const { wallStart, saved, demo, earned, focus, savedId, fresh } = data;
+  /** Another set of this exercise (not whatever was picked last), and a demo stays a demo. */
+  const another = () => {
+    const exercise = data.summary.exercise ?? 'pushup';
+    updateSettings({ exercise });
+    router.replace(demo ? { pathname: '/session', params: { demo: '1', ex: exercise } } : '/session');
+  };
+  const counted = fixed !== null || data.summary.counted !== undefined;
+  // What the camera counted: kept from an earlier fix, or this set's own count when fixed just now.
+  const cameraCount = data.summary.counted?.total ?? (fixed !== null ? data.summary.totalReps : null);
+  const s =
+    fixed === null
+      ? data.summary
+      : { ...data.summary, totalReps: fixed, cleanReps: Math.min(data.summary.counted?.clean ?? data.summary.cleanReps, fixed) };
   const faults = (Object.entries(s.faultCounts) as [RepFault, number][]).sort((a, b) => b[1] - a[1]);
   const misses = (Object.entries(s.missCounts) as [MissReason, number][]).sort((a, b) => b[1] - a[1]);
   const missTotal = misses.reduce((n, [, c]) => n + c, 0);
   const ex: Exercise = s.exercise ?? 'pushup';
   const crunch = ex === 'crunch';
-  const flagged = s.totalReps - s.cleanReps;
+  // Reps added by hand were never seen, so they're neither clean nor flagged.
+  const added = Math.max(0, s.totalReps - (cameraCount ?? s.totalReps));
+  const flagged = s.totalReps - s.cleanReps - added;
   const note = END_NOTE[s.endReason];
   const level = s.difficulty === 'easy' || s.difficulty === 'medium' || s.difficulty === 'hard' ? s.difficulty : null;
   const levelLabel = level ? `${DIFFICULTY_COPY[level].label} mode` : null;
@@ -122,14 +156,17 @@ export default function SummaryScreen() {
           demo={demo}
           guided={guided}
           easy={level === 'easy'}
+          exercise={s.exercise ?? 'plank'}
+          view={s.view ?? 'side'}
+          best={
+            saved && savedId && !demo ? <PersonalBest exercise={s.exercise ?? 'plank'} id={savedId} value={s.hold?.goodMs ?? 0} /> : null
+          }
         />
         <View style={{ gap: space.md }}>
-          <Button
-            label={`Another ${EXERCISES[s.exercise ?? 'plank'].label.toLowerCase()}`}
-            size="lg"
-            onPress={guard(() => router.replace('/session'))}
-          />
+          {fresh && <RestTimer />}
+          <Button label={`Another ${EXERCISES[s.exercise ?? 'plank'].label.toLowerCase()}`} size="lg" onPress={guard(another)} />
           <Button label="Done" variant="ghost" onPress={() => router.dismissTo('/')} />
+          {saved && savedId && !demo && <DeleteSet id={savedId} />}
         </View>
       </ScrollView>
     );
@@ -149,28 +186,37 @@ export default function SummaryScreen() {
       {s.totalReps === 0 ? (
         <View style={{ gap: space.md }}>
           <Display size={type.headline}>{`No ${EXERCISES[ex].unit} counted`}</Display>
-          <Body tone="muted">
-            {crunch
-              ? missTotal > 0
-                ? 'Crunches were seen but did not lift far enough. Curl up until your shoulder blades leave the floor, then lower back down.'
-                : 'Make sure your whole body is in view, side-on to the phone, and that you start lying still on your back with your knees bent.'
-              : missTotal > 0
-                ? 'Reps were seen but did not reach the full range. Go down until your elbows reach about 90° and push all the way back up.'
-                : 'Make sure your whole body is in view, side-on to the phone, and that you start from a straight-arm plank.'}
-          </Body>
+          <Body tone="muted">{noRepsTip(ex, s.view ?? 'side', missTotal > 0)}</Body>
         </View>
       ) : (
         <View style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.md }}>
-            <Display size={type.hero * 1.8} style={{ fontFamily: 'BigShouldersDisplay_900Black' }}>
+            <Display size={type.hero * 1.8} style={{ fontFamily: font.displayBlack }}>
               {s.totalReps}
             </Display>
             <Body tone="muted" style={{ marginBottom: 18 }}>
               {EXERCISES[ex].unit}
             </Body>
           </View>
-          <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />
+          {!counted && <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />}
+          <Mono tone="muted">{`${s.cleanReps} clean${flagged ? ` · ${flagged} flagged` : ''}${added ? ` · ${added} added by hand` : ''}`}</Mono>
+          {counted && (
+            <Mono tone="muted">{`Count fixed by hand${cameraCount !== null ? ` (the camera counted ${cameraCount})` : ''}.`}</Mono>
+          )}
+          {/* Same inputs as the history list (active time over reps), so a set shows one calorie figure everywhere. */}
+          <SetCalories exercise={ex} activeMs={s.activeMs} holdMs={0} reps={s.totalReps} />
         </View>
+      )}
+      {saved && savedId && !demo && s.totalReps > 0 && <PersonalBest exercise={ex} id={savedId} value={s.totalReps} />}
+      {saved && savedId && !demo && (
+        <FixCount
+          total={s.totalReps}
+          onFix={(n) => {
+            const res = correctReps(savedId, n);
+            if (res === 'deleted') router.dismissTo('/');
+            else if (res === 'saved') setFixed(n);
+          }}
+        />
       )}
 
       {note && <Mono tone="vial">{note}</Mono>}
@@ -179,15 +225,6 @@ export default function SummaryScreen() {
       ) : (
         !saved && s.totalReps > 0 && <Mono tone="cue">This set could not be saved to history.</Mono>
       )}
-
-      <View style={styles.stats}>
-        <Stat label="Clean" value={String(s.cleanReps)} tone="good" />
-        <Stat label="Flagged" value={String(flagged)} tone={flagged ? 'cue' : 'chalk'} />
-        <Stat label="Best streak" value={String(s.bestCleanStreak)} />
-        <Stat label="Avg rep" value={s.avgRepMs ? `${(s.avgRepMs / 1000).toFixed(1)}s` : '—'} />
-      </View>
-
-      {s.reps.length > 1 && <TempoChart reps={s.reps} />}
 
       {guided && s.totalReps > 0 && level === 'easy' && (
         <View style={styles.tip}>
@@ -201,64 +238,102 @@ export default function SummaryScreen() {
         <NextTime faults={faults} misses={misses} cleanShare={s.cleanReps / s.totalReps} exercise={ex} />
       )}
 
-      {faults.length > 0 && (
-        <View style={{ gap: space.md }}>
-          <Label>Form to work on</Label>
-          <View style={styles.list}>
-            {faults.map(([f, n], i) => (
-              <View key={f}>
-                {i > 0 && <Rule />}
-                <View style={styles.item}>
-                  <Display size={32} tone={HINT_FAULTS.includes(f) ? 'muted' : 'cue'} style={{ minWidth: 40 }}>
-                    {n}
-                  </Display>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{faultCopy(f, ex)?.short ?? f}</Strong>
-                    {guided && (
-                      <Body tone="muted" size={14}>
-                        {faultCopy(f, ex)?.detail}
-                      </Body>
-                    )}
-                  </View>
-                </View>
-              </View>
-            ))}
+      {/* The camera's detail for anyone who wants it: one tap, not the first thing after a set. */}
+      {s.totalReps > 0 && (
+        <Details label="Rep details">
+          <View style={styles.stats}>
+            <Stat size="lg" style={styles.stat} label="Clean" value={String(s.cleanReps)} tone="good" />
+            <Stat size="lg" style={styles.stat} label="Flagged" value={String(flagged)} tone={flagged ? 'cue' : 'chalk'} />
+            {!counted && <Stat size="lg" style={styles.stat} label="Best streak" value={String(s.bestCleanStreak)} />}
+            {/* The camera's rep times no longer describe a count fixed by hand (like the streak and tempo). */}
+            {!counted && (
+              <Stat size="lg" style={styles.stat} label="Avg rep" value={s.avgRepMs ? `${(s.avgRepMs / 1000).toFixed(1)}s` : '—'} />
+            )}
           </View>
-        </View>
-      )}
+          {!counted && s.reps.length > 1 && <TempoChart reps={s.reps} />}
+          {faults.length > 0 && (
+            <View style={{ gap: space.md }}>
+              <Label>Form to work on</Label>
+              <View style={styles.list}>
+                {faults.map(([f, n], i) => (
+                  <View key={f}>
+                    {i > 0 && <Rule />}
+                    <View style={styles.item}>
+                      <Display size={type.displayM} tone={HINT_FAULTS.includes(f) ? 'muted' : 'cue'} style={{ minWidth: 40 }}>
+                        {n}
+                      </Display>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Strong>{faultCopy(f, ex)?.short ?? f}</Strong>
+                        {guided && (
+                          <Body tone="muted" size={type.note}>
+                            {faultCopy(f, ex)?.detail}
+                          </Body>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
-      {misses.length > 0 && (
-        <View style={{ gap: space.md }}>
-          <Label>{`Not counted · ${missTotal}`}</Label>
-          <View style={styles.list}>
-            {misses.map(([m, n], i) => (
-              <View key={m}>
-                {i > 0 && <Rule />}
-                <View style={styles.item}>
-                  <Display size={32} tone="muted" style={{ minWidth: 40 }}>
-                    {n}
-                  </Display>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{missCopy(m, ex)?.short ?? m}</Strong>
-                    {guided && (
-                      <Body tone="muted" size={14}>
-                        {missCopy(m, ex)?.detail}
-                      </Body>
-                    )}
+          {misses.length > 0 && (
+            <View style={{ gap: space.md }}>
+              <Label>{`Not counted · ${missTotal}`}</Label>
+              <View style={styles.list}>
+                {misses.map(([m, n], i) => (
+                  <View key={m}>
+                    {i > 0 && <Rule />}
+                    <View style={styles.item}>
+                      <Display size={type.displayM} tone="muted" style={{ minWidth: 40 }}>
+                        {n}
+                      </Display>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Strong>{missCopy(m, ex)?.short ?? m}</Strong>
+                        {guided && (
+                          <Body tone="muted" size={type.note}>
+                            {missCopy(m, ex)?.detail}
+                          </Body>
+                        )}
+                      </View>
+                    </View>
                   </View>
-                </View>
+                ))}
               </View>
-            ))}
-          </View>
-        </View>
+            </View>
+          )}
+        </Details>
+      )}
+      {/* No reps: why, on its own (there is nothing to detail). */}
+      {s.totalReps === 0 && misses.length > 0 && (
+        <Mono tone="muted">{`${missTotal} ${missTotal === 1 ? 'rep was' : 'reps were'} seen but not counted.`}</Mono>
       )}
 
       <View style={{ gap: space.md }}>
-        <Button label="Another set" size="lg" onPress={guard(() => router.replace('/session'))} />
+        {fresh && <RestTimer />}
+        <Button label="Another set" size="lg" onPress={guard(another)} />
         <Button label="Done" variant="ghost" onPress={() => router.dismissTo('/')} />
+        {saved && savedId && !demo && <DeleteSet id={savedId} />}
       </View>
     </ScrollView>
   );
+}
+
+/** Why nothing was counted, and what to change: by exercise and camera view. */
+function noRepsTip(ex: Exercise, view: 'side' | 'front', seen: boolean): string {
+  if (ex === 'crunch')
+    return seen
+      ? 'Crunches were seen but did not lift far enough. Curl up until your shoulder blades leave the floor, then lower back down.'
+      : 'Make sure your whole body is in view, side-on to the phone, and that you start lying still on your back with your knees bent.';
+  if (ex === 'pullup')
+    return seen
+      ? 'Pulls were seen but not counted: get your chin over the bar from a still hang, without kicking the knees up.'
+      : 'Stand the phone facing the bar, 2–2.5 m away, with your whole body and the bar in view, and start from a still hang.';
+  if (seen)
+    return 'Reps were seen but did not reach the full range. Go down until your elbows reach about 90° and push all the way back up.';
+  return view === 'front'
+    ? 'Make sure your head, shoulders and arms are in view, facing the phone, and that you start from a straight-arm plank.'
+    : 'Make sure your whole body is in view, side-on to the phone, and that you start from a straight-arm plank.';
 }
 
 /** Plank results: time in good form first, then where the rest of the time went. */
@@ -270,7 +345,14 @@ function PlankResult({
   demo,
   guided,
   easy,
+  exercise,
+  view,
+  best,
 }: {
+  exercise: Exercise;
+  view: 'side' | 'front';
+  /** The personal-best card, right under the result as on rep sets. */
+  best?: ReactNode;
   hold: HoldSummary | undefined;
   /** Side plank: each side's hold; null for a regular plank. */
   sides: SessionSummary['holdSides'] | null;
@@ -285,7 +367,9 @@ function PlankResult({
       <View style={{ gap: space.md }}>
         <Display size={type.headline}>{sides ? 'No side plank timed' : 'No plank timed'}</Display>
         <Body tone="muted">
-          Hold a plank on straight arms or forearms, side-on to the phone, with your body in view. The clock starts once you are steady.
+          {sides
+            ? 'Hold a side plank facing the phone, with your whole body in view. The clock starts once you are steady.'
+            : `Hold a plank on straight arms or forearms, ${view === 'front' ? 'facing' : 'side-on to'} the phone, with your body in view. The clock starts once you are steady.`}
         </Body>
         {demo && <Mono tone="muted">Demo set · not added to your history.</Mono>}
       </View>
@@ -305,7 +389,7 @@ function PlankResult({
     <>
       <View style={{ gap: space.sm }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.md }}>
-          <Display size={type.hero * 1.5} style={{ fontFamily: 'BigShouldersDisplay_900Black' }}>
+          <Display size={type.hero * 1.5} style={{ fontFamily: font.displayBlack }}>
             {formatDuration(hold.goodMs)}
           </Display>
           <Body tone="muted" style={{ marginBottom: 16 }}>
@@ -315,8 +399,10 @@ function PlankResult({
         <View style={styles.formBar} accessible accessibilityLabel={`${pct} percent of the hold in good form`}>
           <View style={{ width: `${pct}%`, height: '100%', backgroundColor: color.good }} />
         </View>
+        <SetCalories exercise={exercise} activeMs={hold.totalMs} holdMs={hold.goodMs} reps={0} />
       </View>
 
+      {best}
       {sides && <SideBalance sides={sides} />}
 
       {note && <Mono tone="vial">{note}</Mono>}
@@ -326,13 +412,6 @@ function PlankResult({
         !saved && <Mono tone="cue">This plank could not be saved to history.</Mono>
       )}
 
-      <View style={styles.stats}>
-        <Stat label="Good form" value={`${pct}%`} tone={pct >= 90 ? 'good' : pct >= 70 ? 'chalk' : 'cue'} />
-        <Stat label="Longest hold" value={formatDuration(hold.longestMs)} />
-        <Stat label="Breaks" value={String(hold.breaks)} tone={hold.breaks ? 'cue' : 'chalk'} />
-        <Stat label="Plank" value={hold.variant === 'forearm' ? 'Forearm' : 'High'} />
-      </View>
-
       {guided && (
         <View style={styles.tip}>
           <Label tone="vial">Next time</Label>
@@ -340,50 +419,77 @@ function PlankResult({
         </View>
       )}
 
-      {(faults.length > 0 || hold.headDownMs >= 3000) && (
-        <View style={{ gap: space.md }}>
-          <Label>Time out of form</Label>
-          <View style={styles.list}>
-            {faults.map(([f, ms], i) => (
-              <View key={f}>
-                {i > 0 && <Rule />}
-                <View style={styles.item}>
-                  <Display size={32} tone="cue" style={{ minWidth: 64 }}>
-                    {formatDuration(ms)}
-                  </Display>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{HOLD_COPY[f].short}</Strong>
-                    {guided && (
-                      <Body tone="muted" size={14}>
-                        {HOLD_COPY[f].detail}
-                      </Body>
-                    )}
-                  </View>
-                </View>
-              </View>
-            ))}
-            {hold.headDownMs >= 3000 && (
-              <View>
-                {faults.length > 0 && <Rule />}
-                <View style={styles.item}>
-                  <Display size={32} tone="muted" style={{ minWidth: 64 }}>
-                    {formatDuration(hold.headDownMs)}
-                  </Display>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{FAULT_COPY['head-dropping'].short}</Strong>
-                    {guided && (
-                      <Body tone="muted" size={14}>
-                        {FAULT_COPY['head-dropping'].detail} This is a tip; it does not stop the clock.
-                      </Body>
-                    )}
-                  </View>
-                </View>
-              </View>
-            )}
-          </View>
+      <Details label="Hold details">
+        <View style={styles.stats}>
+          <Stat size="lg" style={styles.stat} label="Good form" value={`${pct}%`} tone={pct >= 90 ? 'good' : pct >= 70 ? 'chalk' : 'cue'} />
+          <Stat size="lg" style={styles.stat} label="Longest hold" value={formatDuration(hold.longestMs)} />
+          <Stat size="lg" style={styles.stat} label="Breaks" value={String(hold.breaks)} tone={hold.breaks ? 'cue' : 'chalk'} />
+          <Stat size="lg" style={styles.stat} label="Plank" value={hold.variant === 'forearm' ? 'Forearm' : 'High'} />
         </View>
-      )}
+        {(faults.length > 0 || hold.headDownMs >= 3000) && (
+          <View style={{ gap: space.md }}>
+            <Label>Time out of form</Label>
+            <View style={styles.list}>
+              {faults.map(([f, ms], i) => (
+                <View key={f}>
+                  {i > 0 && <Rule />}
+                  <View style={styles.item}>
+                    <Display size={type.displayM} tone="cue" style={{ minWidth: 64 }}>
+                      {formatDuration(ms)}
+                    </Display>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Strong>{HOLD_COPY[f].short}</Strong>
+                      {guided && (
+                        <Body tone="muted" size={type.note}>
+                          {HOLD_COPY[f].detail}
+                        </Body>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              ))}
+              {hold.headDownMs >= 3000 && (
+                <View>
+                  {faults.length > 0 && <Rule />}
+                  <View style={styles.item}>
+                    <Display size={type.displayM} tone="muted" style={{ minWidth: 64 }}>
+                      {formatDuration(hold.headDownMs)}
+                    </Display>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Strong>{FAULT_COPY['head-dropping'].short}</Strong>
+                      {guided && (
+                        <Body tone="muted" size={type.note}>
+                          {FAULT_COPY['head-dropping'].detail} This is a tip; it does not stop the clock.
+                        </Body>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+      </Details>
     </>
+  );
+}
+
+/** Closed by default: the numbers and charts behind the result, for anyone who wants them. */
+function Details({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={{ gap: space.lg }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((o) => !o)}
+        hitSlop={8}
+        style={{ alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
+      >
+        <LinkText>{open ? `Hide ${label.toLowerCase()}` : `${label} ›`}</LinkText>
+      </Pressable>
+      {open && children}
+    </View>
   );
 }
 
@@ -420,14 +526,128 @@ function NextTime({
   );
 }
 
-function Stat({ label, value, tone = 'chalk' }: { label: string; value: string; tone?: 'chalk' | 'good' | 'cue' }) {
+/** A new best set, or the first set of an exercise: worth a moment. */
+function PersonalBest({ exercise, id, value }: { exercise: Exercise; id: string; value: number }) {
+  const [prev] = useState(() => bestBefore(exercise, id));
+  if (value <= 0 || (prev !== null && value <= prev)) return null;
+  const timed = isTimed(exercise);
+  const text =
+    prev === null
+      ? `Your first ${EXERCISES[exercise].label.toLowerCase()} set is saved. This is the number to beat.`
+      : `Up from ${timed ? formatDuration(prev) : prev}. That's a new best.`;
   return (
-    <View style={styles.stat}>
-      <Label>{label}</Label>
-      <Display size={36} tone={tone}>
-        {value}
-      </Display>
+    <View style={styles.best} accessible accessibilityLabel={`${prev === null ? 'First set' : 'New personal best'}. ${text}`}>
+      <Label tone="good">{prev === null ? 'First set' : 'New personal best'}</Label>
+      <Body size={type.detail}>{text}</Body>
     </View>
+  );
+}
+
+/**
+ * "Count wrong? Fix it": the camera can miss or add a rep. The fix goes into
+ * history and calories, never into screen time already earned.
+ */
+function FixCount({ total, onFix }: { total: number; onFix: (n: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [n, setN] = useState(total);
+  if (!open) {
+    return (
+      <Pressable accessibilityRole="button" hitSlop={8} onPress={() => (setN(total), setOpen(true))} style={{ alignSelf: 'flex-start' }}>
+        <LinkText>Count wrong? Fix it ›</LinkText>
+      </Pressable>
+    );
+  }
+  return (
+    <View style={styles.fix}>
+      <Label>Reps you did</Label>
+      <View style={styles.fixRow}>
+        <Button label="−" variant="quiet" size="sm" onPress={() => setN((v) => Math.max(0, v - 1))} accessibilityLabel="One fewer rep" />
+        <Display size={type.pageHero} accessibilityLiveRegion="polite">
+          {n}
+        </Display>
+        <Button label="+" variant="quiet" size="sm" onPress={() => setN((v) => Math.min(500, v + 1))} accessibilityLabel="One more rep" />
+      </View>
+      <Body tone="muted" size={type.caption}>
+        {n === 0
+          ? 'Saving 0 deletes this set from your history.'
+          : 'Fixing the count updates your history, best set and calories. Screen time already earned stays the same.'}
+      </Body>
+      <View style={{ flexDirection: 'row', gap: space.sm }}>
+        <Button
+          label="Save"
+          style={{ flex: 1 }}
+          disabled={n === total}
+          onPress={() => {
+            const save = () => {
+              onFix(n);
+              setOpen(false);
+            };
+            // 0 deletes the set: ask, the same as Delete this set does.
+            if (n > 0) save();
+            else
+              Alert.alert('Delete this set?', 'A count of 0 removes the set from your history. It can’t be undone.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: save },
+              ]);
+          }}
+        />
+        <Button label="Cancel" variant="ghost" style={{ flex: 1 }} onPress={() => setOpen(false)} />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * A rest countdown after a fresh set: 60–90 s is plenty; going sooner is fine.
+ * Counted from a deadline, so a phone that locks during the rest still shows
+ * the right time when it wakes.
+ */
+function RestTimer({ seconds = 75 }: { seconds?: number }) {
+  const [deadline] = useState(() => Date.now() + seconds * 1000);
+  const [now, setNow] = useState(() => Date.now());
+  const left = Math.max(0, Math.ceil((deadline - now) / 1000));
+  useEffect(() => {
+    if (left <= 0) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      return;
+    }
+    const t = setTimeout(() => setNow(Date.now()), 1000);
+    return () => clearTimeout(t);
+  }, [left, now]);
+  return (
+    <Mono tone={left > 0 ? 'muted' : 'good'} accessibilityLiveRegion={left === 0 ? 'polite' : 'none'}>
+      {left > 0 ? `Rest ${formatDuration(left * 1000)} before the next set, or go when ready` : 'Rested. Ready for the next set.'}
+    </Mono>
+  );
+}
+
+/** Delete a saved set from history (asks first: it can't be undone). */
+function DeleteSet({ id }: { id: string }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      hitSlop={12}
+      style={{ alignSelf: 'center', minHeight: 44, justifyContent: 'center' }}
+      onPress={() =>
+        Alert.alert(
+          'Delete this set?',
+          'It comes off your history, totals and best sets. Screen time it earned stays. This can’t be undone.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: () => {
+                deleteSession(id);
+                router.dismissTo('/');
+              },
+            },
+          ],
+        )
+      }
+    >
+      <Label tone="fault">Delete this set</Label>
+    </Pressable>
   );
 }
 
@@ -454,22 +674,45 @@ function TempoChart({ reps }: { reps: RepRecord[] }) {
         ))}
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Mono size={11} tone="faint">
+        <Mono size={type.micro} tone="muted">
           rep 1
         </Mono>
-        <Mono size={11} tone="faint">{`${(max / 1000).toFixed(1)}s max`}</Mono>
-        <Mono size={11} tone="faint">{`rep ${reps.length}`}</Mono>
+        <Mono size={type.micro} tone="muted">{`${(max / 1000).toFixed(1)}s max`}</Mono>
+        <Mono size={type.micro} tone="muted">{`rep ${reps.length}`}</Mono>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  earned: { alignSelf: 'flex-start', paddingHorizontal: space.md, paddingVertical: space.sm, borderRadius: radius.md, backgroundColor: color.goodSoft },
+  best: {
+    gap: space.xs,
+    padding: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: color.goodSoft,
+    borderWidth: 1,
+    borderColor: color.good,
+  },
+  fix: {
+    gap: space.sm,
+    padding: space.lg,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.lineSoft,
+  },
+  fixRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  earned: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    borderRadius: radius.md,
+    backgroundColor: color.goodSoft,
+  },
   page: { paddingHorizontal: space.xl, gap: space.xxl, width: '100%', maxWidth: 560, alignSelf: 'center' },
   empty: { flex: 1, backgroundColor: color.ground, padding: space.xl, gap: space.lg },
   stats: { flexDirection: 'row', flexWrap: 'wrap', rowGap: space.lg },
-  stat: { width: '50%', gap: 4 },
+  stat: { flex: 0, width: '50%' },
   list: { borderRadius: radius.lg, borderWidth: 1, borderColor: color.lineSoft, overflow: 'hidden' },
   item: { flexDirection: 'row', gap: space.lg, padding: space.lg, alignItems: 'flex-start' },
   tip: {
@@ -509,8 +752,8 @@ function SideBalance({ sides }: { sides: NonNullable<SessionSummary['holdSides']
         {(['left', 'right'] as const).map((s) => (
           <View key={s} style={{ flex: 1, gap: 4 }}>
             <Label>{s === 'left' ? 'Left side' : 'Right side'}</Label>
-            <Display size={40}>{sides[s] ? formatDuration(sides[s]!.goodMs) : '–'}</Display>
-            {sides[s] && <Mono size={12} tone="muted">{`${Math.round(sides[s]!.formPct * 100)}% good form`}</Mono>}
+            <Display size={type.headline}>{sides[s] ? formatDuration(sides[s]!.goodMs) : '–'}</Display>
+            {sides[s] && <Mono size={type.small} tone="muted">{`${Math.round(sides[s]!.formPct * 100)}% good form`}</Mono>}
           </View>
         ))}
       </View>

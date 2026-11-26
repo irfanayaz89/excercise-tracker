@@ -17,7 +17,15 @@ import { RealityCheck, type DepthProbe, type RealityIssue } from './reality';
 import { MetricMedian } from './smoothing';
 import { HINT_FAULTS, RepCounter, type MissRecord, type RepFault, type RepPhase, type RepRecord } from './repCounter';
 import { CrunchCounter, type CrunchPhase } from './crunchCounter';
-import { checkHangStart, PullupCounter, PullupFramingGate, pullupMetrics, readPullup, type PullupPhase, type PullupReading } from './pullup';
+import {
+  checkHangStart,
+  PullupCounter,
+  PullupFramingGate,
+  pullupMetrics,
+  readPullup,
+  type PullupPhase,
+  type PullupReading,
+} from './pullup';
 import { checkFrontStart, frontContacts, frontMetrics, FrontFramingGate } from './front';
 import { buildChain, computeMetrics, PoseTracker, SideSelector, SupportSideSelector, type TrackedPose } from './tracker';
 import { LM, type BodyMetrics, type Exercise, type PhoneAttitude, type PlankVariant, type PoseSample, type Side } from './types';
@@ -140,6 +148,8 @@ export interface SessionSummary {
   exercise?: Exercise;
   /** Difficulty the set ran at, when known. */
   difficulty?: string;
+  /** Where the camera saw the body from. Head-on can't see the hip line, so it earns less. */
+  view?: 'front' | 'side';
   startedAt: number;
   endedAt: number;
   activeMs: number;
@@ -160,6 +170,8 @@ export interface SessionSummary {
   holdSides?: Partial<Record<Side, HoldSummary>>;
   /** Times the set paused because it looked like a video on a screen. */
   realityFlags?: number;
+  /** Set when the user fixed the count afterwards: what the camera counted (total and clean). */
+  counted?: { total: number; clean: number };
 }
 
 export interface SessionOptions {
@@ -194,6 +206,15 @@ const IDENTITY_COMBINED = 1.4;
  * timestamp order; call `tick` from a timer so timeouts fire even when no
  * frames arrive. It never throws on bad input: unusable frames are dropped.
  */
+/**
+ * Time in good form so far, all sides together: a side plank's `hold` is only the side being timed
+ * now, so after switching it can read 0 while the first side is already done.
+ */
+export function heldMs(s: Pick<SessionSnapshot, 'hold' | 'holdSides'>): number {
+  const sides = s.holdSides ? Object.values(s.holdSides).reduce((a, b) => a + (b ?? 0), 0) : 0;
+  return Math.max(s.hold?.goodMs ?? 0, sides);
+}
+
 export class PushupSession {
   readonly cfg: EngineConfig;
   private tracker: PoseTracker;
@@ -238,10 +259,15 @@ export class PushupSession {
   private plankProgress = 0;
   private metrics: BodyMetrics | null = null;
   private depth: number | null = null;
-  private calibration: Calibration | null = null;
   private reps: RepRecord[] = [];
   private misses: MissRecord[] = [];
   private pauseReason: PauseReason | null = null;
+  /** Why the set was paused before the app was left: a screen or a moved phone still has to clear. */
+  private pausedBefore: PauseReason | null = null;
+  /** When the current stretch of setup began (phone or body check), for the setup timeout. */
+  private setupSince: number | null = null;
+  /** The app is away (background, call, camera interrupted): no timeout runs meanwhile. */
+  private away = false;
   private pausedAt: number | null = null;
   private pauses = 0;
   private lostSince: number | null = null;
@@ -414,6 +440,13 @@ export class PushupSession {
   tick(t: number): void {
     if (this.phase === 'ended') return;
     this.advanceClock(t);
+    if ((this.phase === 'phone-setup' || this.phase === 'body-check') && !this.away) {
+      this.setupSince ??= t;
+      if (t - this.setupSince > this.cfg.session.setupTimeoutMs) {
+        this.end('idle');
+        return;
+      }
+    }
     if (this.phase === 'phone-setup') this.evaluatePhone();
     if (this.phase === 'counting') {
       // No frames at all (camera stalled) also counts as lost tracking.
@@ -440,7 +473,15 @@ export class PushupSession {
   /** App went to background, a call came in, or the camera was interrupted. */
   interrupt(t: number): void {
     this.advanceClock(t);
-    if (this.phase === 'counting') this.pause('interrupted');
+    this.away = true;
+    if (this.phase === 'counting') {
+      this.pause('interrupted');
+      this.pausedBefore = null;
+    } else if (this.phase === 'paused') {
+      // Already paused (e.g. stood up) and then away from the app: time away must not end the set.
+      if (this.pauseReason !== 'interrupted') this.pausedBefore = this.pauseReason;
+      this.pauseReason = 'interrupted';
+    }
     // Any plank hold in progress is void: we were not watching.
     this.plankHold.reset();
     this.plankProgress = 0;
@@ -451,6 +492,9 @@ export class PushupSession {
   /** App is back; the user has to get back into a plank to continue. */
   resumeFromInterrupt(t: number): void {
     this.advanceClock(t);
+    this.away = false;
+    // An interruption never ends a set: setup's ten minutes start again from now.
+    this.setupSince = null;
     this.tracker.reset();
     this.sides.reset();
     this.supportSides.reset();
@@ -459,7 +503,10 @@ export class PushupSession {
     this.plankProgress = 0;
     this.lastDetectedT = null;
     if (this.phase === 'paused') {
-      if (this.pauseReason === 'interrupted') this.pauseReason = 'lost-tracking';
+      // A screen or a moved phone still has to clear: leaving the app doesn't skip those checks.
+      if (this.pauseReason === 'interrupted')
+        this.pauseReason = this.pausedBefore === 'not-real' || this.pausedBefore === 'phone-moved' ? this.pausedBefore : 'lost-tracking';
+      this.pausedBefore = null;
       // Time spent away from the app does not count toward the auto-end timeout.
       this.pausedAt = t;
     }
@@ -665,7 +712,6 @@ export class PushupSession {
   }
 
   private beginCounting(cal: Calibration, t: number): void {
-    this.calibration = cal;
     const resuming = this.phase === 'paused';
     if (this.exercise === 'sidePlank') {
       // One clock per side; time calls and the countdown carry on per side too.
@@ -1119,6 +1165,7 @@ export class PushupSession {
   private setPhase(phase: SessionPhase): void {
     if (this.phase === phase) return;
     this.phase = phase;
+    if (phase === 'counting') this.setupSince = null;
     if (phase === 'body-check' || phase === 'phone-setup') {
       this.plankHold.reset();
       this.plankProgress = 0;
@@ -1167,6 +1214,7 @@ export class PushupSession {
     return {
       exercise: this.exercise,
       difficulty: this.difficulty,
+      view: this.front ? 'front' : 'side',
       startedAt: this.startedAt ?? this.now,
       endedAt: this.now,
       activeMs: this.activeMs,

@@ -24,7 +24,13 @@
     </intent>
   </queries>
 
-  <application>
+  <!-- Keeps this module's prefs (trueline.screentime) out of backups and phone transfers. Merged into
+       the app's <application>, which sets neither attribute; if the app ever sets its own rules, the
+       manifest merger reports the clash at build time, and those rules must exclude this file too. -->
+  <application
+    android:fullBackupContent="@xml/st_backup_rules"
+    android:dataExtractionRules="@xml/st_data_extraction_rules"
+    tools:targetApi="31">
     <service
       android:name="expo.modules.screentime.BlockService"
       android:exported="false"

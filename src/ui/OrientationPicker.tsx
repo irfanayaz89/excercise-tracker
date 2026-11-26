@@ -1,8 +1,8 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { PhoneOrientation } from '@/engine/types';
 import { PLACEMENT } from '@/session/copy';
-import { Label, Mono, Strong } from './primitives';
-import { color, radius, space } from './theme';
+import { Mono, Strong } from './primitives';
+import { color, radius, space, type } from './theme';
 
 /**
  * Two big tappable tiles, each with a little phone drawn the way it will
@@ -39,7 +39,7 @@ export function OrientationPicker({
               <Strong size={compact ? 14 : 15} tone={on ? 'chalk' : 'chalk'}>
                 {PLACEMENT[o].label}
               </Strong>
-              <Mono size={12} tone={on ? 'vial' : 'muted'}>
+              <Mono size={type.small} tone={on ? 'vial' : 'muted'}>
                 {PLACEMENT[o].distance}
               </Mono>
             </View>
@@ -48,10 +48,6 @@ export function OrientationPicker({
       })}
     </View>
   );
-}
-
-export function OrientationHint({ value }: { value: PhoneOrientation }) {
-  return <Label tone="muted">{value === 'portrait' ? 'Portrait needs more room: step further back' : 'Landscape fits your body best'}</Label>;
 }
 
 const styles = StyleSheet.create({

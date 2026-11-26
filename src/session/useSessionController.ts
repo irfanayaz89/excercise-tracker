@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AppState, NativeModules, Platform } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import type { EngineConfig } from '@/engine/config';
@@ -7,9 +7,9 @@ import { sessionConfig, sessionOverrides } from './sessionConfig';
 import { Recorder } from '@/engine/recording';
 import { PushupSession, type Cue, type SessionSummary } from '@/engine/session';
 import type { DepthProbe } from '@/engine/reality';
-import { EXERCISES } from '@/engine/exercises';
+import { EXERCISES, isTimed } from '@/engine/exercises';
 import { LM, type PhoneAttitude, type PoseSample } from '@/engine/types';
-import type { Settings } from '@/storage/settings';
+import { targetFor, type Settings } from '@/storage/settings';
 import { EMPTY_OVERLAY, type OverlayData } from '@/ui/SkeletonOverlay';
 import { Coach, tapLight, tapSuccess } from './coach';
 import { cueBanner, cueSpeech, type Copy } from './copy';
@@ -54,14 +54,49 @@ const CHAIN = {
 
 export type Banner = Copy & { tone: 'good' | 'cue' | 'fault'; id: number };
 
+export interface UiState {
+  /** One entry per counted rep: true = clean. */
+  repMarks: boolean[];
+  banner: Banner | null;
+}
+
+export interface UiStore {
+  get(): UiState;
+  subscribe(fn: () => void): () => void;
+  set(patch: Partial<UiState> | ((s: UiState) => Partial<UiState>)): void;
+}
+
+function createUiStore(): UiStore {
+  let state: UiState = { repMarks: [], banner: null };
+  const subs = new Set<() => void>();
+  return {
+    get: () => state,
+    subscribe(fn) {
+      subs.add(fn);
+      return () => void subs.delete(fn);
+    },
+    set(patch) {
+      state = { ...state, ...(typeof patch === 'function' ? patch(state) : patch) };
+      subs.forEach((f) => f());
+    },
+  };
+}
+
+/** Rep marks and banner for the HUD; re-renders only the component that calls it. */
+export function useControllerUi(ctrl: Controller): UiState {
+  return useSyncExternalStore(ctrl.ui.subscribe, ctrl.ui.get);
+}
+
 export interface Controller {
   /** Live engine state for display; subscribe with `useSnapshot`. */
   store: SnapshotStore;
   /** The thresholds this set runs with (depends on difficulty). */
   config: EngineConfig;
-  /** One entry per counted rep: true = clean. */
-  repMarks: boolean[];
-  banner: Banner | null;
+  /**
+   * Rep marks and the cue banner, kept outside React state so a rep re-renders only the HUD
+   * that shows them (useControllerUi), not the whole screen and its Camera.
+   */
+  ui: UiStore;
   overlay: ReturnType<typeof useSharedValue<OverlayData>>;
   onPose: (s: PoseSample) => void;
   onAttitude: (a: PhoneAttitude) => void;
@@ -88,8 +123,11 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
       new PushupSession({
         config: sessionConfig(settings),
         exercise: settings.exercise,
-        targetReps: settings.targetReps > 0 ? settings.targetReps : null,
-        targetHoldMs: settings.targetHoldSec > 0 ? settings.targetHoldSec * 1000 : null,
+        // Each exercise has its own target: reps, or seconds of good form for planks.
+        targetReps:
+          !isTimed(settings.exercise) && targetFor(settings, settings.exercise) > 0 ? targetFor(settings, settings.exercise) : null,
+        targetHoldMs:
+          isTimed(settings.exercise) && targetFor(settings, settings.exercise) > 0 ? targetFor(settings, settings.exercise) * 1000 : null,
         difficulty: settings.difficulty,
       }),
     // A session is created once per screen; settings changes apply to the next set.
@@ -103,8 +141,7 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
   // causes; resume only once both have cleared, or one would undo the other.
   const away = useRef({ app: false, camera: false });
   const store = useMemo(() => createSnapshotStore(session), [session]);
-  const [repMarks, setRepMarks] = useState<boolean[]>([]);
-  const [banner, setBanner] = useState<Banner | null>(null);
+  const ui = useMemo(() => createUiStore(), []);
   const overlay = useSharedValue<OverlayData>(EMPTY_OVERLAY);
   const countingStartedWall = useRef<number | null>(null);
   const onEndedRef = useRef(onEnded);
@@ -115,11 +152,14 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
     settingsRef.current = settings;
   });
 
-  const showBanner = useCallback((b: Copy & { tone: Banner['tone'] }) => {
-    setBanner({ ...b, id: Date.now() });
-    if (bannerTimer.current) clearTimeout(bannerTimer.current);
-    bannerTimer.current = setTimeout(() => setBanner(null), 2200);
-  }, []);
+  const showBanner = useCallback(
+    (b: Copy & { tone: Banner['tone'] }) => {
+      ui.set({ banner: { ...b, id: Date.now() } });
+      if (bannerTimer.current) clearTimeout(bannerTimer.current);
+      bannerTimer.current = setTimeout(() => ui.set({ banner: null }), 2200);
+    },
+    [ui],
+  );
 
   // Engine events → voice, banners, rep marks, end.
   useEffect(() => {
@@ -127,9 +167,9 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
       if (e.type === 'cue') {
         handleCue(e.cue);
       } else if (e.type === 'rep') {
-        setRepMarks((m) => [...m, e.rep.clean]);
+        ui.set((u) => ({ repMarks: [...u.repMarks, e.rep.clean] }));
       } else if (e.type === 'revoke') {
-        setRepMarks((m) => m.slice(0, Math.max(0, m.length - e.reps)));
+        ui.set((u) => ({ repMarks: u.repMarks.slice(0, Math.max(0, u.repMarks.length - e.reps)) }));
       } else if (e.type === 'phase') {
         if (e.phase === 'body-check') tapSuccess();
         if (e.phase === 'counting' && countingStartedWall.current === null) countingStartedWall.current = Date.now();
@@ -155,7 +195,7 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
     return () => {
       off();
     };
-  }, [session, coach, showBanner, store]);
+  }, [session, coach, showBanner, store, ui]);
 
   // Timers: engine timeouts and a 10 Hz UI snapshot.
   useEffect(() => {
@@ -262,38 +302,45 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
     await saveRecording(r.finish({ platform: Platform.OS, model, config: sessionOverrides(st), exercise: st.exercise }));
   }, []);
 
-  return {
-    store,
-    config: session.cfg,
-    repMarks,
-    banner,
-    overlay,
-    onPose,
-    onAttitude,
-    onDepth,
-    confirmPhone,
-    end,
-    wallStart: () => countingStartedWall.current ?? Date.now(),
-    saveTuningRecording,
-    interrupt: () => {
-      const t = performance.now();
-      const a = away.current;
-      const wasAway = a.app || a.camera;
-      a.camera = true;
-      if (wasAway) return;
-      session.interrupt(t);
-      recorder.current?.interrupt(t);
-    },
-    resume: () => {
-      const t = performance.now();
-      const a = away.current;
-      if (!a.camera) return;
-      a.camera = false;
-      if (a.app) return;
-      session.resumeFromInterrupt(t);
-      recorder.current?.resume(t);
-    },
-  };
+  const wallStart = useCallback(() => countingStartedWall.current ?? Date.now(), []);
+  const interrupt = useCallback(() => {
+    const t = performance.now();
+    const a = away.current;
+    const wasAway = a.app || a.camera;
+    a.camera = true;
+    if (wasAway) return;
+    session.interrupt(t);
+    recorder.current?.interrupt(t);
+  }, [session]);
+  const resume = useCallback(() => {
+    const t = performance.now();
+    const a = away.current;
+    if (!a.camera) return;
+    a.camera = false;
+    if (a.app) return;
+    session.resumeFromInterrupt(t);
+    recorder.current?.resume(t);
+  }, [session]);
+
+  // One stable object: callbacks built from it (camera error and interruption handlers) don't change per rep.
+  return useMemo(
+    () => ({
+      store,
+      config: session.cfg,
+      ui,
+      overlay,
+      onPose,
+      onAttitude,
+      onDepth,
+      confirmPhone,
+      end,
+      wallStart,
+      saveTuningRecording,
+      interrupt,
+      resume,
+    }),
+    [store, session, ui, overlay, onPose, onAttitude, onDepth, confirmPhone, end, wallStart, saveTuningRecording, interrupt, resume],
+  );
 }
 
 /** Compact one-line view of the engine state, for the Metro log on a real device. */
