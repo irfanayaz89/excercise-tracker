@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DIFFICULTIES } from '@/engine/difficulty';
 import { EXERCISES, isExercise, isTimed, viewFor } from '@/engine/exercises';
 import type { Exercise } from '@/engine/types';
-import { setupSteps } from '@/features/exercise/setupSteps';
 import { TechniqueSteps } from '@/features/exercise/TechniqueList';
 import { safetyNotes } from '@/features/onboarding/safety';
 import { HistoryList } from '@/features/history/HistoryList';
@@ -69,7 +68,6 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
       )
     : null;
   const guided = settings.experience !== 'quick';
-  const levelCopy = difficultyCopy(settings.difficulty, exercise);
   const art = Math.min(width, 560) - space.xl * 4;
   const view = viewFor(exercise, settings.views);
   const notes = safetyNotes(settings.safety, exercise);
@@ -173,78 +171,6 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
           </View>
         )}
 
-        {info.frontView && (
-          <View style={{ gap: space.md }}>
-            <Label>Camera view</Label>
-            <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Camera view">
-              <Chip
-                label="Side-on"
-                selected={view === 'side'}
-                onPress={() => update({ views: { ...settings.views, [exercise]: 'side' } })}
-              />
-              <Chip
-                label="Facing the phone"
-                selected={view === 'front'}
-                onPress={() => update({ views: { ...settings.views, [exercise]: 'front' } })}
-              />
-            </View>
-            <Body tone="muted" size={type.note}>
-              {view === 'side'
-                ? 'The phone beside you sees your whole body line: the strictest form checks.'
-                : exercise === 'plank'
-                  ? 'The phone on the floor beyond your hands. Easier to set up; times the hold and checks your arms. Hips and knees are only judged side-on, so plank test mode ends only when you drop out of position.'
-                  : 'The phone on the floor beyond your hands. Easier to set up; counts reps and checks depth, arms and elbows. Hips and knees are only judged side-on, so knee push-ups count here.'}
-            </Body>
-          </View>
-        )}
-
-        {guided ? (
-          <View style={styles.card}>
-            <Label tone="vial">Before you start</Label>
-            <OrientationPicker value={settings.orientation} onChange={(orientation) => update({ orientation })} />
-            <View style={{ gap: space.md }}>
-              {setupSteps(exercise, settings.difficulty, settings.orientation, view).map((s, i) => (
-                <View key={i} style={{ flexDirection: 'row', gap: space.md }}>
-                  <Display size={type.displayS} tone="vial" style={{ width: 22 }}>
-                    {i + 1}
-                  </Display>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Strong>{s.title}</Strong>
-                    <Body tone="muted" size={type.note}>
-                      {s.body}
-                    </Body>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : (
-          <View style={{ gap: space.md }}>
-            <Label>Phone</Label>
-            <OrientationPicker compact value={settings.orientation} onChange={(orientation) => update({ orientation })} />
-          </View>
-        )}
-
-        <View style={{ gap: space.md }}>
-          <Label>Difficulty · all exercises</Label>
-          <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Difficulty, for all exercises">
-            {DIFFICULTIES.map((d) => (
-              <Chip
-                key={d}
-                label={difficultyCopy(d, exercise).label}
-                selected={settings.difficulty === d}
-                onPress={() => update({ difficulty: d })}
-              />
-            ))}
-          </View>
-          <View style={{ gap: 2 }}>
-            <Strong size={type.detail}>{levelCopy.short}</Strong>
-            <Body tone="muted" size={type.note}>
-              {levelCopy.detail}
-            </Body>
-          </View>
-        </View>
-
         <View style={{ gap: space.md }}>
           <Label>{info.perSide ? 'Target · each side' : 'Target'}</Label>
           <View style={styles.chips}>
@@ -266,13 +192,16 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
                   />
                 ))}
           </View>
-          <FocusChooser />
-          {__DEV__ && (
-            <Pressable accessibilityRole="button" onPress={start(true)} hitSlop={8} style={{ alignSelf: 'center' }}>
-              <Label tone="muted">Preview a demo set</Label>
-            </Pressable>
-          )}
         </View>
+
+        {/* Camera view, phone, difficulty and focus: set once, rarely changed, so one row says what they are. */}
+        <SetOptions exercise={exercise} view={view} />
+
+        {__DEV__ && (
+          <Pressable accessibilityRole="button" onPress={start(true)} hitSlop={8} style={{ alignSelf: 'center' }}>
+            <Label tone="muted">Preview a demo set</Label>
+          </Pressable>
+        )}
 
         <View style={{ gap: space.md }}>
           <Label>History</Label>
@@ -283,6 +212,97 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
       <View style={[styles.footer, { paddingBottom: insets.bottom + space.md }]}>
         <Button label={`Start ${info.label.toLowerCase()}`} size="lg" onPress={start()} />
       </View>
+    </View>
+  );
+}
+
+/**
+ * The set's options in one row ("Side-on · Landscape · Medium · Focus off"), opening to change them.
+ * Each choice keeps its one-line explanation once open.
+ */
+function SetOptions({ exercise, view }: { exercise: Exercise; view: ReturnType<typeof viewFor> }) {
+  const [settings, update] = useSettings();
+  const [open, setOpen] = useState(false);
+  const st = useScreenTime();
+  const info = EXERCISES[exercise];
+  const level = difficultyCopy(settings.difficulty, exercise);
+  const pull = exercise === 'pullup';
+  const focusOn = st.meta.setUp && st.availability !== 'unsupported';
+  const focus = st.meta.focusChoice;
+  const summary = [
+    info.frontView ? (view === 'side' ? 'Side-on' : 'Facing the phone') : null,
+    pull ? null : settings.orientation === 'landscape' ? 'Landscape' : 'Portrait',
+    level.label,
+    focusOn ? (focus === null ? 'Focus off' : focus === 'set' ? 'Focus this set' : `Focus ${focus} min`) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <View style={styles.card}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`Set options: ${summary}`}
+        accessibilityHint={open ? 'Hides the options' : 'Shows the options to change them'}
+        onPress={() => setOpen((o) => !o)}
+        style={styles.optionsHead}
+      >
+        <View style={{ flex: 1, gap: 2 }}>
+          <Label>Set options</Label>
+          <Strong size={type.detail}>{summary}</Strong>
+        </View>
+        <Label tone="vial">{open ? 'Done' : 'Change'}</Label>
+      </Pressable>
+      {open && (
+        <>
+          {info.frontView && (
+            <View style={{ gap: space.sm }}>
+              <Label>Camera view</Label>
+              <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Camera view">
+                <Chip
+                  label="Side-on"
+                  selected={view === 'side'}
+                  onPress={() => update({ views: { ...settings.views, [exercise]: 'side' } })}
+                />
+                <Chip
+                  label="Facing the phone"
+                  selected={view === 'front'}
+                  onPress={() => update({ views: { ...settings.views, [exercise]: 'front' } })}
+                />
+              </View>
+              <Body tone="muted" size={type.note}>
+                {view === 'side'
+                  ? 'The phone beside you sees your whole body line: the strictest form checks.'
+                  : 'The phone on the floor beyond your hands: easier to set up. Hips and knees are only judged side-on.'}
+              </Body>
+            </View>
+          )}
+          {!pull && (
+            <View style={{ gap: space.sm }}>
+              <Label>Phone</Label>
+              <OrientationPicker compact value={settings.orientation} onChange={(orientation) => update({ orientation })} />
+            </View>
+          )}
+          <View style={{ gap: space.sm }}>
+            <Label>Difficulty · all exercises</Label>
+            <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Difficulty, for all exercises">
+              {DIFFICULTIES.map((d) => (
+                <Chip
+                  key={d}
+                  label={difficultyCopy(d, exercise).label}
+                  selected={settings.difficulty === d}
+                  onPress={() => update({ difficulty: d })}
+                />
+              ))}
+            </View>
+            <Body tone="muted" size={type.note}>
+              {`${level.short}. ${level.detail}`}
+            </Body>
+          </View>
+          <FocusChooser />
+        </>
+      )}
     </View>
   );
 }
@@ -358,6 +378,7 @@ const styles = StyleSheet.create({
     borderColor: color.lineSoft,
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  optionsHead: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 44 },
   cardHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
