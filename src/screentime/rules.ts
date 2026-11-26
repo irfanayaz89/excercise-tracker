@@ -70,7 +70,16 @@ export const DEFAULT_RULES: ScreenTimeRules = {
   dailyLimitMin: 60,
   lockTimes: [],
   // A 60 min base plus a 60 min earning most: exercise adds to the day, it doesn't double it.
-  earning: { enabled: true, rates: DEFAULT_RATES, dailyCapMin: 60, fullRateMin: 30, milestoneMin: 5, setCapPe: 40, firstSetMin: 3, comebackMin: 5 },
+  earning: {
+    enabled: true,
+    rates: DEFAULT_RATES,
+    dailyCapMin: 60,
+    fullRateMin: 30,
+    milestoneMin: 5,
+    setCapPe: 40,
+    firstSetMin: 3,
+    comebackMin: 5,
+  },
   strictness: 'standard',
   appLimits: [],
   pause: { enabled: false, seconds: 10 },
@@ -78,11 +87,6 @@ export const DEFAULT_RULES: ScreenTimeRules = {
   strictUntil: null,
   pending: null,
 };
-
-/** The wait before a paused app opens, after `passesToday` passes. */
-export function pauseSeconds(p: PauseRules, passesToday: number): number {
-  return Math.min(PAUSE_MAX_S, p.seconds + PAUSE_STEP_S * Math.max(0, passesToday));
-}
 
 /** Ready-made lock times offered when adding one. */
 export const LOCK_PRESETS: Omit<LockTime, 'id'>[] = [
@@ -173,7 +177,8 @@ function earning(v: unknown): EarningRules {
   }
   const capRaw = typeof o.dailyCapMin === 'number' && Number.isFinite(o.dailyCapMin) ? o.dailyCapMin : null;
   // Older builds allowed up to 240: those are clamped to today's most; anything beyond that is junk.
-  const cap = capRaw === null || capRaw < 0 || capRaw > 240 ? DEFAULT_RULES.earning.dailyCapMin : Math.min(MAX_DAILY_CAP_MIN, Math.round(capRaw));
+  const cap =
+    capRaw === null || capRaw < 0 || capRaw > 240 ? DEFAULT_RULES.earning.dailyCapMin : Math.min(MAX_DAILY_CAP_MIN, Math.round(capRaw));
   return {
     enabled: o.enabled !== false,
     rates,
@@ -199,7 +204,10 @@ function core(o: Record<string, unknown>): RulesCore {
     ),
     earning: earning(o.earning),
     strictness: o.strictness === 'nudge' || o.strictness === 'strict' ? o.strictness : 'standard',
-    appLimits: (Array.isArray(o.appLimits) ? o.appLimits.map(appLimit).filter((l): l is AppLimit => l !== null) : []).slice(0, MAX_APP_LIMITS),
+    appLimits: (Array.isArray(o.appLimits) ? o.appLimits.map(appLimit).filter((l): l is AppLimit => l !== null) : []).slice(
+      0,
+      MAX_APP_LIMITS,
+    ),
     pause: pause(o.pause),
     silenceNotifications: o.silenceNotifications === true,
   };
@@ -410,7 +418,8 @@ function touchesRunningLock(zone: Zone, prev: RulesCore, next: RulesCore, now: n
     if (!still || still.end < occ.end || (n.earnable && !p.earnable)) return true;
     if (p.apps === 'all' && n.apps !== 'all') return true;
     if (p.apps === 'main' && n.apps !== 'main' && n.apps !== 'all') return true;
-    if (p.apps !== 'main' && p.apps !== 'all' && (n.apps === 'main' || n.apps === 'all' || !subset(asSet(p.apps), asSet(n.apps)))) return true;
+    if (p.apps !== 'main' && p.apps !== 'all' && (n.apps === 'main' || n.apps === 'all' || !subset(asSet(p.apps), asSet(n.apps))))
+      return true;
   }
   return false;
 }
@@ -493,7 +502,8 @@ export function endStrictEarly(r: ScreenTimeRules, now: number, verifiedPushupsS
     return {
       result: 'applied',
       rules: { ...r, strictness: 'standard', strictUntil: null, pending: null },
-      cancelledPending: r.pending !== null,
+      // The waiting "end Strict" request is what just happened; only some other easier change is dropped.
+      cancelledPending: r.pending !== null && r.pending.next.strictness === 'strict',
     };
   }
   const effectiveAt = now + STRICT_WAIT_MS;
@@ -504,7 +514,11 @@ export function endStrictEarly(r: ScreenTimeRules, now: number, verifiedPushupsS
 export function skipNext(zone: Zone, r: ScreenTimeRules, lockId: string, now: number, focus: Focus | null = null): ChangeResult {
   const lock = r.lockTimes.find((l) => l.id === lockId);
   if (!lock) return { result: 'refused', rules: r, reason: 'invalid' };
-  const occ = activeOccurrence(zone, lock, now) ?? occurrences(zone, lock, now, 7).find((o) => o.start > now);
+  // A skip is loosening, so it waits (Standard: midnight; Strict: 24 h). Skip the first occurrence that starts
+  // once it applies: skipping tonight's at noon in Standard would only cut it from 00:00, and in Strict never.
+  const mode = effectiveStrictness(r, now);
+  const from = mode === 'standard' ? nextMidnight(zone, now) : mode === 'strict' ? now + STRICT_WAIT_MS : now;
+  const occ = (mode === 'nudge' ? activeOccurrence(zone, lock, now) : null) ?? occurrences(zone, lock, now, 9).find((o) => o.start >= from);
   if (!occ) return { result: 'refused', rules: r, reason: 'invalid' };
   const next = { ...coreOf(r), lockTimes: r.lockTimes.map((l) => (l.id === lockId ? { ...l, skipDate: occ.day } : l)) };
   return requestChange(zone, r, next, now, focus);

@@ -11,7 +11,13 @@ import type { Focus } from '../types';
 import { HOUR, MIN, T, london, rules } from './helpers';
 
 const NOW = T(london, '2026-11-18 12:00');
-const keyLock = (over: Partial<Focus> = {}): Focus => ({ kind: 'key', startedAt: NOW - MIN, until: NOW + 8 * HOUR, strict: false, ...over });
+const keyLock = (over: Partial<Focus> = {}): Focus => ({
+  kind: 'key',
+  startedAt: NOW - MIN,
+  until: NOW + 8 * HOUR,
+  strict: false,
+  ...over,
+});
 const blocked = { apps: ['a'], categories: [], domains: [] };
 
 describe('a key lock can only be lifted with the key', () => {
@@ -20,7 +26,9 @@ describe('a key lock can only be lifted with the key', () => {
     const res = requestChange(london, r, { ...coreOf(r), blocked: { apps: [], categories: [], domains: [] } }, NOW, keyLock());
     expect(res).toMatchObject({ result: 'refused', reason: 'focus-locked' });
     // Without the lock it applies at once, as Nudge always has.
-    expect(requestChange(london, r, { ...coreOf(r), blocked: { apps: [], categories: [], domains: [] } }, NOW, null).result).toBe('applied');
+    expect(requestChange(london, r, { ...coreOf(r), blocked: { apps: [], categories: [], domains: [] } }, NOW, null).result).toBe(
+      'applied',
+    );
   });
 
   test('tightening still works during the lock', () => {
@@ -52,7 +60,10 @@ describe('unlocks around midnight', () => {
   test("an unlock taken at 23:55 that runs past midnight doesn't use up the next day's", () => {
     const r = rules({ strictness: 'standard', dailyLimitMin: 0, blocked });
     const after = T(london, '2026-11-19 00:02');
-    const log = { ...freshDay(london, after), unlocks: [{ kind: 'emergency' as const, from: T(london, '2026-11-18 23:55'), until: T(london, '2026-11-19 00:05') }] };
+    const log = {
+      ...freshDay(london, after),
+      unlocks: [{ kind: 'emergency' as const, from: T(london, '2026-11-18 23:55'), until: T(london, '2026-11-19 00:05') }],
+    };
     const d = decide(london, r, log, T(london, '2026-11-19 00:06'));
     expect(d.emergency.available).toBe(true);
   });
@@ -92,7 +103,19 @@ describe('a key lock holds back easier changes', () => {
     const r = rules({
       strictness: 'nudge',
       blocked,
-      lockTimes: [{ id: 'l', name: 'Evening', days: [0, 1, 2, 3, 4, 5, 6], start: '18:00', end: '22:00', apps: 'main', earnable: false, enabled: true, skipDate: null }],
+      lockTimes: [
+        {
+          id: 'l',
+          name: 'Evening',
+          days: [0, 1, 2, 3, 4, 5, 6],
+          start: '18:00',
+          end: '22:00',
+          apps: 'main',
+          earnable: false,
+          enabled: true,
+          skipDate: null,
+        },
+      ],
     });
     expect(skipNext(london, r, 'l', NOW, keyLock())).toMatchObject({ result: 'refused', reason: 'focus-locked' });
   });
@@ -106,7 +129,10 @@ describe('a key lock holds back easier changes', () => {
   test("an unlock carried over from last night doesn't use up today's on the phone", () => {
     const r = rules({ strictness: 'standard', dailyLimitMin: 0, blocked });
     const at = T(london, '2026-11-19 00:06');
-    const log = { ...freshDay(london, at), unlocks: [{ kind: 'emergency' as const, from: T(london, '2026-11-18 23:55'), until: T(london, '2026-11-19 00:05') }] };
+    const log = {
+      ...freshDay(london, at),
+      unlocks: [{ kind: 'emergency' as const, from: T(london, '2026-11-18 23:55'), until: T(london, '2026-11-19 00:05') }],
+    };
     expect(toNativePlan(london, r, log, at).emergenciesLeft).toBe(1);
   });
 });

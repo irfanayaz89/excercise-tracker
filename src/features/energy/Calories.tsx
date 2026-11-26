@@ -7,7 +7,7 @@ import { useProfile } from '@/storage/profile';
 import { Body, LinkText, Strong } from '@/ui/primitives';
 import { type } from '@/ui/theme';
 
-/** Weight and age for the calorie maths, once the user has given them. */
+/** Weight, height and sex for the calorie maths, once the user has given them. */
 export function useEnergyBody(): ExerciseBody | null {
   const [profile] = useProfile();
   return profile ? { weightKg: profile.weightKg, heightCm: profile.heightCm, sex: profile.sex } : null;

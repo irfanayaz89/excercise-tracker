@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { AccessibilityInfo, Platform, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
-import type { SessionSnapshot } from '@/engine/session';
+import { heldMs, type SessionSnapshot } from '@/engine/session';
 import { formatDuration, pauseCopy } from '@/session/copy';
 import type { Banner } from '@/session/useSessionController';
 import { DepthGauge } from '@/ui/DepthGauge';
@@ -176,7 +176,7 @@ export function DepthColumn({ snap }: { snap: SessionSnapshot }) {
 
 export function PausedPanel({ snap, onEnd, confirming = false }: { snap: SessionSnapshot; onEnd: () => void; confirming?: boolean }) {
   const c = pauseCopy(snap.pauseReason ?? 'lost-tracking', snap.exercise);
-  const saved = isTimed(snap.exercise) ? `${formatDuration(snap.hold?.goodMs ?? 0)} saved` : `${snap.reps} reps saved`;
+  const saved = isTimed(snap.exercise) ? `${formatDuration(heldMs(snap))} saved` : `${snap.reps} reps saved`;
   // A screen instead of a person is an alert, not a rest: red, and stays up until a real person is back.
   const notReal = snap.pauseReason === 'not-real';
   return (

@@ -3,7 +3,7 @@
  * What's blocked right now (plan §5): lock times, the daily limit, earned
  * time, temporary unlocks and the day rolling over, in every combination.
  */
-import { addUsage, decide, EMERGENCY_MIN, freshDay, rollDay, takeUnlock } from '../decide';
+import { decide, EMERGENCY_MIN, freshDay, rollDay, takeUnlock } from '../decide';
 import { startStrict } from '../rules';
 import type { DayLog } from '../types';
 import { HOUR, lock, london, MIN, newYork, rules, show, T } from './helpers';
@@ -39,16 +39,6 @@ describe('daily limit', () => {
     const log = day('2026-11-18 23:00', { usedMin: 60 });
     expect(decide(london, r, log, at('2026-11-18 23:59')).blocked).toBe(true);
     expect(decide(london, r, log, at('2026-11-19 00:00')).blocked).toBe(false);
-  });
-
-  it('usage reports add up; earned-time usage never exceeds what was earned', () => {
-    let log = day('2026-11-18 12:00', { earnedMin: 10 });
-    log = addUsage(log, 25, false);
-    log = addUsage(log, 30, false);
-    log = addUsage(log, 15, true);
-    expect(log.usedMin).toBe(55);
-    expect(log.earnedUsedMin).toBe(10);
-    expect(addUsage(log, -5, false).usedMin).toBe(55);
   });
 });
 

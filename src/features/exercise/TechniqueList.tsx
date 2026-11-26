@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 import type { Exercise } from '@/engine/types';
-import { Body, Display, Label, Strong } from '@/ui/primitives';
+import { Body, Display, Strong } from '@/ui/primitives';
 import { color, radius, space, type } from '@/ui/theme';
 import { TECHNIQUE } from './technique';
 
@@ -23,39 +23,6 @@ export function TechniqueSteps({ exercise, compact = false }: { exercise: Exerci
           </View>
         </View>
       ))}
-    </View>
-  );
-}
-
-/** Common mistakes, breathing, how much to start with, and the safety note. */
-export function TechniqueAvoid({ exercise }: { exercise: Exercise }) {
-  const t = TECHNIQUE[exercise];
-  return (
-    <View style={{ gap: space.xl }}>
-      <View style={{ gap: space.sm }} accessibilityRole="list">
-        {t.avoid.map((a) => (
-          <View key={a} style={styles.row}>
-            <Strong tone="cue" style={{ width: 18 }}>
-              ✕
-            </Strong>
-            <Body style={{ flex: 1 }} size={type.detail}>
-              {a}
-            </Body>
-          </View>
-        ))}
-      </View>
-      <View style={{ gap: space.xs }}>
-        <Label tone="vial">Breathing</Label>
-        <Body size={type.detail}>{t.breathe}</Body>
-      </View>
-      <View style={{ gap: space.xs }}>
-        <Label tone="vial">To start</Label>
-        <Body size={type.detail}>{t.dose}</Body>
-      </View>
-      <View style={styles.safety}>
-        <Label tone="cue">Take care</Label>
-        <Body size={type.note}>{t.safety}</Body>
-      </View>
     </View>
   );
 }

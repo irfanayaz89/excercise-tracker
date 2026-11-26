@@ -320,7 +320,8 @@ export class RepCounter {
     if (f.enabled && durationMs < r.rushedRepMs) faults.push('rushed');
     // Knees let down mid-set (a full start was straight-legged): the rep counts, flagged.
     const knee = percentile(a.knees, FORM_PCT);
-    if (f.enabled && !this.cfg.allowKneeling && knee !== null && knee < this.cfg.plank.minKneeDeg - this.cfg.hold.kneeBendDeg) faults.push('knees-bent');
+    if (f.enabled && !this.cfg.allowKneeling && knee !== null && knee < this.cfg.plank.minKneeDeg - this.cfg.hold.kneeBendDeg)
+      faults.push('knees-bent');
     // Front view: what head-on shows that side-on can't.
     if (f.enabled && this.cfg.view === 'front') {
       const flare = percentile(a.flares, 1 - FORM_PCT);

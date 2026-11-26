@@ -79,7 +79,11 @@ export function setsKcal(rows: SessionRow[], body: ExerciseBody): Kcal {
  * the week reaches its target. A broken streak demotivates most when people
  * blame themselves, so Home also shows the best streak and totals kept.
  */
-export function weekStreak(rows: Pick<SessionRow, 'startedAt'>[], target: number, now = Date.now()): { current: number; best: number; thisWeekMet: boolean } {
+export function weekStreak(
+  rows: Pick<SessionRow, 'startedAt'>[],
+  target: number,
+  now = Date.now(),
+): { current: number; best: number; thisWeekMet: boolean } {
   const WEEK = 7 * 86_400_000;
   const start = weekStart(now);
   const days = new Map<number, Set<string>>();
@@ -103,7 +107,6 @@ export function weekStreak(rows: Pick<SessionRow, 'startedAt'>[], target: number
   return { current, best: Math.max(best, current), thisWeekMet };
 }
 
-/** Days since the last saved set (null with no sets). */
 /** Calendar days since the last saved set (null with no sets): a set late yesterday evening is 1 day ago. */
 export function daysSinceLastSet(rows: SessionRow[], now = Date.now()): number | null {
   if (rows.length === 0) return null;

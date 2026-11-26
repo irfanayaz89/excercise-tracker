@@ -49,7 +49,7 @@ describe('plank: dipping in and out of form', () => {
     for (let i = 0; i < 27; i++) cycle.push(sidePlank(850, { sag: 0.3 }), sidePlank(250));
     h.segs(cycle);
     const sides = h.s.snapshot().holdSides ?? {};
-    const good = Object.values(sides).reduce<number>((n, x) => n + (typeof x === "number" ? x : 0), 0);
+    const good = Object.values(sides).reduce<number>((n, x) => n + (typeof x === 'number' ? x : 0), 0);
     expect(good).toBeLessThan(15_000);
   });
 
@@ -131,7 +131,11 @@ describe('a video shown to a moving phone', () => {
   test.each([6, 20])('a phone held and turning at %s°/s pauses the set instead of counting the screen', (motion) => {
     const h = make('hard');
     h.segs([hold(2600)]);
-    h.segs(Array.from({ length: 10 }, () => rep(1600)), motion, shake);
+    h.segs(
+      Array.from({ length: 10 }, () => rep(1600)),
+      motion,
+      shake,
+    );
     expect(paused(h)).toBe(true);
     expect(h.s.snapshot().reps).toBeLessThanOrEqual(1);
   });
@@ -139,7 +143,10 @@ describe('a video shown to a moving phone', () => {
   test('a phone lying still never pauses for movement', () => {
     const h = make('hard');
     h.segs([hold(2600)]);
-    h.segs(Array.from({ length: 6 }, () => rep(1600)), 1);
+    h.segs(
+      Array.from({ length: 6 }, () => rep(1600)),
+      1,
+    );
     expect(paused(h)).toBe(false);
     expect(h.s.snapshot().reps).toBe(6);
   });

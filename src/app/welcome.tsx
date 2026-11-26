@@ -46,7 +46,7 @@ const FOCUS: Record<Aim, Exercise[]> = {
 };
 
 /**
- * First launch (and "Redo setup" in Settings): what you want, a few numbers
+ * First launch (and "Your goal and plan" in Settings): what you want, a few numbers
  * about you, a goal, and a plan with honest numbers. Then the camera. Four
  * short screens; everything stays on the phone.
  */
@@ -57,7 +57,8 @@ export default function Welcome() {
   const [saved, setProfile] = useProfile();
   const screenTime = useScreenTime();
   // A saved profile is the starting point whenever there is one (redo, or settings lost while the profile survived).
-  const [p, setP] = useState<Profile>(() => (saved ? { ...saved } : defaultProfile()));
+  // Coming back later to add a weight (setup was skipped): start from Stay active, not a weight-loss goal.
+  const [p, setP] = useState<Profile>(() => (saved ? { ...saved } : { ...defaultProfile(), aim: redo ? 'stay-active' : 'lose-fat' }));
   const [safety, setSafety] = useState<SafetyFlag[]>(settings.safety);
   const set = (patch: Partial<Profile>) => setP((d) => ({ ...d, ...patch }));
 
@@ -232,11 +233,13 @@ const AIMS: { value: Aim; title: string; detail: string }[] = [
 ];
 
 function AimStep({ p, set, next }: StepProps) {
+  // Earning screen time needs Screen Time on this phone: don't offer an aim it can't keep.
+  const canBlock = useScreenTime().availability !== 'unsupported';
   return (
     <>
       <Title title="What are you here for?" />
       <View style={{ gap: space.sm }}>
-        {AIMS.map((a) => (
+        {AIMS.filter((a) => a.value !== 'less-screen' || canBlock || p.aim === 'less-screen').map((a) => (
           <Lane
             key={a.value}
             title={a.title}
@@ -305,7 +308,7 @@ function YouStep({ p, set, next, safety, setSafety }: StepProps) {
         detail={
           full
             ? 'Used for your calorie plan and the calories each set burns. It stays on this phone.'
-            : 'Your weight and age give the calories each set burns. It stays on this phone.'
+            : 'Your weight gives the calories each set burns. It stays on this phone.'
         }
       />
       <Segmented
@@ -401,7 +404,7 @@ function YouStep({ p, set, next, safety, setSafety }: StepProps) {
         </View>
       </View>
       {(safety.includes('heart') || safety.includes('injury')) && (
-        <Note tone="cue">Check with your doctor before you start. Trueline will start you on Easy, and you can stop any time.</Note>
+        <Note>Check with your doctor before you start. Trueline will start you on Easy, and you can stop any time.</Note>
       )}
       <Button label="Continue" size="lg" onPress={next} />
     </>
@@ -436,7 +439,7 @@ function WaistField({ p, set }: Pick<StepProps, 'p' | 'set'>) {
       />
       {bf !== null && (
         <Body tone="muted" size={type.note}>
-          {`Body fat about ${Math.round(bf)}% (give or take 5), from your waist and height. Watch it fall even when the scale doesn't move.`}
+          {`Body fat about ${Math.round(bf)}% (give or take 5), from your waist and height. Measure again from Your goal and plan to see it change.`}
         </Body>
       )}
       <Pressable accessibilityRole="button" hitSlop={8} onPress={() => set({ waistCm: null })} style={{ alignSelf: 'flex-start' }}>
@@ -476,8 +479,11 @@ const weeklyLoss = (kg: number, units: Profile['units']) =>
 
 function WeightGoal({ p, set, next }: StepProps) {
   const floor = Math.ceil(lowestHealthyKg(p.heightCm) * 2) / 2;
-  // At least a kilo of room above the floor, or the target field's lowest value would be above its highest.
-  const tooLight = p.weightKg - 1 < floor;
+  // Room for a target above the floor (a kilo, so the lb field's lowest value stays under its highest). A goal
+  // already set inside that room is kept: someone near their target can still change their pace or days.
+  const hasTarget = p.targetKg !== null && p.targetKg >= floor && p.targetKg < p.weightKg;
+  const tooLight = p.weightKg - 1 < floor && !hasTarget;
+  const under = p.weightKg < lowestHealthyKg(p.heightCm);
   const suggested = Math.max(floor, Math.round(p.weightKg * 0.95 * 2) / 2);
   const target = p.targetKg !== null && p.targetKg < p.weightKg && p.targetKg >= floor ? p.targetKg : suggested;
   useEffect(() => {
@@ -489,8 +495,12 @@ function WeightGoal({ p, set, next }: StepProps) {
     return (
       <>
         <Title
-          title="You are already at a healthy weight"
-          detail={`At your height, going under ${weight(floor, p.units)} would put you below a healthy weight (BMI 18.5), so Trueline won't set a weight-loss goal. Building strength is a better aim.`}
+          title={under ? 'Losing weight isn’t advised for you' : 'You are already at a healthy weight'}
+          detail={
+            under
+              ? `At your height, a healthy weight starts at ${weight(floor, p.units)}, so Trueline won't set a weight-loss goal. Building strength is a better aim.`
+              : `At your height, going under ${weight(floor, p.units)} would put you below a healthy weight (BMI 18.5), so Trueline won't set a weight-loss goal. Building strength is a better aim.`
+          }
         />
         <Button
           label="Get stronger instead"
@@ -656,7 +666,6 @@ function PlanStep({ p, next, safety }: StepProps) {
       ...(noDiet ? [] : ([['Eat', `about ${kcal(fuel.eatKcal)} kcal a day`]] as [string, string][])),
       burn,
     ];
-    note = null;
   } else if (p.aim === 'less-screen') {
     head = (
       <>
@@ -693,7 +702,7 @@ function PlanStep({ p, next, safety }: StepProps) {
       </View>
       {note && <Body size={type.note}>{note}</Body>}
       {noDiet && (
-        <Note tone="cue">
+        <Note>
           {p.age < 18
             ? 'Under 18, your body is still growing: Trueline won’t set a calorie target. Workouts and a varied diet are the plan.'
             : 'While pregnant or soon after birth, don’t diet to lose weight. Ask your midwife or doctor what suits you.'}
@@ -703,7 +712,7 @@ function PlanStep({ p, next, safety }: StepProps) {
         perSession={perWorkout}
         perWeek={p.daysPerWeek}
         units={p.units}
-        dailyDeficit={plan && Number.isFinite(plan.weeks) ? weightPlan(b, p.targetKg!, p.pace).dailyDeficit : 0}
+        dailyDeficit={plan && Number.isFinite(plan.weeks) ? plan.dailyDeficit : 0}
         targetChangeKg={plan && Number.isFinite(plan.weeks) ? p.weightKg - p.targetKg! : null}
       />
       <Body tone="muted" size={type.caption}>
@@ -800,33 +809,14 @@ function Big({ value, label }: { value: string; label: string }) {
   );
 }
 
-/** A choice row: title, one line of detail and a round (or square, for multi) mark. */
-function Lane({
-  title,
-  detail,
-  selected,
-  onPress,
-  compact = false,
-  multi = false,
-}: {
-  title: string;
-  detail?: string;
-  selected: boolean;
-  onPress: () => void;
-  compact?: boolean;
-  multi?: boolean;
-}) {
+/** A choice row: title, one line of detail and a round mark. */
+function Lane({ title, detail, selected, onPress }: { title: string; detail?: string; selected: boolean; onPress: () => void }) {
   return (
     <Pressable
-      accessibilityRole={multi ? 'checkbox' : 'radio'}
-      accessibilityState={multi ? { checked: selected } : { selected }}
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected }}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.option,
-        compact && { paddingVertical: space.md },
-        selected && styles.selected,
-        pressed && { opacity: 0.85 },
-      ]}
+      style={({ pressed }) => [styles.option, selected && styles.selected, pressed && { opacity: 0.85 }]}
     >
       <View style={{ flex: 1, gap: 4 }}>
         <Strong size={type.callout}>{title}</Strong>
@@ -836,7 +826,7 @@ function Lane({
           </Body>
         )}
       </View>
-      <View style={[styles.mark, multi && { borderRadius: 6 }, selected && styles.markOn]} />
+      <View style={[styles.mark, selected && styles.markOn]} />
     </Pressable>
   );
 }
@@ -899,7 +889,7 @@ function More({ label, open: startOpen, children }: { label: string; open: boole
   );
 }
 
-function Note({ children }: { children: ReactNode; tone: 'cue' }) {
+function Note({ children }: { children: ReactNode }) {
   return (
     <View style={styles.warn}>
       <Label tone="cue">Take care</Label>

@@ -5,8 +5,11 @@
  */
 import type { SessionSummary } from '@/engine/session';
 import { freshDay } from '../decide';
-import { earnFromSet, minutesFor, setWorth } from '../earn';
+import { earnFromSet, setPe, setWorth } from '../earn';
 import { london, rules, T } from './helpers';
+
+/** Base minutes for a set: its push-up equivalents, rounded down (before milestones and bonuses). */
+const minutesFor = (...a: Parameters<typeof setPe>) => Math.floor(setPe(...a) + 1e-9);
 
 const NOW = T(london, '2026-11-18 12:00');
 const base: SessionSummary = {
@@ -126,7 +129,7 @@ describe('crediting a set', () => {
     // 10 + milestone 5 + first set of the day 3.
     expect(res).toMatchObject({ minutes: 18, bonus: 8, halfRate: false, reason: 'earned', capped: false });
     expect(res.log.earnedMin).toBe(18);
-    expect(res.log.grants).toEqual([{ id: `s1:${NOW}`, at: NOW, minutes: 18, exercise: 'pushup', sessionId: 's1' }]);
+    expect(res.log.grants).toEqual([{ id: `s1:${NOW}`, at: NOW, minutes: 18, exercise: 'pushup', sessionId: 's1', real: true }]);
     // The second set of the day has no first-set bonus.
     expect(earnFromSet(london, r, res.log, input(reps('pushup', 5, 5), 's2'), NOW).minutes).toBe(5);
   });

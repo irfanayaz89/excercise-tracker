@@ -7,6 +7,7 @@
  */
 import type { SessionSummary } from '@/engine/session';
 import type { NativePlan, NativeReport } from '../plan';
+import { startStrict } from '../rules';
 import { deviceZone } from '../time';
 
 type Auth = 'approved' | 'denied' | 'notDetermined';
@@ -23,7 +24,10 @@ const mockPhone = {
   takeUnlock: (kind: string, minutes: number): void => {
     mockPhone.unlocks.push({ kind, minutes });
     const now = Date.now();
-    mockPhone.report = { ...(mockPhone.report ?? emptyReport(now)), unlocks: [{ kind: kind as 'emergency', from: now, until: now + minutes * 60_000 }] };
+    mockPhone.report = {
+      ...(mockPhone.report ?? emptyReport(now)),
+      unlocks: [{ kind: kind as 'emergency', from: now, until: now + minutes * 60_000 }],
+    };
   },
 };
 
@@ -121,7 +125,7 @@ describe('screen time store', () => {
     expect(last).toMatchObject({ blocked: BLOCKED, dailyLimitMin: 60, limitReached: false, mode: 'standard' });
   });
 
-  it("usage the phone saw while the app was closed counts, and the limit blocks", () => {
+  it('usage the phone saw while the app was closed counts, and the limit blocks', () => {
     const st = setUp();
     const now = Date.now();
     mockPhone.report = { ...emptyReport(now), usedMin: 60, limitReached: true };
@@ -229,7 +233,11 @@ describe('screen time store', () => {
     const st = setUp();
     st.creditSet(set('crunch', 20, 20), 'set-1', false);
     const again = load();
-    expect(again.getScreenTime()).toMatchObject({ meta: { setUp: true }, rules: { blocked: BLOCKED, dailyLimitMin: 60 }, today: { earnedMin: 11 } });
+    expect(again.getScreenTime()).toMatchObject({
+      meta: { setUp: true },
+      rules: { blocked: BLOCKED, dailyLimitMin: 60 },
+      today: { earnedMin: 11 },
+    });
   });
 
   it('turning off stops the phone blocking', () => {
@@ -324,8 +332,14 @@ describe('workout focus and protection gaps', () => {
     st.syncScreenTime(now);
     expect(st.getScreenTime().today.gaps).toEqual([gap]);
     expect(st.getScreenTime().meta.tokensExpired).toBe(true);
-    st.clearTokensExpired();
+    // Picking again repairs the list at once, even in Strict, where a different list would otherwise be refused.
+    st.saveRules(startStrict(st.getScreenTime().rules, now, 7));
+    const fresh = { apps: ['tok-new'], categories: [], domains: [] };
+    expect(st.repairBlocked(fresh)).toBe(true);
+    expect(st.getScreenTime().rules.blocked).toEqual(fresh);
     expect(st.getScreenTime().meta.tokensExpired).toBe(false);
+    // Only while the lists are expired: otherwise it's an ordinary change.
+    expect(st.repairBlocked({ apps: [], categories: [], domains: [] })).toBe(false);
   });
 
   it('the focus choice on the exercise screen is remembered', () => {

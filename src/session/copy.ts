@@ -85,7 +85,10 @@ export function framingCopy(issue: FramingIssue, o: PhoneOrientation, exercise?:
       case 'move-closer':
         return { ...FRAMING_COPY[issue], detail: 'You look small. Move the phone to about 2 to 2.5 metres from the bar.' };
       case 'move-back':
-        return { ...FRAMING_COPY[issue], detail: 'Move the phone further from the bar until your hands on the bar and your hips both fit.' };
+        return {
+          ...FRAMING_COPY[issue],
+          detail: 'Move the phone further from the bar until your hands on the bar and your hips both fit.',
+        };
       case 'show-hands':
         return {
           short: 'Show the bar',
@@ -126,9 +129,6 @@ export const DIFFICULTY_COPY: Record<Difficulty, { label: string; short: string;
     detail: 'Full depth, locked arms, a straight body line and hands under shoulders.',
   },
 };
-
-/** Names and units come from the exercise registry. */
-export const EXERCISE_COPY: Record<Exercise, { label: string; unit: string }> = EXERCISES;
 
 /** Plank levels: the same three settings, described for a timed hold. */
 export const PLANK_DIFFICULTY_COPY: Record<Difficulty, { label: string; short: string; detail: string }> = {
@@ -337,7 +337,11 @@ function frontIssueCopy(issue: PlankIssue, exercise: Exercise): Copy | null {
 export function plankIssueCopy(issue: PlankIssue, exercise: Exercise, view: CameraView = 'side'): Copy {
   if (exercise === 'pullup') {
     if (issue === 'straighten-arms') {
-      return { short: 'Hang with straight arms', detail: 'Start from a dead hang: arms straight, shoulders relaxed.', say: 'Hang with straight arms' };
+      return {
+        short: 'Hang with straight arms',
+        detail: 'Start from a dead hang: arms straight, shoulders relaxed.',
+        say: 'Hang with straight arms',
+      };
     }
     if (issue === 'hold-still') return { short: 'Hang still', detail: 'Hang still for a second so the count can start.' };
     return PLANK_COPY[issue];
@@ -401,7 +405,11 @@ export function plankIssueCopy(issue: PlankIssue, exercise: Exercise, view: Came
 }
 
 export const FAULT_COPY: Record<RepFault, Copy> = {
-  'knees-bent': { short: 'Straighten your legs', detail: 'Keep your knees off the floor and your legs straight. Easy mode allows knee push-ups.', say: 'Legs straight' },
+  'knees-bent': {
+    short: 'Straighten your legs',
+    detail: 'Keep your knees off the floor and your legs straight. Easy mode allows knee push-ups.',
+    say: 'Legs straight',
+  },
   'hips-sagging': { short: 'Hips sagging', detail: 'Brace your core and squeeze your glutes.', say: 'Hips up' },
   'hips-piking': { short: 'Hips too high', detail: 'Keep a straight line from shoulders to heels.', say: 'Hips down' },
   rushed: { short: 'Slow down', detail: 'Control the way down. Aim for about two seconds a rep.', say: 'Slow it down' },
@@ -477,7 +485,11 @@ export function missCopy(m: MissReason, exercise: Exercise): Copy {
       case 'not-high-enough':
         return { short: 'Chin over the bar', detail: 'Pull until your chin is over the bar.', say: 'Chin over the bar' };
       case 'not-back-down':
-        return { short: 'Straighten your arms', detail: 'Lower all the way to a dead hang, arms straight, before the next pull.', say: 'All the way down' };
+        return {
+          short: 'Straighten your arms',
+          detail: 'Lower all the way to a dead hang, arms straight, before the next pull.',
+          say: 'All the way down',
+        };
       case 'too-slow':
         return { short: 'Reset', detail: 'That one took too long to count. Lower to a dead hang to start again.' };
       default:
@@ -646,7 +658,10 @@ export function cueSpeech(cue: Cue, o: SpeechOptions): { text: string; priority:
         return { text: guided ? 'Go. Curl up until your shoulder blades leave the floor, then lower back down.' : 'Go', priority: 'high' };
       }
       if (exercise === 'pullup') {
-        return { text: guided ? 'Go. A pull-up counts when your chin clears the bar. Lower to straight arms each time.' : 'Go', priority: 'high' };
+        return {
+          text: guided ? 'Go. A pull-up counts when your chin clears the bar. Lower to straight arms each time.' : 'Go',
+          priority: 'high',
+        };
       }
       return { text: guided ? 'Go. Reps count when your arms lock out at the top.' : 'Go', priority: 'high' };
     case 'resume':

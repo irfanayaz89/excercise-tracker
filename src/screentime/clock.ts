@@ -52,12 +52,21 @@ export function trustedTime(anchor: ClockAnchor | null, wall: number, reading: B
   }
   const expected = anchor.wall + (reading.uptimeMs - anchor.up);
   // Carry on from the boot clock either way (see above); only say "changed" past the slack.
-  return { now: expected, jumped: Math.abs(wall - expected) > JUMP_MS, anchor: { wall: expected, up: reading.uptimeMs, boot: reading.boot } };
+  return {
+    now: expected,
+    jumped: Math.abs(wall - expected) > JUMP_MS,
+    anchor: { wall: expected, up: reading.uptimeMs, boot: reading.boot },
+  };
 }
 
 export function parseAnchor(raw: unknown): ClockAnchor | null {
   const o = raw as ClockAnchor | null;
-  return o && typeof o.wall === 'number' && typeof o.up === 'number' && typeof o.boot === 'string' && Number.isFinite(o.wall) && Number.isFinite(o.up)
+  return o &&
+    typeof o.wall === 'number' &&
+    typeof o.up === 'number' &&
+    typeof o.boot === 'string' &&
+    Number.isFinite(o.wall) &&
+    Number.isFinite(o.up)
     ? { wall: o.wall, up: o.up, boot: o.boot }
     : null;
 }

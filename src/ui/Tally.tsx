@@ -22,7 +22,10 @@ export function Tally({ reps, height = 34, maxGroups = 8 }: Props) {
   const stroke = Math.max(2.5, height / 10);
 
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: height * 0.35 }} accessibilityLabel={`${reps.length} reps, ${reps.filter(Boolean).length} clean, ${reps.length - reps.filter(Boolean).length} flagged`}>
+    <View
+      style={{ flexDirection: 'row', flexWrap: 'wrap', gap: height * 0.35 }}
+      accessibilityLabel={`${reps.length} reps, ${reps.filter(Boolean).length} clean, ${reps.length - reps.filter(Boolean).length} flagged`}
+    >
       {shown.map((g, gi) => (
         <Svg key={gi} width={gw} height={height} viewBox={`0 0 ${gw} ${height}`}>
           {g.slice(0, 4).map((clean, i) => {

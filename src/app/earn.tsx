@@ -86,13 +86,7 @@ export default function EarnScreen() {
       <Body tone="muted" size={type.caption}>
         Only counted reps and time in good form earn minutes. Flagged reps earn half. Demo sets earn nothing.
       </Body>
-      {off && (
-        <Button
-          variant="ghost"
-          label="Screen time settings"
-          onPress={() => router.replace({ pathname: '/screen-time', params: { show: 'earning' } })}
-        />
-      )}
+      {off && <Button variant="ghost" label="Screen time settings" onPress={() => router.replace('/screen-time')} />}
     </ScrollView>
   );
 }

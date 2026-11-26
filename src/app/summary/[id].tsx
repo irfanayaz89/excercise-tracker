@@ -129,7 +129,9 @@ export default function SummaryScreen() {
   const missTotal = misses.reduce((n, [, c]) => n + c, 0);
   const ex: Exercise = s.exercise ?? 'pushup';
   const crunch = ex === 'crunch';
-  const flagged = s.totalReps - s.cleanReps;
+  // Reps added by hand were never seen, so they're neither clean nor flagged.
+  const added = Math.max(0, s.totalReps - (cameraCount ?? s.totalReps));
+  const flagged = s.totalReps - s.cleanReps - added;
   const note = END_NOTE[s.endReason];
   const level = s.difficulty === 'easy' || s.difficulty === 'medium' || s.difficulty === 'hard' ? s.difficulty : null;
   const levelLabel = level ? `${DIFFICULTY_COPY[level].label} mode` : null;
@@ -155,6 +157,7 @@ export default function SummaryScreen() {
           guided={guided}
           easy={level === 'easy'}
           exercise={s.exercise ?? 'plank'}
+          view={s.view ?? 'side'}
           best={
             saved && savedId && !demo ? <PersonalBest exercise={s.exercise ?? 'plank'} id={savedId} value={s.hold?.goodMs ?? 0} /> : null
           }
@@ -183,15 +186,7 @@ export default function SummaryScreen() {
       {s.totalReps === 0 ? (
         <View style={{ gap: space.md }}>
           <Display size={type.headline}>{`No ${EXERCISES[ex].unit} counted`}</Display>
-          <Body tone="muted">
-            {crunch
-              ? missTotal > 0
-                ? 'Crunches were seen but did not lift far enough. Curl up until your shoulder blades leave the floor, then lower back down.'
-                : 'Make sure your whole body is in view, side-on to the phone, and that you start lying still on your back with your knees bent.'
-              : missTotal > 0
-                ? 'Reps were seen but did not reach the full range. Go down until your elbows reach about 90° and push all the way back up.'
-                : 'Make sure your whole body is in view, side-on to the phone, and that you start from a straight-arm plank.'}
-          </Body>
+          <Body tone="muted">{noRepsTip(ex, s.view ?? 'side', missTotal > 0)}</Body>
         </View>
       ) : (
         <View style={{ gap: space.sm }}>
@@ -204,7 +199,7 @@ export default function SummaryScreen() {
             </Body>
           </View>
           {!counted && <Tally reps={s.reps.map((r) => r.clean)} height={30} maxGroups={20} />}
-          <Mono tone="muted">{`${s.cleanReps} clean${flagged ? ` · ${flagged} flagged` : ''}`}</Mono>
+          <Mono tone="muted">{`${s.cleanReps} clean${flagged ? ` · ${flagged} flagged` : ''}${added ? ` · ${added} added by hand` : ''}`}</Mono>
           {counted && (
             <Mono tone="muted">{`Count fixed by hand${cameraCount !== null ? ` (the camera counted ${cameraCount})` : ''}.`}</Mono>
           )}
@@ -324,6 +319,23 @@ export default function SummaryScreen() {
   );
 }
 
+/** Why nothing was counted, and what to change: by exercise and camera view. */
+function noRepsTip(ex: Exercise, view: 'side' | 'front', seen: boolean): string {
+  if (ex === 'crunch')
+    return seen
+      ? 'Crunches were seen but did not lift far enough. Curl up until your shoulder blades leave the floor, then lower back down.'
+      : 'Make sure your whole body is in view, side-on to the phone, and that you start lying still on your back with your knees bent.';
+  if (ex === 'pullup')
+    return seen
+      ? 'Pulls were seen but not counted: get your chin over the bar from a still hang, without kicking the knees up.'
+      : 'Stand the phone facing the bar, 2–2.5 m away, with your whole body and the bar in view, and start from a still hang.';
+  if (seen)
+    return 'Reps were seen but did not reach the full range. Go down until your elbows reach about 90° and push all the way back up.';
+  return view === 'front'
+    ? 'Make sure your head, shoulders and arms are in view, facing the phone, and that you start from a straight-arm plank.'
+    : 'Make sure your whole body is in view, side-on to the phone, and that you start from a straight-arm plank.';
+}
+
 /** Plank results: time in good form first, then where the rest of the time went. */
 function PlankResult({
   hold,
@@ -334,9 +346,11 @@ function PlankResult({
   guided,
   easy,
   exercise,
+  view,
   best,
 }: {
   exercise: Exercise;
+  view: 'side' | 'front';
   /** The personal-best card, right under the result as on rep sets. */
   best?: ReactNode;
   hold: HoldSummary | undefined;
@@ -353,7 +367,9 @@ function PlankResult({
       <View style={{ gap: space.md }}>
         <Display size={type.headline}>{sides ? 'No side plank timed' : 'No plank timed'}</Display>
         <Body tone="muted">
-          Hold a plank on straight arms or forearms, side-on to the phone, with your body in view. The clock starts once you are steady.
+          {sides
+            ? 'Hold a side plank facing the phone, with your whole body in view. The clock starts once you are steady.'
+            : `Hold a plank on straight arms or forearms, ${view === 'front' ? 'facing' : 'side-on to'} the phone, with your body in view. The clock starts once you are steady.`}
         </Body>
         {demo && <Mono tone="muted">Demo set · not added to your history.</Mono>}
       </View>
@@ -552,7 +568,9 @@ function FixCount({ total, onFix }: { total: number; onFix: (n: number) => void 
         <Button label="+" variant="quiet" size="sm" onPress={() => setN((v) => Math.min(500, v + 1))} accessibilityLabel="One more rep" />
       </View>
       <Body tone="muted" size={type.caption}>
-        Fixing the count updates your history, best set and calories. Screen time already earned stays the same.
+        {n === 0
+          ? 'Saving 0 deletes this set from your history.'
+          : 'Fixing the count updates your history, best set and calories. Screen time already earned stays the same.'}
       </Body>
       <View style={{ flexDirection: 'row', gap: space.sm }}>
         <Button
@@ -560,8 +578,17 @@ function FixCount({ total, onFix }: { total: number; onFix: (n: number) => void 
           style={{ flex: 1 }}
           disabled={n === total}
           onPress={() => {
-            onFix(n);
-            setOpen(false);
+            const save = () => {
+              onFix(n);
+              setOpen(false);
+            };
+            // 0 deletes the set: ask, the same as Delete this set does.
+            if (n > 0) save();
+            else
+              Alert.alert('Delete this set?', 'A count of 0 removes the set from your history. It can’t be undone.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: save },
+              ]);
           }}
         />
         <Button label="Cancel" variant="ghost" style={{ flex: 1 }} onPress={() => setOpen(false)} />

@@ -28,10 +28,10 @@ import {
   strictActive,
 } from '@/screentime/rules';
 import {
-  clearTokensExpired,
   endFocusNow,
   getScreenTime,
   markTurnOffPending,
+  repairBlocked,
   saveRules,
   screenTimeNow,
   turnOff,
@@ -156,8 +156,11 @@ export default function ScreenTimeScreen() {
             label="Pick blocked apps"
             onPress={guard(async () => {
               const picked = await pickApps('Blocked apps', getScreenTime().rules.blocked);
-              // Only when the new lists are really in use: a refused or waiting change leaves the warning up.
-              if (picked && change({ blocked: picked }).result === 'applied') clearTokensExpired();
+              if (!picked) return;
+              const bad = selectionProblem(picked);
+              // A repair: the expired codes block nothing, so the new list applies at once.
+              if (bad) setMessage(bad);
+              else repairBlocked(picked);
             })}
           />
         </View>
@@ -313,7 +316,8 @@ export default function ScreenTimeScreen() {
                 if (!picked) return;
                 const bad = selectionProblem(picked);
                 if (bad) setMessage(bad);
-                else if (change({ blocked: picked }).result === 'applied') clearTokensExpired();
+                else if (getScreenTime().meta.tokensExpired) repairBlocked(picked);
+                else change({ blocked: picked });
               })}
             />
             <LinkRow
@@ -600,7 +604,8 @@ function StrictnessSection({
               key={s}
               label={STRICTNESS[s].label}
               selected={mode === s}
-              onPress={() => (s === 'strict' ? confirmStrict() : change({ strictness: s }))}
+              // The level already in force: nothing to change (an expired Strict still reads "strict" in the rules).
+              onPress={() => (s === mode ? undefined : s === 'strict' ? confirmStrict() : change({ strictness: s }))}
             />
           ))}
         </View>

@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Platform } from 'react-native';
 import { ScreenTime } from '../../modules/screen-time/src';
-import { coreOf, MAX_APPS, requestChange, type ChangeResult, type RefusalReason } from './rules';
+import { coreOf, MAX_APPS, requestChange, STRICT_WAIT_MS, type ChangeResult, type RefusalReason } from './rules';
 import { getScreenTime, saveRules, screenTimeNow } from './store';
 import { formatClock } from './summary';
 import { deviceZone } from './time';
@@ -32,12 +32,14 @@ export function editBase(): RulesCore {
 /** One line telling the user what happened to their change. */
 export function describeChange(res: ChangeResult, now = screenTimeNow()): string | null {
   // A stricter change replaces an easier one that was still waiting: say so, or it vanishes without a word.
-  if (res.result === 'applied') return res.cancelledPending ? 'Saved. The easier change that was waiting to start has been cancelled.' : null;
+  if (res.result === 'applied')
+    return res.cancelledPending ? 'Saved. The easier change that was waiting to start has been cancelled.' : null;
   if (res.result === 'refused') return REFUSALS[res.reason];
   // Same clock wording as everywhere else in the app ("tomorrow 00:00"), not the phone's own format.
   const when = formatClock(deviceZone, res.effectiveAt, now);
   const replaced = res.replacedPending ? ' It replaces the easier change that was already waiting.' : '';
-  return res.effectiveAt - now >= 20 * 3_600_000
+  // Strict waits exactly 24 h; Standard waits until midnight, which can be up to 24 h away too.
+  return res.effectiveAt - now >= STRICT_WAIT_MS - 60_000
     ? `That makes things easier on you, so it starts in 24 hours (${when}).${replaced}`
     : `That makes things easier on you, so it starts at midnight (${when}).${replaced}`;
 }

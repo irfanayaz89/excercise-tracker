@@ -17,7 +17,15 @@ import { RealityCheck, type DepthProbe, type RealityIssue } from './reality';
 import { MetricMedian } from './smoothing';
 import { HINT_FAULTS, RepCounter, type MissRecord, type RepFault, type RepPhase, type RepRecord } from './repCounter';
 import { CrunchCounter, type CrunchPhase } from './crunchCounter';
-import { checkHangStart, PullupCounter, PullupFramingGate, pullupMetrics, readPullup, type PullupPhase, type PullupReading } from './pullup';
+import {
+  checkHangStart,
+  PullupCounter,
+  PullupFramingGate,
+  pullupMetrics,
+  readPullup,
+  type PullupPhase,
+  type PullupReading,
+} from './pullup';
 import { checkFrontStart, frontContacts, frontMetrics, FrontFramingGate } from './front';
 import { buildChain, computeMetrics, PoseTracker, SideSelector, SupportSideSelector, type TrackedPose } from './tracker';
 import { LM, type BodyMetrics, type Exercise, type PhoneAttitude, type PlankVariant, type PoseSample, type Side } from './types';
@@ -198,6 +206,15 @@ const IDENTITY_COMBINED = 1.4;
  * timestamp order; call `tick` from a timer so timeouts fire even when no
  * frames arrive. It never throws on bad input: unusable frames are dropped.
  */
+/**
+ * Time in good form so far, all sides together: a side plank's `hold` is only the side being timed
+ * now, so after switching it can read 0 while the first side is already done.
+ */
+export function heldMs(s: Pick<SessionSnapshot, 'hold' | 'holdSides'>): number {
+  const sides = s.holdSides ? Object.values(s.holdSides).reduce((a, b) => a + (b ?? 0), 0) : 0;
+  return Math.max(s.hold?.goodMs ?? 0, sides);
+}
+
 export class PushupSession {
   readonly cfg: EngineConfig;
   private tracker: PoseTracker;
@@ -242,7 +259,6 @@ export class PushupSession {
   private plankProgress = 0;
   private metrics: BodyMetrics | null = null;
   private depth: number | null = null;
-  private calibration: Calibration | null = null;
   private reps: RepRecord[] = [];
   private misses: MissRecord[] = [];
   private pauseReason: PauseReason | null = null;
@@ -696,7 +712,6 @@ export class PushupSession {
   }
 
   private beginCounting(cal: Calibration, t: number): void {
-    this.calibration = cal;
     const resuming = this.phase === 'paused';
     if (this.exercise === 'sidePlank') {
       // One clock per side; time calls and the countdown carry on per side too.

@@ -4,12 +4,22 @@ import type { SessionSummary } from '@/engine/session';
 import { ScreenTime } from '../../modules/screen-time/src';
 import { decide, rollDay, takeUnlock as takeUnlockRule } from './decide';
 import { earnFromSet, type EarnResult } from './earn';
-import { endFocus, KEY_LOCK_MAX_MIN, logFocus, settleFocus, startFocus, startKeyLock, type EndReason, type EndResult, type FocusChoice } from './focus';
+import {
+  endFocus,
+  KEY_LOCK_MAX_MIN,
+  logFocus,
+  settleFocus,
+  startFocus,
+  startKeyLock,
+  type EndReason,
+  type EndResult,
+  type FocusChoice,
+} from './focus';
 import { parseAnchor, trustedTime, type ClockAnchor } from './clock';
 import { mergeGaps, mergeReport, parseReport, toNativePlan } from './plan';
 import { applyPending, clearOldSkips, normalizeRules, DEFAULT_RULES } from './rules';
-import { deviceZone } from './time';
-import type { DayLog, Decision, Focus, FocusRecord, ScreenTimeRules, Unlock } from './types';
+import { dayKey, deviceZone } from './time';
+import type { DayLog, Decision, Focus, ScreenTimeRules, Selection, Unlock } from './types';
 
 /**
  * Screen time state on the phone: the rules, and a log per day (today plus
@@ -57,6 +67,8 @@ export interface Meta {
   clock: ClockAnchor | null;
   /** "Turn off" was asked for and is waiting (Standard: midnight; Strict: 24 h). */
   turnOffPending: boolean;
+  /** The last day a set earned time ("YYYY-MM-DD"), kept past the two weeks of history for the coming-back bonus. */
+  lastSetDay: string | null;
 }
 
 const DEFAULT_META: Meta = {
@@ -70,6 +82,7 @@ const DEFAULT_META: Meta = {
   key: null,
   clock: null,
   turnOffPending: false,
+  lastSetDay: null,
 };
 
 function read<T>(key: string, parse: (raw: unknown) => T, fallback: T): T {
@@ -162,12 +175,17 @@ export function loadDays(): DayLog[] {
 }
 
 export function loadMeta(): Meta {
-  return read(META_KEY, (raw) => ({ ...DEFAULT_META, ...(raw as Partial<Meta>), clock: parseAnchor((raw as Partial<Meta>)?.clock) }), DEFAULT_META);
+  return read(
+    META_KEY,
+    (raw) => ({ ...DEFAULT_META, ...(raw as Partial<Meta>), clock: parseAnchor((raw as Partial<Meta>)?.clock) }),
+    DEFAULT_META,
+  );
 }
 
 function parseFocus(raw: unknown): Focus | null {
   const o = raw as Focus | null;
-  if (!o || (o.kind !== 'set' && o.kind !== 'timed' && o.kind !== 'key') || typeof o.startedAt !== 'number' || typeof o.until !== 'number') return null;
+  if (!o || (o.kind !== 'set' && o.kind !== 'timed' && o.kind !== 'key') || typeof o.startedAt !== 'number' || typeof o.until !== 'number')
+    return null;
   // Never trust a stored focus longer than its hard cap (a key lock may run longer than a workout).
   const cap = o.kind === 'key' ? KEY_LOCK_MAX_MIN * 60_000 : 3 * 60 * 60_000;
   if (o.until - o.startedAt > cap || o.until <= o.startedAt) return null;
@@ -243,7 +261,8 @@ function publish(nextIn: ScreenTimeState, persist = true) {
     if (ok) saveFailed = false;
   }
   const extra = [saveFailed && SAVE_FAILED, rulesUnreadable && RULES_UNREADABLE].filter((x): x is string => !!x);
-  if (extra.some((m) => !next.problems.includes(m))) next = { ...next, problems: [...next.problems.filter((m) => !extra.includes(m)), ...extra] };
+  if (extra.some((m) => !next.problems.includes(m)))
+    next = { ...next, problems: [...next.problems.filter((m) => !extra.includes(m)), ...extra] };
   state = next;
   listeners.forEach((l) => l(next));
 }
@@ -269,7 +288,12 @@ export function syncScreenTime(now = screenTimeNow()): SyncResult {
   if (meta.turnOffPending && !rules.pending) {
     meta.turnOffPending = false;
     const empty =
-      !rules.blocked.apps.length && !rules.blocked.categories.length && !rules.blocked.domains.length && !rules.lockTimes.length && rules.dailyLimitMin === null && !rules.appLimits.length;
+      !rules.blocked.apps.length &&
+      !rules.blocked.categories.length &&
+      !rules.blocked.domains.length &&
+      !rules.lockTimes.length &&
+      rules.dailyLimitMin === null &&
+      !rules.appLimits.length;
     if (empty && meta.setUp) {
       // The same clean-up as turnOff(): no focus left running, no lost-access gap carried on.
       ScreenTime?.stopAll();
@@ -280,9 +304,20 @@ export function syncScreenTime(now = screenTimeNow()): SyncResult {
   let openEarn = false;
   let openScan = false;
   let problems: string[] = [];
-  // A focus whose time is up goes into history.
+  // A focus whose time is up goes into history, on the day it ended (not the day the app is next opened).
   const settled = settleFocus(s.focus, now);
-  if (settled.record) today = logFocus(deviceZone, today, settled.record, now);
+  let pastDays = s.days;
+  if (settled.record) {
+    const ended = dayKey(deviceZone.local(Math.min(settled.record.to, now)));
+    const past = ended !== today.day ? pastDays.find((d) => d.day === ended) : undefined;
+    if (past)
+      pastDays = pastDays.map((d) =>
+        d === past && !(d.focuses ?? []).some((x) => x.from === settled.record!.from)
+          ? { ...d, focuses: [...(d.focuses ?? []), settled.record!] }
+          : d,
+      );
+    else today = logFocus(deviceZone, today, settled.record, now);
+  }
   const focus = turnedOff ? null : settled.focus;
   const avail = availability();
   if (avail === 'needs-permission' && meta.setUp) {
@@ -296,14 +331,16 @@ export function syncScreenTime(now = screenTimeNow()): SyncResult {
       today = { ...today, gaps: mergeGaps(today.gaps ?? [], [{ from: meta.lostSince, to: now, kind: 'permission' }]) };
       meta.lostSince = null;
     }
-    const report = parseReport(ScreenTime.takeState());
-    today = mergeReport(deviceZone, rules, today, report, now);
-    openEarn = report?.openEarn === true;
-    openScan = report?.openScan === true;
-    if (report?.tokensExpired) meta.tokensExpired = true;
+    // Taking the report clears it on the phone (unlocks, earned time spent), so only take it when a new plan
+    // follows: with unreadable rules the phone keeps its old plan, and its unlocks must stay with it.
     if (meta.setUp && !rulesUnreadable) {
+      const report = parseReport(ScreenTime.takeState());
+      today = mergeReport(deviceZone, today, report, now);
+      openEarn = report?.openEarn === true;
+      openScan = report?.openScan === true;
+      if (report?.tokensExpired) meta.tokensExpired = true;
       // The phone's report was taken above: save it before sending the plan, so a failed send can't lose it.
-      publish(build(normalizeRules(rules), withToday(s.days, today), meta, s.problems, focus, now));
+      publish(build(normalizeRules(rules), withToday(pastDays, today), meta, s.problems, focus, now));
       try {
         problems = ScreenTime.sync(JSON.stringify(toNativePlan(deviceZone, rules, today, now, focus)));
         meta.lastSync = now;
@@ -314,7 +351,7 @@ export function syncScreenTime(now = screenTimeNow()): SyncResult {
   }
   rules = normalizeRules(rules);
   if (clockChanged && meta.setUp) problems = [...problems, CLOCK_CHANGED];
-  publish(build(rules, withToday(s.days, today), meta, problems, focus, now));
+  publish(build(rules, withToday(pastDays, today), meta, problems, focus, now));
   return { openEarn, openScan };
 }
 
@@ -391,16 +428,17 @@ export function setFocusChoice(choice: FocusChoice | null) {
   publish({ ...s, meta: { ...s.meta, focusChoice: choice } });
 }
 
-/** The user picked the app lists again after iOS expired them. */
-export function clearTokensExpired() {
+/**
+ * Pick the blocked apps again after iOS expired the stored lists. The old app codes no longer block anything,
+ * so this is a repair, not removing apps: it applies at once even in Strict (where a different-looking list
+ * would otherwise be refused as "taking apps off").
+ */
+export function repairBlocked(picked: Selection): boolean {
   const s = getScreenTime();
-  if (s.meta.tokensExpired) publish({ ...s, meta: { ...s.meta, tokensExpired: false } });
-}
-
-/** The last focus that ended today (for the set summary). */
-export function lastFocusRecord(): FocusRecord | null {
-  const f = getScreenTime().today.focuses ?? [];
-  return f.length ? f[f.length - 1] : null;
+  if (!s.meta.tokensExpired) return false;
+  publish({ ...s, rules: { ...s.rules, blocked: picked }, meta: { ...s.meta, tokensExpired: false } });
+  syncScreenTime();
+  return true;
 }
 
 /** Save new rules (already checked with requestChange) and apply them. */
@@ -437,13 +475,14 @@ export function creditSet(summary: SessionSummary, sessionId: string, demo: bool
   if (!s.meta.setUp) return null;
   // Came back after a break: the last day with a set was two or more days ago.
   const today = rollDay(deviceZone, s.days[0] ?? null, now);
-  const lastActive = s.days.find((d) => d.day !== today.day && d.grants.length > 0);
+  const lastDay =
+    s.days.find((d) => d.day !== today.day && d.grants.length > 0)?.day ?? (s.meta.lastSetDay !== today.day ? s.meta.lastSetDay : null);
   // Calendar days between the two day keys (UTC dates, so clock changes can't shave an hour off).
   const utcDay = (k: string) => Date.UTC(Number(k.slice(0, 4)), Number(k.slice(5, 7)) - 1, Number(k.slice(8, 10)));
-  const cameBack = !!lastActive && Math.round((utcDay(today.day) - utcDay(lastActive.day)) / 86_400_000) >= 2;
+  const cameBack = !!lastDay && Math.round((utcDay(today.day) - utcDay(lastDay)) / 86_400_000) >= 2;
   const res = earnFromSet(deviceZone, s.rules, s.days[0] ?? today, { summary, sessionId, demo, cameBack }, now);
   if (res.reason === 'earned') {
-    publish({ ...s, days: withToday(s.days, res.log) });
+    publish({ ...s, days: withToday(s.days, res.log), meta: { ...s.meta, lastSetDay: res.log.day } });
     syncScreenTime(now);
   }
   return res;

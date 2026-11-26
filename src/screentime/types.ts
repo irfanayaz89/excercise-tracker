@@ -116,6 +116,8 @@ export interface Grant {
   minutes: number;
   exercise: Exercise;
   sessionId: string;
+  /** A real set (at least MIN_BONUS_PE): only these count as the day's first set. Missing on older grants. */
+  real?: boolean;
 }
 
 /** A temporary opening: an emergency unlock (Standard) or "1 more minute" (Nudge). */

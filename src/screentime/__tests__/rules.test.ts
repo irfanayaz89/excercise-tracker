@@ -286,7 +286,10 @@ describe('changes by strictness', () => {
       ];
       for (const [, f] of edits)
         expect(requestChange(london, strict, change(strict, f), night)).toMatchObject({ result: 'refused', reason: 'strict-running-lock' });
-      expect(skipNext(london, strict, 'sleep', night)).toMatchObject({ result: 'refused', reason: 'strict-running-lock' });
+      // "Skip next" leaves the running lock alone: it skips the first one after the 24-hour wait (Friday's).
+      const skip = skipNext(london, strict, 'sleep', night);
+      expect(skip.result).toBe('scheduled');
+      if (skip.result === 'scheduled') expect(skip.rules.pending?.next.lockTimes[0].skipDate).toBe('2026-11-20');
     });
 
     it('outside the lock time, loosening it waits 24 hours', () => {
@@ -368,6 +371,15 @@ describe('skipping a lock time', () => {
     expect(n.rules.lockTimes[0].skipDate).toBe('2026-11-18');
     const std = skipNext(london, rules({ lockTimes: [sleep] }), 'sleep', NOW);
     expect(std.result).toBe('scheduled');
+    // Standard: tonight's starts before the skip applies (midnight), so it's tomorrow night's that's skipped.
+    if (std.result === 'scheduled') expect(std.rules.pending?.next.lockTimes[0].skipDate).toBe('2026-11-19');
+  });
+
+  it('Strict skips the first occurrence after its 24-hour wait', () => {
+    const strict = rules({ strictness: 'strict', strictUntil: NOW + 7 * 86_400_000, lockTimes: [sleep] });
+    const res = skipNext(london, strict, 'sleep', NOW);
+    expect(res.result).toBe('scheduled');
+    if (res.result === 'scheduled') expect(res.rules.pending?.next.lockTimes[0].skipDate).toBe('2026-11-19');
   });
 
   it('skipping while running skips the running one (started yesterday)', () => {

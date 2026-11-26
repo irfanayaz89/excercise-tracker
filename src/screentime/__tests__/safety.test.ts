@@ -63,7 +63,11 @@ beforeEach(() => {
 describe('trustedTime', () => {
   const a = { wall: T0, up: 1_000, boot: 'b' };
   test('agreeing clocks: the wall clock, and a new anchor', () => {
-    expect(trustedTime(a, T0 + 60_000, { uptimeMs: 61_000, boot: 'b' })).toEqual({ now: T0 + 60_000, jumped: false, anchor: { wall: T0 + 60_000, up: 61_000, boot: 'b' } });
+    expect(trustedTime(a, T0 + 60_000, { uptimeMs: 61_000, boot: 'b' })).toEqual({
+      now: T0 + 60_000,
+      jumped: false,
+      anchor: { wall: T0 + 60_000, up: 61_000, boot: 'b' },
+    });
   });
   test('small corrections (network time) are trusted', () => {
     expect(trustedTime(a, T0 + 60_000 + JUMP_MS - 1, { uptimeMs: 61_000, boot: 'b' }).jumped).toBe(false);
@@ -183,7 +187,12 @@ describe('turning off', () => {
     st.saveRules({ ...st.getScreenTime().rules, blocked: BLOCKED, strictness: 'standard' });
     st.markSetUp();
     const r = st.getScreenTime().rules;
-    const res = requestChange(deviceZone, r, { ...coreOf(r), blocked: EMPTY_SELECTION, lockTimes: [], dailyLimitMin: null, appLimits: [] }, T0);
+    const res = requestChange(
+      deviceZone,
+      r,
+      { ...coreOf(r), blocked: EMPTY_SELECTION, lockTimes: [], dailyLimitMin: null, appLimits: [] },
+      T0,
+    );
     expect(res.result).toBe('scheduled');
     st.saveRules(res.rules);
     st.markTurnOffPending();

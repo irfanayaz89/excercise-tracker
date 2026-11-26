@@ -150,7 +150,7 @@ export default function Home() {
   const fxRecent = recent.filter((r) => r.exercise === fx);
   const forecast =
     fxRecent.length > 0 && firstFx !== null && firstFx < since14
-      ? { label: fx === 'pullup' ? 'Pull-ups' : 'Push-ups', best: Math.max(...fxRecent.map((r) => r.totalReps)) }
+      ? { label: fx === 'pullup' ? 'Pull-ups' : 'Push-ups', best: Math.max(...fxRecent.map((r) => r.cleanReps)) }
       : null;
   const deficit =
     profile && profile.aim === 'lose-fat' && profile.targetKg !== null && profile.weightKg > profile.targetKg

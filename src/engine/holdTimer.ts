@@ -221,7 +221,7 @@ export class HoldTimer {
       // Inside the grace period: hold the time aside until we know.
       if (this.pendingSince === null) this.pendingSince = t;
       this.pendingMs += dt;
-        this.faultBudget += dt;
+      this.faultBudget += dt;
       if (this.faultBudget >= h.graceMs) {
         this.addFault(fault, this.pendingMs);
         this.clearPending();
@@ -391,6 +391,5 @@ export class HoldTimer {
   private clearPending(): void {
     this.pendingSince = null;
     this.pendingMs = 0;
-
   }
 }

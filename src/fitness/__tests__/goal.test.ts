@@ -55,7 +55,10 @@ describe('goal progress', () => {
     ];
     expect(goalProgress(p, rows, NOW)).toMatchObject({ value: '5', of: 'of 8', met: false });
     // 9 pull-ups with 3 flagged for form: 6 strict ones, not the goal yet.
-    expect(goalProgress(p, [...rows, row({ exercise: 'pullup', totalReps: 9, cleanReps: 6 })], NOW)).toMatchObject({ value: '6', met: false });
+    expect(goalProgress(p, [...rows, row({ exercise: 'pullup', totalReps: 9, cleanReps: 6 })], NOW)).toMatchObject({
+      value: '6',
+      met: false,
+    });
     expect(goalProgress(p, [...rows, row({ exercise: 'pullup', totalReps: 8, cleanReps: 8 })], NOW).met).toBe(true);
   });
 

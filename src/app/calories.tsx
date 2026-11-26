@@ -64,9 +64,8 @@ export default function CaloriesInfo() {
         trackers barely track strength work at all. Over a week the figure is good to about ±25%.
       </Section>
       <Section title="Calories and body fat">
-        A gram of body fat holds about 7.7 kcal, so totals are shown as the energy in that much fat, after taking off the fifth of workout
-        calories people tend to eat back. It isn&apos;t fat actually burned, and weight doesn&apos;t fall in a straight line: the scale may
-        not move while fat goes down, because strength work adds a little muscle.
+        A gram of body fat holds about 7.7 kcal, and people tend to eat back about a fifth of what workouts burn. Weight doesn&apos;t fall
+        in a straight line: the scale may not move while fat goes down, because strength work adds a little muscle.
       </Section>
       <Section title="The 30 and 60 day outlook">
         Each column shows the one number that matters for your goal, with its likely range: weight with an eating target, your best set once

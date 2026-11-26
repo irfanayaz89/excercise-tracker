@@ -84,7 +84,8 @@ function ExerciseDetail({ exercise }: { exercise: Exercise }) {
   const start = (demo = false) =>
     guard(() => {
       // Landscape only tracks well when the picture turns with the phone: ask first.
-      if (demo || settings.orientation !== 'landscape' || !settings.rotationReminder) {
+      // Pull-ups always run in portrait (the phone stands facing the bar).
+      if (demo || exercise === 'pullup' || settings.orientation !== 'landscape' || !settings.rotationReminder) {
         go(demo);
         return;
       }

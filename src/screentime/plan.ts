@@ -183,14 +183,15 @@ export function parseReport(json: string): NativeReport | null {
     if (!o || typeof o !== 'object' || typeof o.day !== 'string') return null;
     const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
     const unlocks = Array.isArray(o.unlocks)
-      ? o.unlocks.filter(
-          (u): u is Unlock =>
-            !!u &&
-            (u.kind === 'emergency' || u.kind === 'one-more') &&
-            typeof u.from === 'number' &&
-            typeof u.until === 'number' &&
-            u.until > u.from,
-        )
+      ? o.unlocks
+          .filter(
+            (u): u is Unlock =>
+              !!u &&
+              (u.kind === 'emergency' || u.kind === 'one-more') &&
+              typeof u.from === 'number' &&
+              typeof u.until === 'number' &&
+              u.until > u.from,
+          )
           // iOS reports fractional milliseconds; whole ones compare cleanly with the app's clock.
           .map((u) => ({ ...u, from: Math.floor(u.from) }))
       : [];
@@ -207,7 +208,8 @@ export function parseReport(json: string): NativeReport | null {
     const counts = (v: unknown): Record<string, number> => {
       const out: Record<string, number> = {};
       if (v && typeof v === 'object')
-        for (const [k, x] of Object.entries(v as Record<string, unknown>)) if (typeof x === 'number' && Number.isFinite(x) && x >= 0) out[k] = x;
+        for (const [k, x] of Object.entries(v as Record<string, unknown>))
+          if (typeof x === 'number' && Number.isFinite(x) && x >= 0) out[k] = x;
       return out;
     };
     return {
@@ -236,7 +238,7 @@ export function parseReport(json: string): NativeReport | null {
  * Usage only ever goes up, earned time spent never exceeds what was earned,
  * and an unlock is recorded once however often it is reported.
  */
-export function mergeReport(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, report: NativeReport | null, now: number): DayLog {
+export function mergeReport(zone: Zone, logIn: DayLog, report: NativeReport | null, now: number): DayLog {
   const log = rollDay(zone, logIn, now);
   if (!report) return log;
   const seen = new Set(log.unlocks.map((u) => `${u.kind}:${u.from}`));

@@ -54,7 +54,14 @@ export interface Profile {
 const KEY = 'profile.v1';
 const AIMS: Aim[] = ['lose-fat', 'get-stronger', 'stay-active', 'less-screen'];
 
-export const LIMITS = { age: [16, 90], heightCm: [120, 230], weightKg: [35, 250], days: [2, 7], reps: [1, 100], waistCm: [50, 200] } as const;
+export const LIMITS = {
+  age: [16, 90],
+  heightCm: [120, 230],
+  weightKg: [35, 250],
+  days: [2, 7],
+  reps: [1, 100],
+  waistCm: [50, 200],
+} as const;
 
 const clamp = (v: number, [lo, hi]: readonly [number, number]) => Math.min(hi, Math.max(lo, v));
 const num = (v: unknown, fallback: number, lim: readonly [number, number]) =>
@@ -170,8 +177,15 @@ export function startProfile(p: Profile, saved: Profile | null, now = Date.now()
   if (!saved) return { ...p, startedAt: now, startKg: p.weightKg, log: [{ at: now, kg: p.weightKg }], goalMetAt: null };
   // A reached goal is finished: whatever comes next starts from today.
   // A weight goal can't start at or below its target (the user re-set it after gaining): start again from today's weight.
-  const same = saved.aim === p.aim && saved.goalMetAt === null && !(p.aim === 'lose-fat' && p.targetKg !== null && saved.startKg <= p.targetKg);
-  const base: Profile = { ...p, startedAt: same ? saved.startedAt : now, startKg: same ? saved.startKg : p.weightKg, log: saved.log, goalMetAt: null };
+  const same =
+    saved.aim === p.aim && saved.goalMetAt === null && !(p.aim === 'lose-fat' && p.targetKg !== null && saved.startKg <= p.targetKg);
+  const base: Profile = {
+    ...p,
+    startedAt: same ? saved.startedAt : now,
+    startKg: same ? saved.startKg : p.weightKg,
+    log: saved.log,
+    goalMetAt: null,
+  };
   return Math.abs(p.weightKg - saved.weightKg) >= 0.05 || saved.log.length === 0 ? withWeighIn(base, p.weightKg, now) : base;
 }
 

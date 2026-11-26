@@ -50,8 +50,6 @@ interface ScreenTimeNative {
   notificationAccess?(): boolean;
   /** Android: minutes of phone use per day (last 7 days, oldest first) and today's top apps. */
   usageSummary?(): Promise<UsageSummary>;
-  /** iOS: refresh the home screen widget after the app changed what's blocked. */
-  reloadWidget?(): void;
   /**
    * A clock the user can't change, for spotting a moved phone clock: milliseconds since boot
    * (keeps counting while the phone sleeps) and an id that changes on every reboot.

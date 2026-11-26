@@ -75,7 +75,10 @@ const G = 9.81;
 const KW = { mid: 6.0, low: 4.8, high: 7.5 };
 /** The high case adds the anaerobic share that oxygen measurements miss. */
 const HIGH_GLYCOLYTIC = 1.2;
-const REP: Record<'pushup' | 'pullup' | 'crunch', { f: number; fFemale?: number; rd: number; met: number; metLow: number; metHigh: number; repS: number }> = {
+const REP: Record<
+  'pushup' | 'pullup' | 'crunch',
+  { f: number; fFemale?: number; rd: number; met: number; metLow: number; metHigh: number; repS: number }
+> = {
   pushup: { f: 0.64, rd: 0.19, met: 5.2, metLow: 3.0, metHigh: 6.2, repS: 2.0 },
   pullup: { f: 0.95, rd: 0.23, met: 6.0, metLow: 4.2, metHigh: 7.8, repS: 2.5 },
   crunch: { f: 0.33, fFemale: 0.31, rd: 0.045, met: 1.4, metLow: 0.9, metHigh: 2.2, repS: 2.0 },
@@ -183,22 +186,10 @@ export function maintenance(b: Body): number {
   return bmr(b) * ACTIVITY_FACTOR[b.activity];
 }
 
-/** Body mass index and its WHO band. */
-export function bmi(heightCm: number, weightKg: number): { value: number; band: 'under' | 'healthy' | 'over' | 'obese' } {
-  const m = heightCm / 100;
-  const value = weightKg / (m * m);
-  return { value, band: value < 18.5 ? 'under' : value < 25 ? 'healthy' : value < 30 ? 'over' : 'obese' };
-}
-
 /** The lowest weight with a BMI of 18.5 at this height: a target is never set below it. */
 export function lowestHealthyKg(heightCm: number): number {
   const m = heightCm / 100;
   return 18.5 * m * m;
-}
-
-/** Fat holds about 7.7 kcal per gram: the energy-equivalent of some calories, as grams of fat. */
-export function fatGrams(kcal: number): number {
-  return Math.max(0, kcal) / 7.7;
 }
 
 /** Safe weekly paces offered for a weight goal, in kg a week. */
@@ -224,7 +215,7 @@ export interface WeightPlan {
 
 /**
  * A plan to reach a target weight at a safe pace. The short-term maths uses
- * 7,700 kcal per kg (fine over weeks); long-term the body adapts (see `eventualChangeKg`).
+ * 7,700 kcal per kg (fine over weeks); long-term the body adapts (Hall 2011: ~22 kcal a day per kg in the end).
  * Eating never goes below resting energy or 1,200 kcal a day; when that
  * limits the gap, the plan takes longer instead. `workoutKcalPerDay` (the
  * plan's workouts averaged over the week) shortens the date the same way the
@@ -250,15 +241,6 @@ export function weightPlan(b: Body, targetKg: number, pace: Pace, now = Date.now
     eatKcal: Math.round(eat),
     floored: want < floor,
   };
-}
-
-/**
- * What a lasting daily calorie difference does to body weight in the end, and
- * after about a year (Hall's rule: ~10 kcal a day per lb, about 22 per kg, half within a year).
- */
-export function eventualChangeKg(dailyKcal: number): { eventual: number; inAYear: number } {
-  const eventual = dailyKcal / 22;
-  return { eventual, inAYear: eventual / 2 };
 }
 
 /**

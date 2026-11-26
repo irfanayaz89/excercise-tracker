@@ -21,7 +21,6 @@ export function ProjectionCard({
   dailyDeficit = 0,
   forecast = null,
   targetChangeKg = null,
-  title = 'In 30 and 60 days',
 }: {
   perSession: Kcal;
   perWeek: number;
@@ -32,7 +31,6 @@ export function ProjectionCard({
   forecast?: { label: string; best: number } | null;
   /** Kilograms left to the target weight: the band never goes past it. */
   targetChangeKg?: number | null;
-  title?: string;
 }) {
   const cols = ([30, 60] as const).map((d) => {
     const work = projectWorkouts(perSession, perWeek, d);
@@ -51,7 +49,7 @@ export function ProjectionCard({
   });
   return (
     <View style={styles.card}>
-      <Label>{title}</Label>
+      <Label>In 30 and 60 days</Label>
       <View style={styles.cols}>
         {cols.map((c) => (
           <View

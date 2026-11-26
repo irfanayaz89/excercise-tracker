@@ -6,7 +6,7 @@
 import { decide, freshDay, takeUnlock } from '../decide';
 import { endFocus, startFocus, startKeyLock } from '../focus';
 import { mergeReport, parseReport, toNativePlan } from '../plan';
-import { coreOf, loosens, MAX_APP_LIMITS, normalizeRules, pauseSeconds, requestChange } from '../rules';
+import { coreOf, loosens, MAX_APP_LIMITS, normalizeRules, requestChange } from '../rules';
 import type { AppLimit, DayLog, RulesCore } from '../types';
 import { HOUR, lock, london, MIN, rules, T } from './helpers';
 
@@ -20,7 +20,14 @@ const insta: AppLimit = {
   opensPerDay: null,
   enabled: true,
 };
-const yt: AppLimit = { ...insta, id: 'lim-yt', name: 'YouTube', apps: { apps: ['yt'], categories: [], domains: [] }, dailyMin: null, opensPerDay: 5 };
+const yt: AppLimit = {
+  ...insta,
+  id: 'lim-yt',
+  name: 'YouTube',
+  apps: { apps: ['yt'], categories: [], domains: [] },
+  dailyMin: null,
+  opensPerDay: 5,
+};
 const r = rules({ dailyLimitMin: 60, appLimits: [insta, yt] });
 
 describe('per-app limits', () => {
@@ -97,16 +104,15 @@ describe('block everything except the always-allowed apps', () => {
     const b = { ...coreOf(r), lockTimes: [{ ...main, apps: 'all' as const }] };
     expect(loosens(a, b)).toBe(false);
     expect(loosens(b, a)).toBe(true);
-    expect(toNativePlan(london, rules({ lockTimes: b.lockTimes }), day(), NOON).locks[0]).toMatchObject({ allApps: true, ownApps: false, apps: null });
+    expect(toNativePlan(london, rules({ lockTimes: b.lockTimes }), day(), NOON).locks[0]).toMatchObject({
+      allApps: true,
+      ownApps: false,
+      apps: null,
+    });
   });
 });
 
 describe('pause before opening', () => {
-  it('each pass taken makes the next wait 5 s longer, up to a minute', () => {
-    const p = { enabled: true, seconds: 10 };
-    expect([0, 1, 4, 20].map((n) => pauseSeconds(p, n))).toEqual([10, 15, 30, 60]);
-  });
-
   it('switching it off or shortening it is loosening', () => {
     const on = { ...coreOf(r), pause: { enabled: true, seconds: 10 } };
     expect(loosens(on, { ...on, pause: { enabled: false, seconds: 10 } })).toBe(true);
@@ -114,9 +120,15 @@ describe('pause before opening', () => {
     expect(loosens(on, { ...on, pause: { enabled: true, seconds: 20 } })).toBe(false);
   });
 
-  it('the plan carries the pause and today\'s passes', () => {
+  it("the plan carries the pause and today's passes", () => {
     const on = rules({ pause: { enabled: true, seconds: 10 } });
-    expect(toNativePlan(london, on, day({ pauses: 3 }), NOON).pause).toMatchObject({ enabled: true, seconds: 10, step: 5, max: 60, passes: 3 });
+    expect(toNativePlan(london, on, day({ pauses: 3 }), NOON).pause).toMatchObject({
+      enabled: true,
+      seconds: 10,
+      step: 5,
+      max: 60,
+      passes: 3,
+    });
   });
 });
 
@@ -147,8 +159,8 @@ describe('the phone reports per-app use, opens and passes', () => {
       JSON.stringify({ day: '2026-11-18', unlocks: [], appUsed: { 'lim-insta': 12, bad: -1 }, appOpens: { 'lim-yt': 2 }, pauses: 4 }),
     );
     expect(rep).toMatchObject({ appUsed: { 'lim-insta': 12 }, appOpens: { 'lim-yt': 2 }, pauses: 4 });
-    let log = mergeReport(london, r, day({ appUsed: { 'lim-insta': 15 } }), rep, NOON);
-    log = mergeReport(london, r, log, rep, NOON);
+    let log = mergeReport(london, day({ appUsed: { 'lim-insta': 15 } }), rep, NOON);
+    log = mergeReport(london, log, rep, NOON);
     expect(log).toMatchObject({ appUsed: { 'lim-insta': 15 }, appOpens: { 'lim-yt': 2 }, pauses: 4 });
     expect(toNativePlan(london, r, log, NOON).appLimits).toEqual([
       expect.objectContaining({ id: 'lim-insta', usedMin: 15, opens: 0, dailyMin: 20 }),
@@ -204,7 +216,7 @@ describe('holes found in review', () => {
   it('raising the daily limit after reaching it gives the extra time', () => {
     const rep = parseReport(JSON.stringify({ day: '2026-11-18', unlocks: [], usedMin: 30, limitReached: true }));
     const raised = rules({ dailyLimitMin: 60 });
-    const log = mergeReport(london, raised, day(), rep, NOON);
+    const log = mergeReport(london, day(), rep, NOON);
     expect(log.usedMin).toBe(30);
     expect(decide(london, raised, log, NOON).blocked).toBe(false);
   });

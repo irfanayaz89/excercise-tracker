@@ -35,11 +35,6 @@ export function setPe(rules: ScreenTimeRules, summary: SessionSummary): number {
   return clean * (rate.perCleanRep ?? 0) + flagged * (rate.perFlaggedRep ?? 0);
 }
 
-/** Base minutes for a set, before milestones, bonuses and the daily cap. */
-export function minutesFor(rules: ScreenTimeRules, summary: SessionSummary): number {
-  return Math.floor(setPe(rules, summary) + 1e-9);
-}
-
 export interface SetWorth {
   minutes: number;
   /** Milestone and day bonuses included in `minutes` (before halving). */
@@ -94,8 +89,13 @@ export function earnFromSet(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, i
   if (!rules.earning.enabled) return { minutes: 0, ...none, log, capped: false, reason: 'disabled' };
   if (input.demo) return { minutes: 0, ...none, log, capped: false, reason: 'demo' };
   if (log.grants.some((g) => g.sessionId === input.sessionId)) return { minutes: 0, ...none, log, capped: false, reason: 'duplicate' };
-  const firstOfDay = log.grants.length === 0;
-  const { minutes: worth, bonus, halfRate } = setWorth(rules, input.summary, { earnedToday: log.earnedMin, firstOfDay, cameBack: input.cameBack });
+  // A small warm-up set doesn't use up the first-set (and coming-back) bonus: only a real set does.
+  const firstOfDay = !log.grants.some((g) => g.real ?? true);
+  const {
+    minutes: worth,
+    bonus,
+    halfRate,
+  } = setWorth(rules, input.summary, { earnedToday: log.earnedMin, firstOfDay, cameBack: input.cameBack });
   if (worth <= 0) return { minutes: 0, ...none, log, capped: false, reason: 'nothing' };
   const room = Math.max(0, rules.earning.dailyCapMin - log.earnedMin);
   if (room <= 0) return { minutes: 0, ...none, log, capped: true, reason: 'cap-reached' };
@@ -106,6 +106,7 @@ export function earnFromSet(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, i
     minutes,
     exercise: input.summary.exercise ?? 'pushup',
     sessionId: input.sessionId,
+    real: setPe(rules, input.summary) + 1e-9 >= MIN_BONUS_PE,
   };
   return {
     minutes,

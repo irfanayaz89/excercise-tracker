@@ -19,8 +19,6 @@ import { scaleKcal, type Kcal } from './energy';
 
 /** Share of workout calories people eat back over weeks (Riou 2015 meta-analysis, mean). */
 export const COMPENSATION = 0.2;
-/** kcal per gram of body fat, for the "energy equivalent" only. */
-const FAT_KCAL_PER_G = 7.7;
 const KCAL_PER_KG = 7700;
 const EARLY_KCAL_PER_KG = 4858;
 const EARLY_DAYS = 30;
@@ -30,15 +28,13 @@ export interface WorkoutProjection {
   sessions: number;
   /** Workout calories in total, with the range. */
   total: Kcal;
-  /** Grams of body fat that energy equals, after compensation. */
-  fatG: Kcal;
 }
 
 /** Workouts at `perSession` calories, `perWeek` times a week, for `days`. */
 export function projectWorkouts(perSession: Kcal, perWeek: number, days: number): WorkoutProjection {
   const sessions = Math.round((Math.max(0, perWeek) * days) / 7);
   const total = scaleKcal(perSession, sessions);
-  return { days, sessions, total, fatG: scaleKcal(total, (1 - COMPENSATION) / FAT_KCAL_PER_G) };
+  return { days, sessions, total };
 }
 
 /**

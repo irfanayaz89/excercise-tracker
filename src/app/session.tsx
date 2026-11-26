@@ -8,7 +8,7 @@ import { AppState, Platform, StyleSheet, View, useWindowDimensions, type LayoutC
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera, useCameraDevice, useCameraDevices, useCameraPermission, type CameraDevice } from 'react-native-vision-camera';
 import { usePoseStream, type PoseStats } from '@/camera/usePoseStream';
-import type { SessionSnapshot, SessionSummary } from '@/engine/session';
+import { heldMs, type SessionSnapshot, type SessionSummary } from '@/engine/session';
 import type { PhoneOrientation } from '@/engine/types';
 import { Gate, openSettings } from '@/features/session/Gate';
 import { demoScenario, useDemoFeed, type DemoScenario } from '@/features/session/useDemoFeed';
@@ -29,7 +29,7 @@ import { isExercise, isTimed, viewFor } from '@/engine/exercises';
 
 /** Something worth saving: a counted rep, or a second of plank in good form. */
 function hasWork(s: SessionSnapshot): boolean {
-  return isTimed(s.exercise) ? (s.hold?.goodMs ?? 0) >= 1000 : s.reps > 0;
+  return isTimed(s.exercise) ? heldMs(s) >= 1000 : s.reps > 0;
 }
 
 /** Back if there is somewhere to go back to (not after a cold-start deep link), else home. */

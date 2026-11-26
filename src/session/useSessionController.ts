@@ -124,8 +124,10 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
         config: sessionConfig(settings),
         exercise: settings.exercise,
         // Each exercise has its own target: reps, or seconds of good form for planks.
-        targetReps: !isTimed(settings.exercise) && targetFor(settings, settings.exercise) > 0 ? targetFor(settings, settings.exercise) : null,
-        targetHoldMs: isTimed(settings.exercise) && targetFor(settings, settings.exercise) > 0 ? targetFor(settings, settings.exercise) * 1000 : null,
+        targetReps:
+          !isTimed(settings.exercise) && targetFor(settings, settings.exercise) > 0 ? targetFor(settings, settings.exercise) : null,
+        targetHoldMs:
+          isTimed(settings.exercise) && targetFor(settings, settings.exercise) > 0 ? targetFor(settings, settings.exercise) * 1000 : null,
         difficulty: settings.difficulty,
       }),
     // A session is created once per screen; settings changes apply to the next set.
@@ -150,11 +152,14 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
     settingsRef.current = settings;
   });
 
-  const showBanner = useCallback((b: Copy & { tone: Banner['tone'] }) => {
-    ui.set({ banner: { ...b, id: Date.now() } });
-    if (bannerTimer.current) clearTimeout(bannerTimer.current);
-    bannerTimer.current = setTimeout(() => ui.set({ banner: null }), 2200);
-  }, [ui]);
+  const showBanner = useCallback(
+    (b: Copy & { tone: Banner['tone'] }) => {
+      ui.set({ banner: { ...b, id: Date.now() } });
+      if (bannerTimer.current) clearTimeout(bannerTimer.current);
+      bannerTimer.current = setTimeout(() => ui.set({ banner: null }), 2200);
+    },
+    [ui],
+  );
 
   // Engine events → voice, banners, rep marks, end.
   useEffect(() => {
@@ -319,7 +324,21 @@ export function useSessionController(settings: Settings, onEnded: (s: SessionSum
 
   // One stable object: callbacks built from it (camera error and interruption handlers) don't change per rep.
   return useMemo(
-    () => ({ store, config: session.cfg, ui, overlay, onPose, onAttitude, onDepth, confirmPhone, end, wallStart, saveTuningRecording, interrupt, resume }),
+    () => ({
+      store,
+      config: session.cfg,
+      ui,
+      overlay,
+      onPose,
+      onAttitude,
+      onDepth,
+      confirmPhone,
+      end,
+      wallStart,
+      saveTuningRecording,
+      interrupt,
+      resume,
+    }),
     [store, session, ui, overlay, onPose, onAttitude, onDepth, confirmPhone, end, wallStart, saveTuningRecording, interrupt, resume],
   );
 }

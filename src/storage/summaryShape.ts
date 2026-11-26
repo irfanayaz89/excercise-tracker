@@ -15,8 +15,10 @@ const FAULTS: RepFault[] = [
   'elbows-flaring',
   'uneven',
   'knees-bent',
+  'swinging',
+  'dropping',
 ];
-const MISSES: MissReason[] = ['not-deep-enough', 'no-lockout', 'too-slow', 'not-high-enough', 'not-back-down'];
+const MISSES: MissReason[] = ['not-deep-enough', 'no-lockout', 'too-slow', 'not-high-enough', 'not-back-down', 'kipped'];
 const HOLD_FAULTS: HoldFault[] = [
   'hips-sagging',
   'hips-piking',
@@ -107,7 +109,10 @@ export function normalizeSummary(
     difficulty: typeof o.difficulty === 'string' ? o.difficulty : undefined,
     view: o.view === 'front' || o.view === 'side' ? o.view : undefined,
     counted:
-      o.counted && typeof o.counted === 'object' && Number.isFinite((o.counted as { total?: unknown }).total) && Number.isFinite((o.counted as { clean?: unknown }).clean)
+      o.counted &&
+      typeof o.counted === 'object' &&
+      Number.isFinite((o.counted as { total?: unknown }).total) &&
+      Number.isFinite((o.counted as { clean?: unknown }).clean)
         ? { total: (o.counted as { total: number }).total, clean: (o.counted as { clean: number }).clean }
         : undefined,
     startedAt: num(o.startedAt, row.startedAt),

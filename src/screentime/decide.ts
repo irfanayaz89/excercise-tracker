@@ -26,13 +26,6 @@ export function rollDay(zone: Zone, log: DayLog | null, now: number): DayLog {
   return log;
 }
 
-/** The platform reports minutes the blocked apps were open (counts against the limit, or earned time). */
-export function addUsage(log: DayLog, minutes: number, fromEarned: boolean): DayLog {
-  const m = Math.max(0, minutes);
-  if (!fromEarned) return { ...log, usedMin: log.usedMin + m };
-  return { ...log, earnedUsedMin: Math.min(log.earnedMin, log.earnedUsedMin + m) };
-}
-
 const earnedLeft = (log: DayLog) => Math.max(0, log.earnedMin - log.earnedUsedMin);
 
 interface ActiveLock {
@@ -108,7 +101,12 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   const emergenciesUsed = takenToday.filter((u) => u.kind === 'emergency').length;
   const oneMoresUsed = takenToday.filter((u) => u.kind === 'one-more').length;
   const capLeft = Math.max(0, rules.earning.dailyCapMin - log.earnedMin);
-  const canEarn = reason !== null && reason !== 'focus' && rules.earning.enabled && capLeft > 0 && (reason === 'limit' || blocking.every((a) => earnableHere(a.lock)));
+  const canEarn =
+    reason !== null &&
+    reason !== 'focus' &&
+    rules.earning.enabled &&
+    capLeft > 0 &&
+    (reason === 'limit' || blocking.every((a) => earnableHere(a.lock)));
 
   const ownLocks = own
     .filter((a) => !unlock && !(earnableHere(a.lock) && left > 0))
@@ -120,7 +118,8 @@ export function decide(zone: Zone, rules: ScreenTimeRules, logIn: DayLog, now: n
   if (!unlock) {
     for (const l of rules.appLimits) {
       if (!l.enabled) continue;
-      if (l.dailyMin !== null && (log.appUsed?.[l.id] ?? 0) >= l.dailyMin) limitBlocks.push({ id: l.id, name: l.name, apps: l.apps, why: 'time' });
+      if (l.dailyMin !== null && (log.appUsed?.[l.id] ?? 0) >= l.dailyMin)
+        limitBlocks.push({ id: l.id, name: l.name, apps: l.apps, why: 'time' });
       else if (l.opensPerDay !== null && (log.appOpens?.[l.id] ?? 0) >= l.opensPerDay)
         limitBlocks.push({ id: l.id, name: l.name, apps: l.apps, why: 'opens' });
     }

@@ -51,11 +51,10 @@ describe('per-rep calories match the research tables', () => {
 });
 
 describe('30 and 60 day projections', () => {
-  test('a 53 kcal session four times a week: ≈900 kcal and ≈90 g of fat-energy in 30 days', () => {
+  test('a 53 kcal session four times a week: ≈900 kcal in 30 days', () => {
     const p30 = projectWorkouts({ kcal: 53, low: 37, high: 82 }, 4, 30);
     expect(p30.sessions).toBe(17);
     expect(p30.total.kcal).toBeCloseTo(901, 0);
-    expect(p30.fatG.kcal).toBeCloseTo(93.6, 0);
     const p60 = projectWorkouts({ kcal: 53, low: 37, high: 82 }, 4, 60);
     expect(p60.total.kcal).toBe(53 * 34);
   });

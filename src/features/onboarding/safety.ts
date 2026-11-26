@@ -17,11 +17,16 @@ export const SAFETY_LABELS: Record<SafetyFlag, string> = {
 
 const NOTES: Record<SafetyFlag, Partial<Record<Exercise, string>>> = {
   heart: {
-    pushup: 'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
-    crunch: 'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
-    plank: 'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
-    sidePlank: 'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
-    pullup: 'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+    pushup:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+    crunch:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+    plank:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+    sidePlank:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
+    pullup:
+      'Check with your doctor before you start, begin on Easy, and stop at once if you feel chest pain, dizziness or very short of breath.',
   },
   back: {
     crunch: 'With back pain, keep the lift small and slow, and stop if it hurts. Planks are often easier on the back.',
@@ -34,7 +39,8 @@ const NOTES: Record<SafetyFlag, Partial<Record<Exercise, string>>> = {
     crunch: 'Cross your arms on your chest instead of hands by your head, and keep a fist of space under your chin.',
     pushup: 'Keep your head in line with your body. Stop if your shoulder hurts.',
     sidePlank: 'Side planks load the shoulder a lot; start on your knees (Easy).',
-    pullup: 'Pull-ups load the shoulders a lot. Start with short dead hangs or slow lowering from the top, and stop if your shoulder hurts.',
+    pullup:
+      'Pull-ups load the shoulders a lot. Start with short dead hangs or slow lowering from the top, and stop if your shoulder hurts.',
   },
   wrist: {
     pushup: 'Knuckle push-ups or push-up handles keep the wrist straight. Stop if it hurts.',

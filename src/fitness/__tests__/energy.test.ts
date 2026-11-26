@@ -1,18 +1,5 @@
 /// <reference types="jest" />
-import {
-  bmi,
-  bmr,
-  eventualChangeKg,
-  fatGrams,
-  cmToFtIn,
-  ftInToCm,
-  lowestHealthyKg,
-  relativeFatMass,
-  maintenance,
-  strengthFuel,
-  weightPlan,
-  type Body,
-} from '../energy';
+import { bmr, cmToFtIn, ftInToCm, lowestHealthyKg, relativeFatMass, maintenance, strengthFuel, weightPlan, type Body } from '../energy';
 
 const man: Body = { sex: 'male', age: 30, heightCm: 180, weightKg: 80, activity: 'low' };
 const woman: Body = { sex: 'female', age: 30, heightCm: 165, weightKg: 65, activity: 'some' };
@@ -37,11 +24,7 @@ describe('energy', () => {
     expect(relativeFatMass('male', 180, 0)).toBeNull();
   });
 
-  test('BMI bands and the lowest healthy target', () => {
-    expect(bmi(180, 80).value).toBeCloseTo(24.69, 2);
-    expect(bmi(180, 80).band).toBe('healthy');
-    expect(bmi(180, 95).band).toBe('over');
-    expect(bmi(180, 100).band).toBe('obese');
+  test('the lowest healthy target', () => {
     expect(lowestHealthyKg(180)).toBeCloseTo(59.94, 2);
   });
 
@@ -90,16 +73,7 @@ describe('energy', () => {
     expect(tiny.weeks).toBe(Infinity);
   });
 
-  test('long-term change follows Hall (22 kcal a day ≈ 1 kg, half in a year), not 7,700 kcal per kg', () => {
-    const r = eventualChangeKg(220);
-    expect(r.eventual).toBeCloseTo(10, 5);
-    expect(r.inAYear).toBeCloseTo(5, 5);
-    // The static rule would claim 220 × 365 / 7700 ≈ 10.4 kg in a year: about twice as much.
-    expect((220 * 365) / 7700).toBeGreaterThan(r.inAYear * 2);
-  });
-
-  test('fat equivalent and strength fuel', () => {
-    expect(fatGrams(77)).toBeCloseTo(10, 5);
+  test('strength fuel and units', () => {
     expect(strengthFuel(man)).toEqual({ eatKcal: Math.round(1780 * 1.2 + 250), proteinG: 128 });
     expect(ftInToCm(5, 10)).toBeCloseTo(177.8, 1);
   });

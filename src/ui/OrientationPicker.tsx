@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { PhoneOrientation } from '@/engine/types';
 import { PLACEMENT } from '@/session/copy';
-import { Label, Mono, Strong } from './primitives';
+import { Mono, Strong } from './primitives';
 import { color, radius, space, type } from './theme';
 
 /**
@@ -47,12 +47,6 @@ export function OrientationPicker({
         );
       })}
     </View>
-  );
-}
-
-export function OrientationHint({ value }: { value: PhoneOrientation }) {
-  return (
-    <Label tone="muted">{value === 'portrait' ? 'Portrait needs more room: step further back' : 'Landscape fits your body best'}</Label>
   );
 }
 

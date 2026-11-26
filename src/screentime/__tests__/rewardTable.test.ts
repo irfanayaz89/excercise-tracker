@@ -99,4 +99,13 @@ describe('a day of sets', () => {
     const first = earnFromSet(london, r, log, { summary: reps('pushup', 20), sessionId: 's', demo: false }, NOW);
     expect(earnFromSet(london, r, first.log, { summary: reps('pushup', 20), sessionId: 's', demo: false }, NOW).minutes).toBe(0);
   });
+
+  test('a small warm-up set does not use up the first-set bonus', () => {
+    let log: DayLog = freshDay(london, NOW);
+    const warm = earnFromSet(london, r, log, { summary: reps('pushup', 4), sessionId: 'w', demo: false }, NOW);
+    expect(warm.minutes).toBe(4);
+    log = warm.log;
+    // The first real set still gets +3.
+    expect(earnFromSet(london, r, log, { summary: reps('pushup', 10), sessionId: 'r', demo: false }, NOW + 60_000).minutes).toBe(18);
+  });
 });
